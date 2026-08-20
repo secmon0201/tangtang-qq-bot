@@ -240,7 +240,18 @@ function Test-NteTunnelHealthy {
         $_.Name -like "python*.exe" -and $_.CommandLine -like "*nte_login_proxy.py*"
     })
     $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18765 -ErrorAction SilentlyContinue)
-    return $cloudflared.Count -gt 0 -and $proxy.Count -gt 0 -and $listener.Count -gt 0
+    $edgeConnections = @(
+        foreach ($process in $cloudflared) {
+            Get-NetTCPConnection -OwningProcess $process.ProcessId -State Established -ErrorAction SilentlyContinue |
+                Where-Object { $_.RemoteAddress -notin @("127.0.0.1", "::1", "0.0.0.0", "::") }
+        }
+    )
+    return (
+        $cloudflared.Count -gt 0 -and
+        $proxy.Count -gt 0 -and
+        $listener.Count -gt 0 -and
+        $edgeConnections.Count -gt 0
+    )
 }
 
 function Invoke-NteTunnelCheck {

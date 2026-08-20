@@ -111,7 +111,7 @@ Start-Sleep -Seconds 1
 Write-Output "Starting cloudflared quick tunnel to the proxy..."
 Remove-Item -LiteralPath $TunnelLog -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $Cloudflared `
-    -ArgumentList @("tunnel", "--url", "http://127.0.0.1:$ProxyPort", "--no-autoupdate", "--logfile", $TunnelLog) `
+    -ArgumentList @("tunnel", "--url", "http://127.0.0.1:$ProxyPort", "--protocol", "http2", "--no-autoupdate", "--logfile", $TunnelLog) `
     -WorkingDirectory $Root -WindowStyle Hidden | Out-Null
 
 $publicUrl = $null

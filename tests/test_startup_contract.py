@@ -41,3 +41,12 @@ def test_start_and_restart_wrappers_restore_tunnel_and_watchdog():
         assert "nte_tunnel_disabled.flag" in script
         assert "scripts\\start_nte_tunnel.ps1" in script
         assert "scripts\\watch_napcat.ps1" in script
+
+
+def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():
+    tunnel = source("scripts/start_nte_tunnel.ps1")
+    watchdog = source("scripts/watch_napcat.ps1")
+
+    assert '"--protocol", "http2"' in tunnel
+    assert "Get-NetTCPConnection -OwningProcess" in watchdog
+    assert "$edgeConnections.Count -gt 0" in watchdog

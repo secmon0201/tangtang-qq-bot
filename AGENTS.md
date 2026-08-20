@@ -17,6 +17,7 @@
 - `tests`: behavior and architecture protection.
 - `docs`: current user and maintainer documentation.
 - `config`: non-secret version pins and repository configuration.
+- `启动工具`: Chinese operator-facing batch shortcuts; implementations stay in `scripts`.
 
 `GsUID.Core`, its UID plugins, NapCat, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
 
@@ -45,10 +46,10 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 
 ## Operations
 
-- Full start: `start_bot_and_napcat.bat`
-- Full restart: `restart_bot_and_napcat.bat`
-- Full stop: `stop_bot_and_napcat.bat`
-- NoneBot-only restart: `restart_nonebot.bat`
+- Full start: `启动工具\01-启动全部.bat`
+- Full restart: `启动工具\02-重启全部.bat`
+- Full stop: `启动工具\03-关闭全部.bat`
+- NoneBot-only restart: `启动工具\11-仅重启机器人.bat`
 - Generated-file cleanup preview: `scripts\clean-generated.ps1`
 - Generated-file cleanup: `scripts\clean-generated.ps1 -Apply`
 
@@ -57,6 +58,7 @@ Do not restart NapCat or QQ for ordinary Python changes. Prefer `scripts\stop.ps
 ## Git Rules
 
 - Commit the complete project-owned QQ bot in this repository; NTE is not a separate repository.
+- Register every `bot/plugins/*.py` feature exactly once in `bot/application/plugin_registry.py`.
 - Keep `main` buildable and use focused commits.
 - Never bypass repository or architecture validators.
 - Do not stash or preserve patches inside upstream repositories. Move required compatibility into `bot/integrations` or `bot/services`.

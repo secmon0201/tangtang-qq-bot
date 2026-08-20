@@ -10,6 +10,7 @@ QQ 机器人使用一个自研主仓库，统一提交以下内容：
 - `bot/integrations`：对外部运行时的项目侧兼容层。
 - `bot/resources`：机器人自有、可复现的静态资源。
 - `scripts`、`tests`、`docs`、`config`：运维、验证、说明和非敏感配置。
+- `启动工具`：面向中文用户的双击入口；具体实现仍由 `scripts` 统一维护。
 
 NTE 是主仓库中的一个独立功能边界，不是单独摘出的仓库。这样排行榜、帮助图、指令门、共享头像和机器人权限规则可以在一次提交中保持一致。
 
@@ -33,7 +34,7 @@ plugins -> application -> services
 QQ/NapCat -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUID
 ```
 
-插件之间不得直接导入，`services` 和 `application` 也不得反向导入插件。`scripts/validate_architecture.py` 会检查这些规则和循环依赖。
+插件之间不得直接导入，`services` 和 `application` 也不得反向导入插件。每个 `bot/plugins/*.py` 功能入口必须在 `bot/application/plugin_registry.py` 中恰好注册一次；注册表只保存模块名和启用元数据，不导入插件。`scripts/validate_architecture.py` 和 `tests/test_plugin_registry.py` 会共同检查依赖规则、循环依赖、重复实现、漏注册与重复注册。
 
 NTE 本地接管只读取 Core 的公开运行数据或上游资源：
 

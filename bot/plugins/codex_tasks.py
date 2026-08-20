@@ -277,7 +277,7 @@ async def _start_codex_worker() -> None:
         return
     interrupted = db.recover_codex_tasks_after_restart()
     if interrupted:
-        logger.warning("Marked %s interrupted Codex task turn(s) after restart", interrupted)
+        logger.warning("Marked {} interrupted Codex task turn(s) after restart", interrupted)
     scheduler.add_job(
         worker.run_once,
         "interval",
@@ -289,7 +289,7 @@ async def _start_codex_worker() -> None:
     )
     scheduler.start()
     logger.info(
-        "Codex persistent task worker started; interval=%ss timeout=%ss sandbox=%s",
+        "Codex persistent task worker started; interval={}s timeout={}s sandbox={}",
         settings.codex_worker_poll_seconds,
         settings.codex_worker_timeout_seconds,
         settings.codex_worker_sandbox,

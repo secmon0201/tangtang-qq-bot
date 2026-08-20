@@ -66,13 +66,13 @@ ws://127.0.0.1:8080/onebot/v11/ws
 
 ## 运行
 
-根目录提供三套统一快捷入口：
+普通用户的双击入口统一放在根目录的 `启动工具` 文件夹：
 
-- `start_bot_and_napcat.bat`：启动 GsUID Core、机器人、NapCat QQ、NTE 登录隧道和 watchdog。
-- `restart_bot_and_napcat.bat`：关闭后重新启动整套运行环境，并保留隧道是否启用的选择。
-- `stop_bot_and_napcat.bat`：关闭 watchdog、隧道、可安全确认归属的 NapCat QQ、机器人和 Core。
+- `启动工具\01-启动全部.bat`：启动 GsUID Core、机器人、NapCat QQ、NTE 登录隧道和 watchdog。
+- `启动工具\02-重启全部.bat`：关闭后重新启动整套运行环境，并保留隧道是否启用的选择。
+- `启动工具\03-关闭全部.bat`：关闭 watchdog、隧道、可安全确认归属的 NapCat QQ、机器人和 Core。
 
-普通 Python 代码更新只需双击 `restart_nonebot.bat`，不会重启 NapCat 或 QQ。QQ 若要求扫码、滑块或设备验证，仍需在弹出的 NapCat/QQ 窗口中手动完成。完整关闭只处理本次启动记录、已连接到本机 OneBot 端口或命令行明确匹配 `NAPCAT_QQ_ID` 的 QQ，不会调用 `NapCat.Shell\KillQQ.bat` 或关闭无法确认归属的其他 QQ。
+普通 Python 代码更新只需双击 `启动工具\11-仅重启机器人.bat`，不会重启 NapCat 或 QQ。全部快捷入口见 [`启动工具/README.md`](启动工具/README.md)。QQ 若要求扫码、滑块或设备验证，仍需在弹出的 NapCat/QQ 窗口中手动完成。完整关闭只处理本次启动记录、已连接到本机 OneBot 端口或命令行明确匹配 `NAPCAT_QQ_ID` 的 QQ，不会调用 `NapCat.Shell\KillQQ.bat` 或关闭无法确认归属的其他 QQ。
 
 完整的 PowerShell 手动启动、测试、停止和故障排查流程见：[PowerShell 手动运行操作手册](docs/PowerShell手动运行操作手册.md)。
 
@@ -267,7 +267,7 @@ Core 使用本机 `8765` 端口，QQ/NapCat 仍使用现有的 `8080` OneBot Web
 
 ## 可选图形管理器
 
-图形管理器只管理 NoneBot 和 NapCat QQ；完整环境优先使用根目录三套批处理。需要图形配置界面时运行：
+图形管理器只管理 NoneBot 和 NapCat QQ；完整环境优先使用 `启动工具` 中的中文快捷入口。需要图形配置界面时运行：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass

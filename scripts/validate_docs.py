@@ -12,6 +12,15 @@ RETIRED_REFERENCES = (
     "deploy/linux",
     "scripts/vm",
     "linux_vm_",
+    "start_bot_and_napcat.bat",
+    "restart_bot_and_napcat.bat",
+    "stop_bot_and_napcat.bat",
+    "restart_nonebot.bat",
+    "start_nte_tunnel.bat",
+    "stop_nte_tunnel.bat",
+    "set_nte_login_url.bat",
+    "start_watchdog.bat",
+    "stop_watchdog.bat",
 )
 STALE_MARKERS = (
     "状态：等待确认",

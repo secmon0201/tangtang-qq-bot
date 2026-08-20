@@ -5,28 +5,17 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from bot.application.plugin_registry import plugin_specs_for
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "docs" / "全部#指令清单.md"
 
 
 def _active_onebot_plugin_sources() -> tuple[Path, ...]:
-    """Read the OneBot plugin list, excluding disabled and alternate transports."""
-    main_path = ROOT / "bot/__main__.py"
-    tree = ast.parse(main_path.read_text(encoding="utf-8"), filename=str(main_path))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.List):
-            continue
-        if not any(isinstance(target, ast.Name) and target.id == "plugin_names" for target in node.targets):
-            continue
-        plugins = [
-            item.value
-            for item in node.value.elts
-            if isinstance(item, ast.Constant) and isinstance(item.value, str)
-        ]
-        if "bot.plugins.scope" in plugins:
-            return tuple(ROOT / (plugin.replace(".", "/") + ".py") for plugin in plugins)
-    raise AssertionError("Could not find the OneBot plugin list in bot/__main__.py")
+    """Read every enabled OneBot feature from the declarative registry."""
+    specs = plugin_specs_for("onebot", stats_realtime_enabled=True)
+    return tuple(ROOT / (spec.module.replace(".", "/") + ".py") for spec in specs)
 
 
 def _active_on_command_names() -> set[str]:

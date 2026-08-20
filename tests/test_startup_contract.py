@@ -36,8 +36,9 @@ def test_tunnel_stop_can_preserve_the_user_guard_choice():
 
 
 def test_start_and_restart_wrappers_restore_tunnel_and_watchdog():
-    for wrapper in ("start_bot_and_napcat.bat", "restart_bot_and_napcat.bat"):
+    for wrapper in ("启动工具/01-启动全部.bat", "启动工具/02-重启全部.bat"):
         script = source(wrapper)
+        assert 'for %%I in ("%~dp0..") do set "ROOT=%%~fI"' in script
         assert "nte_tunnel_disabled.flag" in script
         assert "scripts\\start_nte_tunnel.ps1" in script
         assert "scripts\\watch_napcat.ps1" in script
@@ -50,3 +51,14 @@ def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():
     assert '"--protocol", "http2"' in tunnel
     assert "Get-NetTCPConnection -OwningProcess" in watchdog
     assert "$edgeConnections.Count -gt 0" in watchdog
+
+
+def test_root_contains_no_scattered_batch_shortcuts():
+    assert list(ROOT.glob("*.bat")) == []
+    assert len(list((ROOT / "启动工具").glob("*.bat"))) == 9
+
+
+def test_nonebot_background_logs_use_utf8():
+    script = source("scripts/start.ps1")
+    assert '$env:PYTHONUTF8 = "1"' in script
+    assert '$env:PYTHONIOENCODING = "utf-8"' in script

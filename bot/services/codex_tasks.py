@@ -210,7 +210,7 @@ class CodexWorker:
             )
             await self._notify(task_id, str(turn["title"]), outcome, result or error)
         except Exception as exc:
-            logger.exception("Codex worker task %s failed before completion", task_id)
+            logger.exception("Codex worker task {} failed before completion", task_id)
             error = clipped_text(f"Codex worker 启动失败：{exc}", MAX_PROCESS_ERROR_CHARS)
             self.database.finish_codex_task_message(message_id, "failed", error=error)
             await self._notify(task_id, str(turn["title"]), "failed", error)
@@ -256,4 +256,4 @@ class CodexWorker:
         try:
             await notify_codex_completion(message, details=details)
         except Exception:
-            logger.exception("Codex worker could not send QQ notification for task %s", task_id)
+            logger.exception("Codex worker could not send QQ notification for task {}", task_id)

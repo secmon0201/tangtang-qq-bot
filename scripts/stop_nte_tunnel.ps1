@@ -29,5 +29,5 @@ if (-not $PreserveGuardState) {
     $Root = Split-Path -Parent $PSScriptRoot
     $disabledFlag = Join-Path $Root "data\nte_tunnel_disabled.flag"
     New-Item -ItemType File -Force -Path $disabledFlag | Out-Null
-    Write-Output "Tunnel guard is now disabled; run start_nte_tunnel.bat to re-enable it."
+    Write-Output "Tunnel guard is now disabled; run 启动工具\21-启动异环登录隧道.bat to re-enable it."
 }

@@ -121,10 +121,10 @@
 
 ## 五、重启和配置
 
-修改 `ACTIVITY_ADMIN_IDS`、`BOT_OPERATOR_IDS` 或其他启动配置后，双击项目根目录：
+修改 `ACTIVITY_ADMIN_IDS`、`BOT_OPERATOR_IDS` 或其他启动配置后，双击：
 
 ```text
-restart_nonebot.bat
+启动工具\11-仅重启机器人.bat
 ```
 
 该操作只重启 NoneBot，不重启 NapCat。功能范围命令和被动互动参数写入本地 SQLite，可热更新并在重启后保留；糖糖主动回复参数由 `#糖糖主动回复` 指令实时写回 `.env`，同样在重启后保留。

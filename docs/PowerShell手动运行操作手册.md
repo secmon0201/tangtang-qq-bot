@@ -74,11 +74,11 @@ NTE-only game mode valid: Core=enabled, GenshinUID=disabled, XutheringWavesUID=d
 
 需要群友登录异环时，在启动 Core 后另开一个窗口执行：
 
-```bat
-start_nte_tunnel.bat
+```text
+启动工具\21-启动异环登录隧道.bat
 ```
 
-它会生成公网 HTTPS 登录地址并自动写回 NTEUID 配置；每次重启隧道后重跑同一条命令即可。关闭用 `stop_nte_tunnel.bat`，单独改地址用 `set_nte_login_url.bat`。
+它会生成公网 HTTPS 登录地址并自动写回 NTEUID 配置；每次重启隧道后重跑同一入口即可。关闭用 `启动工具\22-关闭异环登录隧道.bat`，单独改地址用 `启动工具\23-设置异环登录地址.bat`。
 
 Core 日志应出现以下内容后保持窗口打开：
 

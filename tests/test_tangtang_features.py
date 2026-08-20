@@ -7,7 +7,7 @@ import nonebot
 
 nonebot.init()
 
-from bot.plugins.tangtang_features import (
+from bot.application.local_features import (
     FeatureRequest,
     feature_label,
     request_from_decision,

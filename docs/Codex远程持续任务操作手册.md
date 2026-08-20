@@ -104,7 +104,7 @@ worker 会使用任务 #12 保存的 Codex thread ID 执行 `codex exec resume`�
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\validate_qq_config.py --env .env
-.\restart_nonebot.bat
+.\启动工具\11-仅重启机器人.bat
 ```
 
 查看 NoneBot 日志：

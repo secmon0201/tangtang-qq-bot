@@ -6,6 +6,7 @@ import nonebot
 from nonebot.drivers.fastapi import Driver as _FastAPIDriver  # noqa: F401
 from nonebot import logger
 
+from bot.application.plugin_registry import plugin_specs_for
 from bot.config import settings
 from bot.openapi import configure_official_environment
 from bot.services.nte_prefix_display import patch_upstream_nte_prefix
@@ -33,9 +34,12 @@ def main() -> None:
         from nonebot.adapters.qq import Adapter
 
         driver.register_adapter(Adapter)
-        plugin_names = ["bot.plugins.official_qq"]
+        plugin_specs = plugin_specs_for(
+            settings.transport,
+            stats_realtime_enabled=settings.stats_realtime_enabled,
+        )
         logger.info(
-            "Official QQ OpenAPI mode enabled: app_id=%s..., sandbox=%s, port=%s",
+            "Official QQ OpenAPI mode enabled: app_id={}..., sandbox={}, port={}",
             official.app_id[:4],
             official.sandbox,
             official.port,
@@ -46,33 +50,20 @@ def main() -> None:
         driver.register_adapter(Adapter)
         # Load by module name so a PyInstaller one-file build does not depend on
         # raw plugin source files being present in the temporary extraction path.
-        plugin_names = [
-            "bot.plugins.outbound_pacing",
-            "bot.plugins.scope",
-            "bot.plugins.game_api",
-            "bot.plugins.nte_game_ui",
-            "bot.plugins.napcat_maintenance",
-            "bot.plugins.qq_platform_health",
-            "bot.plugins.random_reactions",
-            "bot.plugins.tangtang_chat",
-            "bot.plugins.commands",
-            "bot.plugins.knowledge_review",
-            "bot.plugins.mini_games",
-            "bot.plugins.today_wife",
-            "bot.plugins.codex_completion",
-            "bot.plugins.zhijiang",
-            "bot.plugins.asoul",
-            "bot.plugins.activities",
-            "bot.plugins.surveys",
-            "bot.plugins.global_announcement",
-            "bot.plugins.hourly_announcements",
-        ]
-        if settings.stats_realtime_enabled:
-            plugin_names.insert(2, "bot.plugins.stats")
-            plugin_names.insert(plugin_names.index("bot.plugins.commands") + 1, "bot.plugins.a_coast_archive")
-    for plugin_name in plugin_names:
-        if nonebot.load_plugin(plugin_name) is None:
-            raise RuntimeError(f"failed to load plugin: {plugin_name}")
+        plugin_specs = plugin_specs_for(
+            settings.transport,
+            stats_realtime_enabled=settings.stats_realtime_enabled,
+        )
+    for plugin_spec in plugin_specs:
+        if nonebot.load_plugin(plugin_spec.module) is None:
+            raise RuntimeError(
+                f"failed to load plugin: {plugin_spec.key} ({plugin_spec.module})"
+            )
+        logger.info(
+            "Feature plugin loaded: {} [{}]",
+            plugin_spec.label_zh,
+            plugin_spec.key,
+        )
     if settings.gsuid_enabled and settings.transport == "onebot":
         if not patch_upstream_nte_prefix():
             logger.warning("NTEUID display prefix patch skipped: upstream package is unavailable")

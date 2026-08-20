@@ -8,6 +8,10 @@ $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $LogDir = Join-Path $Root "logs"
 $PidFile = Join-Path $LogDir "bot.pid"
 
+# Redirected Python streams otherwise inherit the Windows legacy code page.
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
 if (-not (Test-Path -LiteralPath $Python)) {
     throw "Virtual environment not found. Run: python -m venv .venv"
 }

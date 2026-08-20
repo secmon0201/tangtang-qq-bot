@@ -201,26 +201,26 @@ Bot 2120682836 connected
 本项目已内置一键方案：cloudflared 快速隧道 + 只转发 `/nte/*` 的本地受限代理。一次执行即可完成“下载 cloudflared → 启动代理 → 启动隧道 → 探测新的 HTTPS 地址 → 写入 `NTELoginUrl` → 重启 Core”：
 
 ```bat
-start_nte_tunnel.bat
+启动工具\21-启动异环登录隧道.bat
 ```
 
-根目录已经放了三个双击即可用的批处理：`start_nte_tunnel.bat`、`stop_nte_tunnel.bat`、`set_nte_login_url.bat`。它们内部会自动执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`，不需要手打权限命令；等价底层脚本仍在 `scripts\` 下。
+`启动工具` 中提供三个双击即可用的异环入口：`21-启动异环登录隧道.bat`、`22-关闭异环登录隧道.bat`、`23-设置异环登录地址.bat`。它们内部会自动执行 `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`，不需要手打权限命令；等价底层脚本仍在 `scripts\` 下。
 
 脚本第一次会从 GitHub 下载 `tools\cloudflared.exe`；之后每次运行秒级完成。
 
 ### 关键点
 
-- 快速隧道地址形如 `https://xxxx.trycloudflare.com`，**每次重启隧道地址都会变**。地址变化后，双击 `start_nte_tunnel.bat` 即可：脚本会停掉旧隧道、拿到新地址、写入 `NTELoginUrl` 并自动重启 Core 生效。
+- 快速隧道地址形如 `https://xxxx.trycloudflare.com`，**每次重启隧道地址都会变**。地址变化后，双击 `启动工具\21-启动异环登录隧道.bat` 即可：脚本会停掉旧隧道、拿到新地址、写入 `NTELoginUrl` 并自动重启 Core 生效。
 - 登录接入方式保持默认 `NTELoginTransport=local`，只换对外域名；旧链接本身只有 10 分钟有效期，地址变了直接重新发 `#nte登录` 即可。
 - 安全：cloudflared 指向的是本地 `127.0.0.1:18765` 受限代理（`scripts\nte_login_proxy.py`），该代理只放行 `/nte/i/*`、`/nte/done`、`/nte/sendSmsCode`、`/nte/login`、`/nte/status/*`，其余路径一律 404。Core 的 `/ws/*` 和 `/api/*` 不会经隧道暴露，Core 也继续只监听 `127.0.0.1`。
-- 关闭隧道和代理：双击 `stop_nte_tunnel.bat`。关闭后 `#nte登录` 会退回到 localhost 链接，并写入“禁用标记”，watchdog 不会再把隧道自动拉起。
-- 机器人或电脑重启后，先正常启动 Core 和机器人，再双击一次 `start_nte_tunnel.bat`。
-- `watch_napcat` 现在会顺带守护隧道：每 30 秒检查 cloudflared、登录代理和 18765 端口；异常时自动重跑启动脚本（15 分钟冷却）。你主动用 `stop_nte_tunnel.bat` 关闭后不会被自动拉起。
+- 关闭隧道和代理：双击 `启动工具\22-关闭异环登录隧道.bat`。关闭后 `#nte登录` 会退回到 localhost 链接，并写入“禁用标记”，watchdog 不会再把隧道自动拉起。
+- 机器人或电脑重启后，先正常启动 Core 和机器人，再双击一次 `启动工具\21-启动异环登录隧道.bat`。
+- `watch_napcat` 现在会顺带守护隧道：每 30 秒检查 cloudflared、登录代理和 18765 端口；异常时自动重跑启动脚本（15 分钟冷却）。你主动用 `启动工具\22-关闭异环登录隧道.bat` 关闭后不会被自动拉起。
 
 ### 重新配置流程（隧道地址变化后）
 
 ```powershell
-start_nte_tunnel.bat
+启动工具\21-启动异环登录隧道.bat
 # 脚本输出新的 https://xxxx.trycloudflare.com 后，直接在群里再发一次：
 # #nte登录
 ```

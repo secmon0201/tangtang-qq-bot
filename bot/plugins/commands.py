@@ -1162,7 +1162,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "本机维护",
-                    "restart_nonebot.bat\nPowerShell：.\\scripts\\stop.ps1\nPowerShell：.\\scripts\\start.ps1\n配置校验：.\\venv\\Scripts\\python.exe scripts\\validate_qq_config.py --env .env",
+                    "启动工具\\11-仅重启机器人.bat\nPowerShell：.\\scripts\\stop.ps1\nPowerShell：.\\scripts\\start.ps1\n配置校验：.\\venv\\Scripts\\python.exe scripts\\validate_qq_config.py --env .env",
                     f"只改 NoneBot 时不用重启 NapCat；检查日志目录 logs，OneBot 地址为 {settings.host}:{settings.port}。不要把 .env 中的 API Key、OneBot Token 或 NapCat Token 发到群里。",
                 ),
             ],

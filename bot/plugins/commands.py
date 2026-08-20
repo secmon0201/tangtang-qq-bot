@@ -1158,7 +1158,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 (
                     "Codex 持续任务",
                     f"{prefix}Codex <需求>\n{prefix}Codex 续 ID <补充需求>\n{prefix}启动Codex ID\n{prefix}暂停Codex ID\n{prefix}取消Codex ID\n{prefix}Codex 状态|列表|结果|重试 ID",
-                    "仅超级管理员可用。新任务与续办都先入队，必须用启动命令执行；同一 ID 会恢复同一 Codex 会话上下文。全机仅串行执行一个任务，完成、失败或停止后均向固定通知群发送折叠结果。详细说明见《Codex远程持续任务操作手册.md》。",
+                    "仅超级管理员可用。新任务与续办都先入队，必须用启动命令执行；同一 ID 会恢复同一 Codex 会话上下文。全机仅串行执行一个任务，完成、失败或停止后均向固定通知群发送折叠结果。详细说明见《功能-Codex持续任务.md》。",
                 ),
                 (
                     "本机维护",

@@ -56,7 +56,7 @@ CODEX_WORKER_SANDBOX=workspace-write
 ### 在已有工作上继续
 
 ```text
-#Codex 续 12 再把修改同步到机器人使用说明总览，并检查现有帮助页。
+#Codex 续 12 再把修改同步到安装与运行文档，并检查现有帮助页。
 #启动Codex 12
 ```
 
@@ -97,6 +97,28 @@ worker 会使用任务 #12 保存的 Codex thread ID 执行 `codex exec resume`�
 - NoneBot 重启时，正在执行的一轮会标记为中断，不会自动重跑。使用 `#Codex 重试 ID` 后由超级管理员决定是否再次执行。
 - 任务内容、轮次状态、Codex thread ID、最终结果和错误保存在本机 SQLite 数据库中，仅用于持续执行和查询。不要在 QQ 需求里填写密码、Token、Cookie 或其他密钥。
 - worker 的固定提示要求 Codex 不读取、输出或修改 `.env`、认证文件和令牌；完成通知只转发最终结论，不转发思考过程或终端日志。
+
+## 完成通知与测试群通知
+
+启用 `CODEX_COMPLETION_NOTIFY_ENABLED=true` 后，本机接口收到请求时向固定群和超级管理员发送“Codex 执行结果”合并转发并 `@` 管理员。目标群必须属于 `MANAGED_GROUP_IDS`，目标账号必须属于 `BOT_OPERATOR_IDS`；接口仅允许 `HOST=127.0.0.1`、`localhost` 或 `::1`。调用方必须显式传入最终结论、改动和验证结果，脚本不读取思考过程或终端日志。
+
+```powershell
+.venv\Scripts\python.exe scripts\notify_codex_completion.py `
+  "Codex 已执行完成，完整结果请展开合并转发查看。" `
+  --details "这里填写最终交付内容。"
+```
+
+内容较长时使用 UTF-8 文件，脚本自动把不超过 24000 字的内容分成每页约 2000 字的合并转发节点：
+
+```powershell
+.venv\Scripts\python.exe scripts\notify_codex_completion.py `
+  "Codex 已执行完成，完整结果请展开合并转发查看。" `
+  --details-file .\最终交付内容.md
+```
+
+脚本不接收群号或 QQ 号参数，固定目标不可改写；使用本机 `.env` 的专用令牌，留空时使用 OneBot 访问令牌。
+
+同一组开关还提供 `scripts\notify_test_group.py`，把测试用例、完成通知或普通通知连同项目目录内的 PNG/JPG/GIF/WebP 图片发送到固定测试群；它不接收群号或 QQ 号，也不允许工作区外附件。
 
 ## 本机维护
 

@@ -23,4 +23,4 @@
 
 画像 AI 复用糖糖的接口、模型与思考能力（`TANGTANG_*`），并可通过 `PROFILE_*` 独立覆盖：`PROFILE_ENABLED`、`PROFILE_API_URL`、`PROFILE_API_KEY`、`PROFILE_API_STYLE`、`PROFILE_MODEL`、`PROFILE_REASONING_EFFORT`、`PROFILE_TIMEOUT_SECONDS`、`PROFILE_MAX_INPUT_CHARS`（默认 20000）、`PROFILE_MAX_OUTPUT_TOKENS`、`PROFILE_MAX_RESPONSE_CHARS`（默认 16000）、`PROFILE_RETRY_MAX_ATTEMPTS/RETRY_BASE_SECONDS`（请求失败重试，默认 3 次、基数 2 秒，仅对 429/5xx 指数退避并尊重 Retry-After）。画像阶段参数同样可配：`PROFILE_CHUNK_CHARS`（发言分块大小，默认 16000）、`PROFILE_MERGE_CHUNK_CHARS`（合并专用分块，默认 12000）、`PROFILE_MAX_RECORDS_PER_RUN`（单次处理条数，默认 100000）、`PROFILE_EVIDENCE_CONCURRENCY`（证据提取与合并阶段任务内并发，默认 5）、`PROFILE_EVIDENCE_REASONING_EFFORT`（证据/合并思考等级，默认 low，最终画像仍用 `PROFILE_REASONING_EFFORT`）、`PROFILE_EVIDENCE_MAX_CHARS/MAX_TOKENS/MAX_RESPONSE_CHARS`（证据与合并阶段软硬上限，默认 4000/8000/16000）、`PROFILE_FINAL_MAX_CHARS/MAX_TOKENS/MAX_RESPONSE_CHARS`（最终画像软硬上限，默认 4000/8000/16000）。接口密钥只保存在本机 `.env`，不得提交到 Git、发送到群聊或写入文档。
 
-完整的数据范围、更新方式和指令说明见 [机器人使用说明总览](机器人使用说明总览.md) 与 [全部 `#` 指令清单](全部#指令清单.md)。
+完整的数据范围、更新方式和指令说明见 [全部 `#` 指令清单](全部#指令清单.md)；安装与运行见 [安装与运行](运维-安装与运行.md)。

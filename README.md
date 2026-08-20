@@ -2,11 +2,11 @@
 
 这是一个运行在 Windows 本机的 NoneBot2/OneBot v11 QQ 群机器人。QQ 登录由本机 NapCatQQ 完成，机器人只接收 OneBot 事件并将聚合数据保存在本地 SQLite。
 
-全部有效文档见：[文档索引](docs/README.md)。完整的安装、启动、关闭、命令、热更新、被动互动、活动、备份和故障排查说明见：[机器人使用说明总览](docs/机器人使用说明总览.md)。AI 和代码维护者先阅读 [AGENTS.md](AGENTS.md)。
+全部有效文档见：[文档总览](docs/README.md)。完整的安装、启动、关闭、命令、热更新、被动互动、活动、备份和故障排查说明见：[安装与运行](docs/运维-安装与运行.md)。AI 和代码维护者先阅读 [AGENTS.md](AGENTS.md)。
 
-Git 提交范围、目录职责和上游独立更新方式见：[仓库边界与上游更新](docs/repository-layout.md)。整个自研 QQ 机器人使用同一个主仓库，NTE 排行榜、帮助图和指令接管作为其中一个独立模块一起提交；`GsUID.Core` 和 UID 插件仓库只记录版本，不复制进主仓库。
+Git 提交范围、目录职责和上游独立更新方式见：[Git 与上游](docs/运维-Git与上游.md)。整个自研 QQ 机器人使用同一个主仓库，NTE 排行榜、帮助图和指令接管作为其中一个独立模块一起提交；`GsUID.Core` 和 UID 插件仓库只记录版本，不复制进主仓库。
 
-枝江直播日程防护、本地百科资料来源、配置和命令见：[枝江直播与百科资料说明](docs/枝江直播与百科资料说明.md)。
+枝江直播日程防护见：[枝江直播防护](docs/功能-枝江直播防护.md)；本地百科和梗库见：[本地知识库与梗库](docs/功能-本地知识库与梗库.md)。
 
 ## 群组任务范围
 
@@ -74,7 +74,7 @@ ws://127.0.0.1:8080/onebot/v11/ws
 
 普通 Python 代码更新只需双击 `启动工具\11-仅重启机器人.bat`，不会重启 NapCat 或 QQ。全部快捷入口见 [`启动工具/README.md`](启动工具/README.md)。QQ 若要求扫码、滑块或设备验证，仍需在弹出的 NapCat/QQ 窗口中手动完成。完整关闭只处理本次启动记录、已连接到本机 OneBot 端口或命令行明确匹配 `NAPCAT_QQ_ID` 的 QQ，不会调用 `NapCat.Shell\KillQQ.bat` 或关闭无法确认归属的其他 QQ。
 
-完整的 PowerShell 手动启动、测试、停止和故障排查流程见：[PowerShell 手动运行操作手册](docs/PowerShell手动运行操作手册.md)。
+完整的 PowerShell 手动启动、测试、停止和故障排查流程见：[安装与运行](docs/运维-安装与运行.md)。
 
 ```powershell
 .\scripts\start.ps1 -Foreground
@@ -242,7 +242,7 @@ A海岸实时统计已启用；QQ 群后台活跃概况采集仍保持关闭。�
 
 ## GenshinUID 游戏扩展
 
-完整的游戏插件命令、测试结论、维护和 AI/Token 说明见：[GenshinUID 游戏插件使用维护手册](docs/GenshinUID游戏插件使用维护手册.md)。
+完整的游戏插件命令、测试结论、维护和 AI/Token 说明见：[异环游戏接口](docs/功能-异环游戏接口.md)。
 
 按上游推荐架构，游戏功能由独立的 GenshinUID Core 进程承载，当前项目的 NoneBot 进程只负责 OneBot/QQ 接入和 Core 连接。首次安装或更新使用：
 

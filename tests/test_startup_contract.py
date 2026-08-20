@@ -62,3 +62,10 @@ def test_nonebot_background_logs_use_utf8():
     script = source("scripts/start.ps1")
     assert '$env:PYTHONUTF8 = "1"' in script
     assert '$env:PYTHONIOENCODING = "utf-8"' in script
+
+
+def test_batch_shortcuts_use_crlf_line_endings():
+    for path in (ROOT / "启动工具").glob("*.bat"):
+        content = path.read_bytes()
+        assert b"\r\n" in content
+        assert b"\n" not in content.replace(b"\r\n", b"")

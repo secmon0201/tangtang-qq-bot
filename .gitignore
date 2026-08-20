@@ -1,0 +1,58 @@
+# Python environments and generated metadata
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.eggs/
+*.egg-info/
+build/
+dist/
+*.spec.bak
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Codex/editor-local state
+.codex/
+.agents/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Runtime data, caches, generated reports, and backups
+data/
+logs/
+reports/
+downloads/
+backups/
+*.log
+
+# Downloaded executables and build tools
+tools/*.exe
+tools/*.dll
+
+# External runtimes and independently versioned upstream repositories
+GsUID.Core/
+NapCat.Shell/
+NapCat.Shell.backup-*/
+NapCat.Shell.previous-*/
+Lagrange.OneBot/
+Lagrange.OneBot.Patched/
+Lagrange.Core-v1-source/
+bilibili_api/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

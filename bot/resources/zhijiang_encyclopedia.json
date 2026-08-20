@@ -1,0 +1,437 @@
+[
+  {
+    "id": "project-profile",
+    "title": "A-SOUL 与枝江娱乐企划",
+    "summary": "A-SOUL 是乐华娱乐在 2020-11-23 公开的虚拟偶像女团企划。维基记录其主要在 Bilibili 开展直播活动；“枝江娱乐”是当前 B 站官方账号使用的虚拟艺人厂牌名称。",
+    "tags": ["A-SOUL", "枝江娱乐", "企划", "乐华", "Bilibili", "团体"],
+    "source_name": "一个魂维基 A-SOUL WIKI / A-SOUL 导航",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "粉丝维护百科；企划与账号信息应以官方公告为准。"
+  },
+  {
+    "id": "original-members",
+    "title": "初始五位成员",
+    "summary": "维基的团体介绍列出初始五位成员：向晚（Ava）、贝拉（Bella）、珈乐（Carol）、嘉然（Diana）和乃琳（Eileen）。",
+    "tags": ["成员", "向晚", "贝拉", "珈乐", "嘉然", "乃琳", "Ava", "Bella", "Carol", "Diana", "Eileen"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "此条记录的是初始团体构成，不对任何成员的现实身份作推断。",
+    "blocked": true
+  },
+  {
+    "id": "bella-profile",
+    "title": "贝拉（Bella）",
+    "summary": "维基角色介绍将贝拉描述为 A-SOUL 队长和舞蹈担当，并提到其早期曾提供舞蹈歌曲列表供粉丝选择。",
+    "tags": ["贝拉", "Bella", "拉姐", "贝极星", "队长", "舞蹈"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/member/bella/",
+    "source_note": "角色定位和粉丝称呼属于公开角色介绍与社群语境。"
+  },
+  {
+    "id": "carol-profile",
+    "title": "珈乐（Carol）",
+    "summary": "维基角色介绍将珈乐描述为 Vocal 担当。团体大事记录称，官方在 2022-05-10 公告其进入直播休眠状态；该条目仅记录公开时间线。",
+    "tags": ["珈乐", "Carol", "Vocal", "歌担", "休眠", "2022"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "涉及休眠的表述仅采用公开公告与百科记录，不扩展推测。",
+    "blocked": true
+  },
+  {
+    "id": "diana-profile",
+    "title": "嘉然（Diana）",
+    "summary": "维基角色介绍将嘉然描述为可爱、干饭与绘画相关的角色设定；词条还链接其 2020-12-12 的个人首播录播。",
+    "tags": ["嘉然", "Diana", "嘉心糖", "姑姑", "然比", "干饭", "绘画"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/member/diana/",
+    "source_note": "粉丝常用称呼和角色梗需放在社群语境中理解。"
+  },
+  {
+    "id": "eileen-profile",
+    "title": "乃琳（Eileen）",
+    "summary": "维基角色介绍将乃琳描述为知性御姐，在团播中常承担 MC 与控场工作，并以冷知识分享为角色特点；词条记录其 2021-01-09 个人首播。",
+    "tags": ["乃琳", "Eileen", "乃宝", "乃龙", "奶淇琳", "MC", "冷知识"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/member/eileen/",
+    "source_note": "角色描述来自粉丝百科的公开介绍。"
+  },
+  {
+    "id": "ava-profile",
+    "title": "向晚（Ava）",
+    "summary": "维基角色介绍将向晚描述为团内 Gamer。团体介绍记录其在 2024-04-19 后进入直播休眠状态；此条只保留公开的企划时间线。",
+    "tags": ["向晚", "Ava", "晚晚", "大魔王", "Gamer", "休眠", "2024"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/member/ava/",
+    "source_note": "涉及休眠只保留公开记录，不讨论或推断现实身份与原因。"
+  },
+  {
+    "id": "debut-timeline",
+    "title": "出道与早期直播时间线",
+    "summary": "维基时间线记录：2020-12-01 发布首支团曲《Quiet》；12-11 进行 Bilibili 首次团播；嘉然、向晚、贝拉、珈乐和乃琳的个人首播分别记录在 2020-12-12、12-16、12-24、12-27 与 2021-01-09。",
+    "tags": ["历史", "出道", "Quiet", "团播", "2020", "2021", "首播"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "时间线以维基所引公开视频、动态为线索；引用时建议回看对应官方内容。",
+    "blocked": true
+  },
+  {
+    "id": "fan-name-slogan",
+    "title": "“一个魂”与应援口号",
+    "summary": "维基记录，“一个魂”是 A-SOUL 的粉丝名，来源说明指向 2021-01-15 团播中的说法；页面同时列出应援口号“A-SOUL时代，沸腾期待！”，并说明其与《Quiet》歌词有关。",
+    "tags": ["一个魂", "粉丝名", "应援口号", "沸腾期待", "Quiet", "文化"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "属于社群文化和词源记录，避免将粉丝称呼套用到不自认同的个体。"
+  },
+  {
+    "id": "zhijiang-setting",
+    "title": "枝江与未来学园设定",
+    "summary": "维基转述的背景故事称，五名少女来自“未来学园（枝江大学/学园）”，因成为偶像的梦想相遇，并在名为“枝江”的虚拟城市中活动。页面同时明确指出官方世界观细节仍有限，因此该设定应视为公开介绍与社群整理，不应补充为确定事实。",
+    "tags": ["枝江", "世界观", "未来学园", "枝江大学", "设定", "虚拟城市"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/zhijiang/",
+    "source_note": "世界观细节不完整；本地检索会保留这一不确定性。"
+  },
+  {
+    "id": "public-timeline-2021-2022",
+    "title": "公开企划大事：2021 至 2022",
+    "summary": "维基时间线记录 2021-04-30 发布《超级敏感》、2021-12-11 一周年直播《传说的世界》；2022 年记录了冬奥会“集光之夜”、Bilibili 拜年纪《除夕》、Pico 合作与二周年直播等公开活动。",
+    "tags": ["历史", "超级敏感", "传说的世界", "除夕", "Pico", "二周年", "2021", "2022"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "这是精选公开时间线，不替代完整年表。"
+  },
+  {
+    "id": "public-timeline-2023",
+    "title": "公开企划大事：2023",
+    "summary": "维基年表记录：2023-06-23 举办《A-SOUL夏日漫游VR歌会》；09-29 公布中文团名“灵境少女”；12-10 举办三周年直播《绽放吧！世界！》；12-29 在广州举行“才八点派对”城市巡演首站，词条称其为首场演唱会。",
+    "tags": ["历史", "2023", "灵境少女", "VR歌会", "三周年", "绽放吧世界", "才八点派对", "广州"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "按粉丝维基的公开年表摘录，活动名称和日期应以官方原始公告复核。"
+  },
+  {
+    "id": "public-timeline-2024",
+    "title": "公开企划大事：2024",
+    "summary": "维基年表记录：2024-08-11《枝江综艺》第一期“厉害了我的枝江！”中，A-SOUL 与师妹心宜、思诺同台直播；12-21 举办四周年纪念直播《冬日奇迹》，次日上线同名纪念 EP；12-29 在北京、上海、广州三地举办新年演唱会。",
+    "tags": ["历史", "2024", "枝江综艺", "心宜", "思诺", "四周年", "冬日奇迹", "新年演唱会"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "心宜、思诺在此条中仅按来源描述为同台的师妹角色，不外推团体隶属关系。"
+  },
+  {
+    "id": "public-timeline-2025",
+    "title": "公开企划大事：2025",
+    "summary": "维基年表记录：2025-05-24 “魔法时间·夏日”线下演唱会在北京、上海、广州、成都四地举办；08 至 11 月先后记录了嘉然、贝拉、乃琳的个人线下专场；12-20 举办五周年纪念直播《锚定黎明》。",
+    "tags": ["历史", "2025", "魔法时间", "夏日", "五周年", "锚定黎明", "线下演唱会"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "“魔法时间·夏日”页面标注为线下活动，不会被直播防护当作 Bilibili 开播。"
+  },
+  {
+    "id": "timeline-usage-boundary",
+    "title": "本地年表的使用边界",
+    "summary": "本地百科把公开时间线用于检索和回答“何时发生过什么”活动，不把粉丝页面中的评论性、立场性或未能回溯到公告的内容当作事实结论。与直播有关的自动化只读取独立日程 JSON 的日期、时间和 Bilibili 直播间地址。",
+    "tags": ["资料来源", "事实边界", "年表", "官方公告", "日程", "直播防护"],
+    "source_name": "A-SOUL 导航 / 一个魂维基 / ASoul-Calendar 数据格式",
+    "source_url": "https://nav.asoul.us.kg/",
+    "source_note": "该条是机器人本地资料策略，用于避免把社群讨论当作可自动执行的事实。"
+  },
+  {
+    "id": "current-calendar-members",
+    "title": "当前日程源覆盖的直播角色",
+    "summary": "ASoul-Calendar 使用的公开基础日程数据当前将贝拉、嘉然、乃琳、心宜、思诺，以及 A-SOUL、小心思等分类列为直播日程类别。机器人只把存在 Bilibili 直播间地址且精确到分钟的项目用于小游戏防护。",
+    "tags": ["日程", "直播", "心宜", "思诺", "小心思", "贝拉", "嘉然", "乃琳"],
+    "source_name": "Evelynall/ASoul-Data",
+    "source_url": "https://github.com/Evelynall/ASoul-Data/blob/main/base-schedules.json",
+    "source_note": "这是日程分类，不将其自动解释为所有角色的团体隶属关系。"
+  },
+  {
+    "id": "zhijiang-entertainment",
+    "title": "枝江娱乐（Z.J. ENTERTAINMENT）",
+    "summary": "萌娘百科记录，枝江娱乐于 2022-12-09 由“小黑”宣布成立，定位为 A-SOUL 的运营事务所与虚拟 UP 主组织；Logo 为 Z 与 J 的合写并融入 A-SOUL 吉祥物阿草的形象。2023-04-22 官方账号建号并发布“闪耀舞台”招募计划，同年 7 月推出 AI 主播阿花。企划期数上，一期生为 A-SOUL（灵境少女），二期生为“闪耀舞台”（小心思），三期生为“银河商店”；此后枝江娱乐官号承担包含 A-SOUL 在内主播的直播预告，QA 也从 A-SOUL 制作委员会的双周 QA 改为每月 QA。",
+    "tags": ["枝江娱乐", "Z.J.ENTERTAINMENT", "运营", "事务所", "闪耀舞台", "阿花", "小黑", "虚拟UP主"],
+    "source_name": "萌娘百科 枝江娱乐",
+    "source_url": "https://zh.moegirl.org.cn/%E6%9E%9D%E6%B1%9F%E5%A8%B1%E4%B9%90",
+    "source_note": "萌娘百科为粉丝维护的资料站，组织沿革以官方公告为准。"
+  },
+  {
+    "id": "shining-stage",
+    "title": "枝江娱乐企划二期生“闪耀舞台”",
+    "summary": "枝江娱乐企划的一期生是 A-SOUL（灵境少女），二期生是“闪耀舞台”：2023-04-22 开启招募，基于 A-SOUL 的枝江世界观选拔新人，2023-10 心宜（Fiona）、思诺（Gladys）以“小心思”组合开始活动。两人的英文名与 A-SOUL 成员开头字母一脉相承：Ava、Bella、Carol、Diana、Eileen、Fiona、Gladys。",
+    "tags": ["闪耀舞台", "二期生", "小心思", "心宜", "思诺", "Fiona", "Gladys", "招募", "枝江世界观"],
+    "source_name": "萌娘百科 枝江娱乐",
+    "source_url": "https://zh.moegirl.org.cn/%E6%9E%9D%E6%B1%9F%E5%A8%B1%E4%B9%90",
+    "source_note": "“二期生”指枝江娱乐企划的期数：一期生灵境少女（A-SOUL）、二期生闪耀舞台（小心思）、三期生银河商店。",
+    "blocked": true
+  },
+  {
+    "id": "galaxy-store",
+    "title": "枝江娱乐企划三期生“银河商店”",
+    "summary": "萌娘百科记录，2024-07-29 枝江娱乐官宣“银河商店”企划，作为枝江娱乐企划三期生，首名成员为来芙（Laffey）。此条只记录公开企划名称与时间线，不扩展其与其他成员的隶属关系。",
+    "tags": ["银河商店", "三期生", "来芙", "Laffey", "企划", "2024"],
+    "source_name": "萌娘百科 来芙 / 枝江娱乐模板",
+    "source_url": "https://zh.moegirl.org.cn/%E6%9D%A5%E8%8A%99",
+    "source_note": "粉丝维护百科；企划详情以官方发布为准。"
+  },
+  {
+    "id": "fiona-profile",
+    "title": "心宜（Fiona）",
+    "summary": "萌娘百科介绍，心宜于 2023-10-15 与思诺进行双人首播后开始活动，隶属枝江娱乐企划二期生“闪耀舞台”（小心思）；设定在枝江大学播音系，性格活泼、行动力强，直播以杂谈为主。因给队友大力鼓掌打 call 得名“小海豹”，也常被称为“枝江小太阳”；舞蹈力度强且擅长多地方言，粉丝名为心球仪。2023-11-12 生日会首次开口唱歌，与思诺表演《贝加尔湖畔》钢琴弹唱并达成个人千舰。",
+    "tags": ["心宜", "Fiona", "心球仪", "小海豹", "小太阳", "闪耀舞台", "舞蹈", "直播", "虚拟UP主"],
+    "source_name": "萌娘百科 心宜",
+    "source_url": "https://zh.moegirl.org.cn/%E5%BF%83%E5%AE%9C",
+    "source_note": "角色人设与粉丝称呼来自粉丝维护百科，属于公开角色介绍与社群语境。"
+  },
+  {
+    "id": "gladys-profile",
+    "title": "思诺（Gladys）",
+    "summary": "萌娘百科介绍，思诺于 2023-10-15 与心宜进行双人首播后开始活动，隶属枝江娱乐企划二期生“闪耀舞台”（小心思）；设定在枝江大学音乐系，声乐科班出身，常在直播中分享声乐知识，直播以歌回和杂谈为主。因演唱风格被戏称“枝江邓紫棋”，粉丝名为小海诺；不擅长跳舞，与心宜“舞蹈篇/声乐篇”的互相教学常被粉丝戏称“包办婚姻”。",
+    "tags": ["思诺", "Gladys", "小海诺", "大狮子", "枝江邓紫棋", "声乐", "闪耀舞台", "歌回", "虚拟UP主"],
+    "source_name": "萌娘百科 思诺",
+    "source_url": "https://zh.moegirl.org.cn/%E6%80%9D%E8%AF%BA",
+    "source_note": "角色人设与粉丝称呼来自粉丝维护百科，属于公开角色介绍与社群语境。"
+  },
+  {
+    "id": "xiaoxinsi",
+    "title": "小心思＝闪耀舞台（心宜×思诺）",
+    "summary": "“小心思”是心宜与思诺组合的称呼，也就是枝江娱乐企划二期生“闪耀舞台”本身：2023-10-15 双人首播出道，常共同直播、投稿与合作节目（如“新春小课堂”“有点‘宜思’”），该词有时也指同时喜欢两人的观众。萌娘百科明确标注此称呼属于粉丝语境。",
+    "tags": ["小心思", "闪耀舞台", "二期生", "心宜", "思诺", "组合", "有点宜思", "新春小课堂"],
+    "source_name": "萌娘百科 心宜 / 思诺",
+    "source_url": "https://zh.moegirl.org.cn/%E5%BF%83%E5%AE%9C",
+    "source_note": "组合称呼与二创语境，不作官方关系设定。"
+  },
+  {
+    "id": "acaocao",
+    "title": "阿草（A-SOUL 吉祥物）",
+    "summary": "萌娘百科记录，阿草是 A-SOUL 官方的迷之生物，设定最初为嘉然的宠物，后成为团体吉祥物；形象常被误认为羊驼，也有雪貂的说法。成员有时会套阿草的皮，用不同蝴蝶结颜色区分（浅蓝向晚、橙色贝拉、紫色珈乐、黄色嘉然、深蓝乃琳）；黑皮阿草“小黑”（尼驼）负责官方二创与社群二创活动。粉丝也常用“阿草/驼子”指代官方运营或工具人。",
+    "tags": ["阿草", "吉祥物", "羊驼", "小黑", "尼驼", "工具人", "嘉然", "二创"],
+    "source_name": "萌娘百科 A-SOUL",
+    "source_url": "https://zh.moegirl.org.cn/A-SOUL",
+    "source_note": "阿草的官方角色设定与“工具人”的社群称呼并存，使用时应区分语境。",
+    "blocked": true
+  },
+  {
+    "id": "chinese-group-name",
+    "title": "中文团名“灵境少女”",
+    "summary": "一个魂维基与萌娘百科记录，A-SOUL 于 2023-09-29 中秋特别直播中公布中文团名“灵境少女”；官方账号此后常以“A-SOUL·灵境少女”称呼团体。",
+    "tags": ["灵境少女", "中文团名", "A-SOUL", "2023", "中秋"],
+    "source_name": "一个魂维基 / 萌娘百科",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "公开命名事件，来自粉丝百科整理。"
+  },
+  {
+    "id": "group-songs",
+    "title": "A-SOUL 团曲与专辑作品",
+    "summary": "公开作品记录：出道团曲《Quiet》（2020-12-02）、《超级敏感》（2021-04-30）、《传说的世界》（2021-12-17，许嵩作曲、方文山作词）、《除夕》（2022-02-03，B站拜年纪）；EP《共鸣 Re-sonance（上）》（2022-12-08）与《绽放 Bloom（下）》（2023-12-11）；四周年纪念 EP《冬日奇迹 Miracle In Winter》（2024-12-22 上线）；五周年直播《锚定黎明》发布新单曲《请快乐！/HA!HA!HAPPY》《一起跳起来》《四季的心动》。涉及旧成员阵容的初始版本已无法复刻，现行引用以三人组或新五人组的新演绎为准（参见版本覆盖词条）。",
+    "tags": ["音乐", "Quiet", "超级敏感", "传说的世界", "除夕", "Re-sonance", "绽放", "冬日奇迹", "锚定黎明", "单曲"],
+    "source_name": "萌娘百科 A-SOUL / 一个魂维基",
+    "source_url": "https://zh.moegirl.org.cn/A-SOUL",
+    "source_note": "作品名称与日期按公开百科整理，正式引用建议回看官方发布。"
+  },
+  {
+    "id": "member-singles",
+    "title": "成员个人单曲",
+    "summary": "一期成员个人单曲公开记录：嘉然《Hopeful Dreamer》（2021-04）、向晚《Secret Player》（2021-07）、贝拉《Shiny Dancer》（2021-09）、乃琳《Sweet Counter》（2021-12）、珈乐《Wandering Singer》（2022-04）；2025 五周年直播中贝拉《一起跳起来》、嘉然《请快乐！/HA!HA!HAPPY》、乃琳《四季的心动》作为新单曲公开。",
+    "tags": ["音乐", "Hopeful Dreamer", "Secret Player", "Shiny Dancer", "Sweet Counter", "Wandering Singer", "嘉然", "贝拉", "乃琳", "单曲"],
+    "source_name": "萌娘百科 A-SOUL / 一个魂维基",
+    "source_url": "https://zh.moegirl.org.cn/A-SOUL",
+    "source_note": "收录公开单曲名称与日期，不做作品评价。",
+    "blocked": true
+  },
+  {
+    "id": "fan-name-glossary",
+    "title": "一个魂与成员粉丝名",
+    "summary": "“一个魂”为 A-SOUL 官方粉丝名，出自 2021-01-15 团播；成员粉丝名：向晚“顶碗人”、贝拉“贝极星”、珈乐“皇珈骑士”、嘉然“嘉心糖”、乃琳“奶淇琳”；枝江娱乐企划二期生“闪耀舞台”（小心思）的心宜粉丝名“心球仪”、思诺粉丝名“小海诺”。应援口号“A-SOUL时代，沸腾期待！”出自出道曲《Quiet》歌词。",
+    "tags": ["一个魂", "顶碗人", "贝极星", "皇珈骑士", "嘉心糖", "奶淇琳", "心球仪", "小海诺", "粉丝名"],
+    "source_name": "萌娘百科 A-SOUL / 心宜 / 思诺",
+    "source_url": "https://zh.moegirl.org.cn/A-SOUL",
+    "source_note": "粉丝名属于社群文化记录，避免套用到不自认同的个体。",
+    "blocked": true
+  },
+  {
+    "id": "official-accounts",
+    "title": "官方账号与成员账号",
+    "summary": "公开账号记录：B站团体官号 A-SOUL_Official，枝江娱乐官号承担直播预告与每月 QA；成员 B站账号分别为向晚大魔王、贝拉kira、珈乐Carol、嘉然今天吃什么、乃琳Queen；枝江娱乐企划二期生“闪耀舞台”（小心思）成员为心宜“心宜不是心仪”、思诺“思诺snow”。抖音平台自 2021-11-30 起个人短视频转至新 IP 账号 A-SOUL 脑洞波。",
+    "tags": ["账号", "Bilibili", "抖音", "A-SOUL_Official", "枝江娱乐", "心宜不是心仪", "思诺snow"],
+    "source_name": "一个魂维基 / 萌娘百科",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "账号名可能随官方调整，以官方页面为准。",
+    "blocked": true
+  },
+  {
+    "id": "current-formation-2026",
+    "title": "当前活动成员构成（截至 2026）",
+    "summary": "截至 2026 年中，A-SOUL 现役成员为贝拉、嘉然、乃琳；珈乐于 2022-05-10 进入直播休眠，向晚于 2024-04-19 无限期停止活动；枝江娱乐企划二期生“闪耀舞台”（小心思）心宜、思诺仍活动中。该条只反映公开时间线，不推断现实身份。",
+    "tags": ["成员", "现役", "贝拉", "嘉然", "乃琳", "心宜", "思诺", "2026", "活动状态"],
+    "source_name": "一个魂维基 / 萌娘百科",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "活动状态随时间变化，以官方公告为准。",
+    "blocked": true
+  },
+  {
+    "id": "wuwaves-livestreams",
+    "title": "成员直播《鸣潮》时间线",
+    "summary": "一个魂维基记录：乃琳 2025-12-09 开始直播《鸣潮》，带来一波热度并带动 A-SOUL 出圈与老粉回流；2026-02-03 嘉然直播 9 小时通关鸣潮 1.0 主线；2026-02-11 乃琳直播鸣潮 3.1 时粉丝突破 100 万；2026-06-09 贝拉首播鸣潮 3.4“边缘行者”联动剧情，因晕 3D 提前准备晕车药；2026-03-28 乃琳单人专场宣传海报出现“特别鸣谢 鸣潮”。",
+    "tags": ["鸣潮", "直播", "乃琳", "嘉然", "贝拉", "2025", "2026", "游戏"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "直播时间线来自粉丝维基整理，具体内容以官方直播与公告为准。",
+  "related_ids": [
+    "mingchao/zj-nailin-wuwaves",
+    "mingchao/zj-nailin-3point1",
+    "mingchao/zj-jialan-9hours",
+    "mingchao/zj-bella-yun3d",
+    "mingchao/zj-tebie-mingxie",
+    "mingchao/zj-chaoyou"
+  ]
+  },
+  {
+    "id": "timeline-2026",
+    "title": "公开企划大事：2026（截至 7 月）",
+    "summary": "一个魂维基 2026 年时间线记录：1 月贝拉粉丝数突破历史新高并接明日方舟：终末地商单；2 月嘉然直播鸣潮 1.0、乃琳直播鸣潮 3.1 破百万粉；3 月嘉然生日会“以爱之名”获约 14000 舰长，乃琳单人专场“幻变梦境”、4 月贝拉单人专场“在月光下加冕”、6 月嘉然单人专场“然有引力”；7 月 A-SOUL 参加 BML-PLAY! 2026，贝拉生日会举行。",
+    "tags": ["历史", "2026", "鸣潮", "生日会", "单人专场", "BML", "贝拉", "嘉然", "乃琳"],
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "截至 2026-07 的精选公开时间线，持续更新中。",
+  "related_ids": [
+    "mingchao/zj-nailin-3point1",
+    "mingchao/zj-jialan-birthday",
+    "mingchao/zj-tebie-mingxie",
+    "mingchao/zj-chaoyou"
+  ]
+  },
+  {
+    "id": "xinyi-sinuo-timeline",
+    "title": "心宜与思诺公开时间线（2023-2024）",
+    "summary": "公开时间线记录：2023-10-15 双人首播“枝江！我们来啦！！”，随后两人先后单人首播；2023-11-12 心宜生日会与思诺表演《贝加尔湖畔》钢琴弹唱并达成个人千舰；2024-02-11 发布“新春小课堂”舞蹈篇与声乐篇；2024-03-03 双人歌回“来点不一样的双人小对唱”；此后推出两人合作综艺“有点‘宜思’”。",
+    "tags": ["时间线", "心宜", "思诺", "双人首播", "生日会", "新春小课堂", "有点宜思", "2023", "2024"],
+    "source_name": "萌娘百科 心宜 / 思诺",
+    "source_url": "https://zh.moegirl.org.cn/%E5%BF%83%E5%AE%9C",
+    "source_note": "精选公开直播与投稿时间线，不替代完整年表。"
+  },
+  {
+    "id": "zhijiang-city-origin",
+    "title": "枝江与“之江/杭州”的关联",
+    "summary": "萌娘百科记录，A-SOUL 世界观中的虚拟城市“枝江”一般认为以企划驻地杭州为原型（与“之江”同音，“枝江大学”疑与“浙江大学”同声母谐音）；设定与现实中的湖北省枝江市无关，粉丝二创中常故意将两者混用进行圣地巡礼等创作。",
+    "tags": ["枝江", "杭州", "之江", "浙江大学", "城市原型", "世界观", "二创"],
+    "source_name": "萌娘百科 A-SOUL",
+    "source_url": "https://zh.moegirl.org.cn/A-SOUL",
+    "source_note": "城市原型属于社群整理，不作为官方确定设定。"
+  },
+  {
+    "id": "black-meme-response-rules",
+    "title": "枝江黑梗应对规则（不装傻、不谈、不评价）",
+    "summary": "涉及被屏蔽的旧成员相关提问时，不装傻，也不展开，用类似“不谈这个fifa人物”的口吻回应，台词由模型自然表达，原则固定：不解释、不输出历史细节；涉及李滇滇时用类似“人各有志，各自安好”的话回应，不评价个人选择。该规则由本地聊天逻辑强制注入提示词，本词条用于保持一致口径。",
+    "tags": ["黑梗", "应对规则", "不谈", "人各有志", "fifa"],
+    "source_name": "用户定义规则",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "本地行为规则词条，非百科事实。"
+  },
+  {
+    "id": "black-meme-duwei",
+    "title": "黑话“毒唯”词义与态度",
+    "summary": "毒唯是网络流行语（缩写 dw），指只喜欢偶像团体中一位成员且厌恶其他成员、行为狂热的粉丝；枝江社区常以此指代极端唯粉和对立言论。可解释公开词义，但以否定态度表态：不支持饭圈对立、不站队、不评价具体个人。",
+    "tags": ["毒唯", "dw", "黑话", "唯粉", "态度"],
+    "source_name": "百度贴吧 asoul吧 / 微博科普文",
+    "source_url": "https://tieba.baidu.com/p/7461777372",
+    "source_note": "黑话词义来源。"
+  },
+  {
+    "id": "black-meme-famous-weifen",
+    "title": "黑话“著名唯粉”词义与态度",
+    "summary": "“著名唯粉”是枝江社区对以单推某位成员著称、常参与粉丝舆论的粉丝或粉头的称呼；相关讨论多伴随团推与唯粉对立。按“不了解、不评价个人”处理，不扩散称呼对应的攻击性内容。",
+    "tags": ["著名唯粉", "黑话", "唯粉", "态度"],
+    "source_name": "知乎相关回答 / 贴吧讨论",
+    "source_url": "https://www.zhihu.com/question/533481084",
+    "source_note": "社区语境。"
+  },
+  {
+    "id": "black-meme-community-stance",
+    "title": "枝江社区黑话总原则",
+    "summary": "对毒唯、著名唯粉、单推与团推对立等贴吧与社区黑话，可解释词义，但以否定态度表态或直接不接：不站队、不传播人身攻击、不参与粉丝内战。",
+    "tags": ["黑话", "毒唯", "唯粉", "总原则", "不站队"],
+    "source_name": "用户定义规则",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "本地行为规则词条。"
+  },
+  {
+    "id": "lidian-dian-response-rule",
+    "title": "李滇滇相关话题应对",
+    "summary": "李滇滇是枝江社区相关节奏中出现的 B 站 up 主；涉及她的提问用类似“人各有志，各自安好”的话回应，台词由模型自然表达，不评价其个人选择、不扩散节奏细节。",
+    "tags": ["李滇滇", "人各有志", "应对", "节奏"],
+    "source_name": "贴吧讨论",
+    "source_url": "https://tieba.baidu.com/p/9446481896",
+    "source_note": "仅记录应对口径。"
+  },
+  {
+    "id": "song-version-rule",
+    "title": "老团曲版本覆盖原则",
+    "summary": "涉及已停止活动成员的五人曲或四人曲，最初版本已无法复刻；引用时一律以现役三人组（贝拉、嘉然、乃琳）或枝江娱乐新五人组（含心宜、思诺）的新演绎为准。若本地未检索到新版本，明说未检索到，不推荐旧版、不向用户复述旧版阵容。",
+    "tags": ["老团曲", "版本覆盖", "三人组", "新五人组", "规则"],
+    "source_name": "用户定义规则",
+    "source_url": "https://www.bilibili.com/video/BV1QRq6BtEwx/",
+    "source_note": "本地行为规则词条。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-quiet-current-version",
+    "title": "《Quiet》现行演绎（三人组）",
+    "summary": "《Quiet》为 A-SOUL 出道团曲（2020-12-02 发行，原版为五人演绎）。现行引用版本以 2025-12-20 五周年纪念直播团舞串烧中贝拉、嘉然、乃琳三人演绎为准（B 站官方直播录像 BV1QRq6BtEwx）。",
+    "tags": ["Quiet", "出道曲", "三人组", "五周年", "2025"],
+    "source_name": "B站官方五周年直播录像",
+    "source_url": "https://www.bilibili.com/video/BV1QRq6BtEwx/",
+    "source_note": "现行版本以官方直播三人演绎为准。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-chaomin-gan-current-version",
+    "title": "《超级敏感》现行演绎（三人组）",
+    "summary": "《超级敏感》（2021-04-30）现行引用以三人组演绎为准：2025-12-20 五周年直播团舞串烧、2025-07-12 前后 B 站三人版音源舞蹈视频（BV1kFuczyEnM）均有三人组版本；2026-07-10 BW 鸣潮展台环节三人合唱鸣潮改词版（BV1AXNx6hEYd）。",
+    "tags": ["超级敏感", "三人组", "五周年", "BW", "2026"],
+    "source_name": "B站官方直播录像 / 现场录像",
+    "source_url": "https://www.bilibili.com/video/BV1kFuczyEnM/",
+    "source_note": "现行版本以三人演绎为准。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-chuxi-current-version",
+    "title": "《除夕》现行演绎（三人组）",
+    "summary": "《除夕》为 A-SOUL 与音阙诗听合作的虎年贺岁团曲（2022-01-31 首登 B 站拜年纪）。现行引用以三人组演绎为准：2025-01-25 团体歌舞合集（BV16cffYWEs5）与 2025-12-20 五周年直播串烧中均有三人组版本。",
+    "tags": ["除夕", "三人组", "拜年纪", "2025"],
+    "source_name": "B站团体歌舞合集",
+    "source_url": "https://www.bilibili.com/video/BV16cffYWEs5/",
+    "source_note": "现行版本以三人演绎为准。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-chuanshuo-shijie-current-version",
+    "title": "《传说的世界》现行演绎（三人组）",
+    "summary": "《传说的世界》（2021-12-17，许嵩作曲、方文山作词）现行引用以三人组演绎为准：2024-12-29 新年演唱会北京场线下直拍（BV1xv6uYGE4B）、2025-01-25 团体歌舞合集（BV16cffYWEs5），以及 2026-07-10 团播“A手演义”歌舞合集（BV1ShNJ6HEFL）。",
+    "tags": ["传说的世界", "三人组", "许嵩", "方文山", "新年演唱会"],
+    "source_name": "B站线下直拍 / 团播合集",
+    "source_url": "https://www.bilibili.com/video/BV1xv6uYGE4B/",
+    "source_note": "现行版本以三人演绎为准。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-other-old-repertoire-current",
+    "title": "其他老团曲现行演绎（Re-sonance/绽放/Snow Dancing）",
+    "summary": "《Re-sonance》《绽放》《Snow Dancing》等老团曲的现行引用以 2025-12-20 五周年纪念直播团舞串烧（BV1QRq6BtEwx）中贝拉、嘉然、乃琳三人演绎为参考版本。",
+    "tags": ["Re-sonance", "绽放", "Snow Dancing", "三人组", "五周年"],
+    "source_name": "B站官方五周年直播录像",
+    "source_url": "https://www.bilibili.com/video/BV1QRq6BtEwx/",
+    "source_note": "现行版本以三人演绎为准。",
+    "related_ids": ["zhijiang/group-songs"]
+  },
+  {
+    "id": "song-new-five-member-status",
+    "title": "新五人组老歌版本检索状态",
+    "summary": "截至 2026-08-09，未检索到枝江娱乐官方发布的心宜、思诺加入后的五人老团曲翻唱或重制版；后续如官方发布，以 A-SOUL_Official 与成员官方账号（贝拉kira、嘉然今天吃什么、乃琳Queen、心宜不是心仪、思诺snow）发布内容为准。",
+    "tags": ["新五人组", "老歌", "检索状态", "2026", "官方账号"],
+    "source_name": "B站官方账号检索",
+    "source_url": "https://space.bilibili.com/672328094/",
+    "source_note": "未检索到时的说明口径。",
+    "related_ids": ["zhijiang/group-songs"]
+  }
+]

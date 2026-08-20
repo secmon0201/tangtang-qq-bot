@@ -1,0 +1,182 @@
+param(
+    [switch]$SkipDependencies,
+    [switch]$SkipRepositorySync
+)
+
+$ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $PSScriptRoot
+$CoreDir = Join-Path $Root "GsUID.Core"
+$PluginsDir = Join-Path $CoreDir "gsuid_core\plugins"
+$Python = Join-Path $Root ".venv\Scripts\python.exe"
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+function Write-Utf8NoBom {
+    param(
+        [string]$Path,
+        [string]$Value
+    )
+    [System.IO.File]::WriteAllText($Path, $Value, $Utf8NoBom)
+}
+
+if (-not (Test-Path -LiteralPath $Python)) {
+    throw "The project virtual environment was not found: $Python"
+}
+
+function Sync-Repository {
+    param(
+        [string]$Url,
+        [string]$Path,
+        [string]$Branch = ""
+    )
+    if (Test-Path -LiteralPath (Join-Path $Path ".git")) {
+        Write-Host "Updating $Path"
+        $dirty = @(git -C $Path status --porcelain --untracked-files=no)
+        if ($dirty.Count -gt 0) {
+            throw "Local changes found in upstream repository $Path. Keep adapters in the QQ bot repository before updating."
+        }
+
+        & git -C $Path pull --ff-only
+        $pullExitCode = $LASTEXITCODE
+        if ($pullExitCode -ne 0) {
+            throw "Could not fast-forward $Path (exit code $pullExitCode)."
+        }
+        return
+    }
+    if (Test-Path -LiteralPath $Path) {
+        throw "Path exists but is not a git repository: $Path"
+    }
+    $parent = Split-Path -Parent $Path
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Write-Host "Cloning $Url"
+    if ($Branch) {
+        & git clone --depth 1 --single-branch --branch $Branch $Url $Path
+    } else {
+        & git clone --depth 1 --single-branch $Url $Path
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not clone $Url"
+    }
+}
+
+if (-not $SkipRepositorySync) {
+    Sync-Repository "https://github.com/Genshin-bots/gsuid_core.git" $CoreDir
+    Sync-Repository "https://github.com/KimigaiiWuyi/GenshinUID.git" (Join-Path $PluginsDir "GenshinUID")
+    Sync-Repository "https://github.com/Loping151/XutheringWavesUID.git" (Join-Path $PluginsDir "XutheringWavesUID")
+    Sync-Repository "https://github.com/tyql688/NTEUID.git" (Join-Path $PluginsDir "NTEUID")
+    & $Python (Join-Path $PSScriptRoot "validate_upstream_lock.py") --write
+    if ($LASTEXITCODE -ne 0) { throw "Could not refresh the upstream lock file." }
+}
+
+if (-not $SkipDependencies) {
+    Write-Host "Installing GenshinUID Core dependencies"
+    & $Python -m pip install -e $CoreDir
+    if ($LASTEXITCODE -ne 0) { throw "GenshinUID Core dependency installation failed" }
+    Write-Host "Installing the official NoneBot2 Core connector"
+    & $Python -m pip install -e "$Root[gsuid]"
+    if ($LASTEXITCODE -ne 0) { throw "NoneBot2 Core connector installation failed" }
+}
+
+$envPath = Join-Path $Root ".env"
+if (Test-Path -LiteralPath $envPath) {
+    $content = Get-Content -LiteralPath $envPath -Encoding UTF8
+    $updates = @{
+        "GSUID_ENABLED" = "true"
+        "GSUID_CORE_DIR" = "GsUID.Core"
+        "gsuid_core_host" = "127.0.0.1"
+        "gsuid_core_port" = "8765"
+        "gsuid_core_botid" = "QQLocalDataBot"
+    }
+    foreach ($key in $updates.Keys) {
+        $found = $false
+        $content = @($content | ForEach-Object {
+            if ($_ -match "^\s*${key}=") {
+                $found = $true
+                "${key}=$($updates[$key])"
+            } else {
+                $_
+            }
+        })
+        if (-not $found) { $content += "${key}=$($updates[$key])" }
+    }
+    Write-Utf8NoBom $envPath ($content -join [Environment]::NewLine)
+}
+
+$coreData = Join-Path $CoreDir "data"
+$coreConfig = Join-Path $coreData "config.json"
+if (-not (Test-Path -LiteralPath $coreConfig)) {
+    New-Item -ItemType Directory -Force -Path $coreData | Out-Null
+    $operatorLine = Get-Content -LiteralPath $envPath -Encoding UTF8 -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match '^BOT_OPERATOR_IDS=' } | Select-Object -First 1
+    $masters = @()
+    if ($operatorLine) {
+        $masters = @((($operatorLine -split '=', 2)[1] -split ',') | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+    }
+    $json = [ordered]@{
+        HOST = "127.0.0.1"
+        PORT = "8765"
+        ENABLE_HTTP = $false
+        WS_TOKEN = ""
+        TRUSTED_IPS = @("localhost", "::1", "127.0.0.1")
+        masters = $masters
+        superusers = @()
+        command_start = @()
+        sv = @{}
+    } | ConvertTo-Json -Depth 8
+    Write-Utf8NoBom $coreConfig $json
+}
+
+# Keep Core's master list aligned with the project's operator allowlist.
+$coreSettings = Get-Content -LiteralPath $coreConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+$operatorLine = Get-Content -LiteralPath $envPath -Encoding UTF8 -ErrorAction SilentlyContinue |
+    Where-Object { $_ -match '^BOT_OPERATOR_IDS=' } | Select-Object -First 1
+$coreMasters = @()
+if ($operatorLine) {
+    $coreMasters = @((($operatorLine -split '=', 2)[1] -split ',') |
+        Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() })
+}
+$coreSettings.masters = $coreMasters
+$coreSettingsJson = $coreSettings | ConvertTo-Json -Depth 20
+Write-Utf8NoBom $coreConfig $coreSettingsJson
+
+# Resource updates can ask GsUID Core to restart itself. The upstream default
+# uses the system `python`, while this project installs Core into .venv.
+$corePluginConfigDir = Join-Path $coreData "configs"
+$corePluginConfig = Join-Path $corePluginConfigDir "core_config.json"
+New-Item -ItemType Directory -Force -Path $corePluginConfigDir | Out-Null
+$restartConfig = [ordered]@{}
+if (Test-Path -LiteralPath $corePluginConfig) {
+    $storedConfig = Get-Content -LiteralPath $corePluginConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($property in $storedConfig.PSObject.Properties) {
+        $restartConfig[$property.Name] = $property.Value
+    }
+}
+if (-not $restartConfig.Contains("is_use_custom_restart_command")) {
+    $restartConfig["is_use_custom_restart_command"] = [ordered]@{
+        type = "GsBoolConfig"
+        title = "Use project virtualenv for Core restart"
+        desc = "Keep Core restarts inside the project virtual environment"
+        data = $true
+        secret = $false
+    }
+}
+if (-not $restartConfig.Contains("restart_command")) {
+    $restartConfig["restart_command"] = [ordered]@{
+        type = "GsStrConfig"
+        title = "Core restart command"
+        desc = "Project-managed Core restart command"
+        data = ""
+        options = @()
+        regex = $null
+        details = $null
+        secret = $false
+    }
+}
+$restartConfig["is_use_custom_restart_command"].data = $true
+$coreRunner = Join-Path $Root "scripts\run_gsuid_core.py"
+$restartConfig["restart_command"].data = '"' + $Python + '" -u "' + $coreRunner + '"'
+$restartJson = $restartConfig | ConvertTo-Json -Depth 20
+Write-Utf8NoBom $corePluginConfig $restartJson
+
+Write-Host "GenshinUID ecosystem installed under: $CoreDir"
+Write-Host "Start Core first with: .\scripts\start_gsuid_core.ps1"
+Write-Host "Then restart the normal QQ bot process."

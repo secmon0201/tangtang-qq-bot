@@ -1,0 +1,391 @@
+[
+  {
+    "id": "wuwa-rover-names",
+    "title": "漂泊者与主角代称",
+    "summary": "《鸣潮》主角通用称呼为“漂泊者”，玩家社区常简称“爷”“漂子”；不同属性的形态分别叫光主（衍射）、暗主（湮灭）、风主（气动）。",
+    "tags": ["漂泊者", "爷", "漂子", "光主", "暗主", "风主", "主角", "称呼"],
+    "category": "game",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "玩家社区代称，属于公开社群语境。"
+  },
+  {
+    "id": "wuwa-character-nicknames",
+    "title": "鸣潮角色代称合集",
+    "summary": "萌娘百科收录的常用角色代称：安可“羊咩”、鉴心“小道士”、长离“离妃”、今汐“小汐子”、吟霖“女特务”、布兰特“船长”、珂莱塔“小土豆”、卡提希娅“小卡/大卡”、坎特蕾拉“水母姐/家主大人”、露帕“小狼”、爱弥斯“小爱”、西格莉卡“耙耙柑”、陆·赫斯“陆医生”、洛瑟菈“校长”；长离、布兰特、露帕合称“凤凰船旗”。",
+    "tags": ["安可", "羊咩", "鉴心", "长离", "今汐", "吟霖", "珂莱塔", "卡提希娅", "坎特蕾拉", "露帕", "爱弥斯", "西格莉卡", "凤凰船旗", "代称"],
+    "category": "game",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "角色代称会随社区流行变化，以社群语境理解。"
+  },
+  {
+    "id": "wuwa-gacha-terms",
+    "title": "唤取与养成黑话",
+    "summary": "《鸣潮》抽卡叫“唤取”，玩家黑话包括：0链/1链（共鸣链等级，类似“命座”）、专武（专属武器）、金/紫/蓝（五星/四星/三星稀有度）、十连双黄（十连出两个五星）、648（氪金金额代称）；小月卡指“月相观测卡”，大月卡指“寰宇频道”。",
+    "tags": ["唤取", "抽卡", "0链", "专武", "十连双黄", "648", "月卡", "黑话"],
+    "category": "game",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "玩家黑话，与官方术语并存。"
+  },
+  {
+    "id": "wuwa-formula",
+    "title": "鸣潮公式（oo是这样的…）",
+    "summary": "“鸣潮公式”指定型文句式“oo是这样的。xx只要……就可以，可是oo要考虑的事情就很多了”，出自《鸣潮》1.0 主线秧秧的台词。因台词用拉踩前线人员的方式赞扬后方人员，上线之初遭到玩家广泛批评，之后成为可套用到任何事物的网络定型文，也叫“鸣语”“鸣式”。",
+    "tags": ["鸣潮公式", "鸣语", "鸣式", "秧秧", "oo是这样的", "定型文", "1.0"],
+    "category": "community",
+    "source_name": "萌娘百科 oo是这样的。xx只要……",
+    "source_url": "https://mzh.moegirl.org.cn/Oo%E6%98%AF%E8%BF%99%E6%A0%B7%E7%9A%84%E3%80%82xx%E5%8F%AA%E8%A6%81yy%E5%B0%B1%E5%8F%AF%E4%BB%A5%EF%BC%8C%E5%8F%AF%E6%98%AFoo%E8%A6%81%E8%80%83%E8%99%91%E7%9A%84%E4%BA%8B%E6%83%85%E5%B0%B1%E5%BE%88%E5%A4%9A%E4%BA%86",
+    "source_note": "收录网络梗的来源与批评语境，不评价原台词。"
+  },
+  {
+    "id": "wuwa-how-are-you-still-here",
+    "title": "你怎么还在？",
+    "summary": "出自《鸣潮》二测剧情：晓卫的阿呜团长一心要亲手打败BOSS燎照之骑，临战时却因营地被袭必须提前回去支援，由漂泊者和秧秧留下迎战，由此诞生“你怎么还在”的剧情台词梗。",
+    "tags": ["你怎么还在", "阿呜", "燎照之骑", "二测", "剧情梗", "秧秧"],
+    "category": "community",
+    "source_name": "萌娘百科 你怎么还在",
+    "source_url": "https://zh.moegirl.org.cn/%e4%bd%a0%e6%80%8e%e4%b9%88%e8%bf%98%e5%9c%a8",
+    "source_note": "二测剧情遗留的知名梗，公测后仍被玩家引用。"
+  },
+  {
+    "id": "wuwa-solaris-strongest",
+    "title": "索拉里斯最强共鸣者（牢卡）",
+    "summary": "“索拉里斯最强共鸣者”是玩家对卡卡罗的反向调侃：内测时强度极高，公测被削弱，且长期不在主线登场，社区因此戏称“牢卡”，并反复玩“推出卡卡罗剧情”“加强卡卡罗”的保留节目。卡卡罗仍入选 2024 TapTap 年度最受玩家喜爱男角色，并在 2.3 活动“小团快跑”获得国服冠军。",
+    "tags": ["卡卡罗", "牢卡", "索拉里斯最强共鸣者", "削弱", "TapTap", "小团快跑", "2.7"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗 / 鸣潮游戏名梗盘点",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "“牢”字辈属于玩家调侃，不评价角色本身。"
+  },
+  {
+    "id": "wuwa-laoji",
+    "title": "牢忌",
+    "summary": "“牢忌”是玩家对开服五星角色忌炎的戏称：其 1.0 剧情围绕逃兵与将军之争引发社区争议，角色长期承受节奏与强度争议，被冠上“牢”字辈；后期剧情塑造和强度评价回暖后，称呼仍作为老玩家回忆梗流传。",
+    "tags": ["忌炎", "牢忌", "1.0", "剧情争议", "哥舒临", "强度"],
+    "category": "community",
+    "source_name": "NGA / 鸣潮贴吧 社区讨论",
+    "source_url": "https://bbs.nga.cn/read.php?tid=42451559",
+    "source_note": "“牢”字辈是玩家社区调侃，记录争议梗不判定剧情是非。"
+  },
+  {
+    "id": "wuwa-snow-leopard",
+    "title": "雪豹（凌阳）",
+    "summary": "“雪豹”指开服常驻角色凌阳：内测期间因剧情表现与建模在社区形成心理阴影，公测后虽有优化，梗仍广为流传，成为老玩家对新玩家的“暗号”式热梗。",
+    "tags": ["凌阳", "雪豹", "开服", "内测", "热梗", "暗号"],
+    "category": "community",
+    "source_name": "鸣潮热梗大盘点（erciyuangame）",
+    "source_url": "https://erciyuangame.com/wutheringwaves/wuthering-waves-slang-memes-guide",
+    "source_note": "涉及内测期争议，仅记录梗的传播，不展开评价。"
+  },
+  {
+    "id": "wuwa-small-potato",
+    "title": "小土豆与“已携高人观看”",
+    "summary": "“小土豆”是黎那汐塔角色珂莱塔的外号：模型身高娇小，能钻过其他角色过不去的地形，玩家结合网络流行语造出“已携高人观看”等热梗；2.0 上线后围绕她的体型话题衍生出十几个趣味词。",
+    "tags": ["珂莱塔", "小土豆", "已携高人观看", "身高", "2.0"],
+    "category": "community",
+    "source_name": "鸣潮热梗大盘点 / 鸣潮游戏名梗盘点",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "角色外形与玩法的玩家调侃。"
+  },
+  {
+    "id": "wuwa-sea-wind",
+    "title": "海风温和，风满殷足（菲比）",
+    "summary": "“海风温和，风满殷足……”出自菲比的循环语音，因捕鱼活动流程长、操作重复，这句语音高频洗脑播放，被玩家戏称为精神污染，成为“听到海风就头皮发麻”的名梗。",
+    "tags": ["菲比", "海风温和", "风满殷足", "捕鱼", "语音梗", "精神污染"],
+    "category": "community",
+    "source_name": "鸣潮热梗大盘点（erciyuangame）",
+    "source_url": "https://erciyuangame.com/wutheringwaves/wuthering-waves-slang-memes-guide",
+    "source_note": "来自活动体验的玩家梗。"
+  },
+  {
+    "id": "wuwa-snow-mountain",
+    "title": "雪山追夫图",
+    "summary": "“雪山追夫图”来自韩国画师 Are_A_R 绘制的今汐在雪地中泪流满面追逐漂泊者的二创图；因今汐是对玩家角色有好感的角色，该图成为名梗，后续版本还被官方采纳推出周边。",
+    "tags": ["雪山追夫图", "今汐", "漂泊者", "二创", "官方周边"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "二创梗，后被官方认可。"
+  },
+  {
+    "id": "wuwa-camellya",
+    "title": "大傻椿（Camellya brainrot）",
+    "summary": "“大傻椿”源自某次线下活动中椿布偶装工作人员呆萌发愣的姿态，因过于魔性被广泛传播并引发大量二创；名字取自《夏洛特烦恼》台词“大傻春你要干什么！”，国外社区称为“Camellya brainrot（椿脑腐）”或“Camellya virus（椿病毒）”。",
+    "tags": ["椿", "大傻椿", "Camellya", "brainrot", "布偶装", "二创"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "线下活动照片衍生梗，中英文社区叫法不同。"
+  },
+  {
+    "id": "wuwa-nandao",
+    "title": "难道说/好好好（新鸣潮公式）",
+    "summary": "出自 2.3 版本一周年前瞻：制作人松伦用浮夸言行逐项展示周年福利，玩家期待被拉满后实际福利体量却不尽如人意，引发集中炎上；玩家把“难道说？”与直播中“好好好”等语录提炼成“新鸣潮公式”表情包，官方随后道歉并补偿。",
+    "tags": ["难道说", "好好好", "松伦", "一周年", "2.3", "福利", "炎上", "新鸣潮公式"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "涉及周年福利争议，记录梗的由来与官方后续处理。"
+  },
+  {
+    "id": "wuwa-letter-girl",
+    "title": "神秘写信女（秧秧·玄翎）",
+    "summary": "秧秧是《鸣潮》看板娘（游戏图标封面人物），也是漂泊者醒来后第一个见到的角色；主线第一幕结束后长期通过游戏内邮箱写信联络，被玩家称为“神秘写信女”。3.5 版本秧秧以 SP 形态“秧秧·玄翎”登场，成为游戏首位 SP 形态角色。",
+    "tags": ["秧秧", "神秘写信女", "看板娘", "邮箱", "玄翎", "SP", "3.5"],
+    "category": "game",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "角色剧情与玩家印象混合的称呼。"
+  },
+  {
+    "id": "wuwa-old-ma",
+    "title": "老马啊！老马",
+    "summary": "“老马啊！老马”是 2.x 副本剧情梗：老马英白拉多牺牲自我让玩家惋惜，网友将其与主播“茄子哭马”的经典画面结合，形成又哭又笑的出圈名梗。",
+    "tags": ["老马", "英白拉多", "茄子哭马", "2.x", "剧情梗"],
+    "category": "community",
+    "source_name": "鸣潮游戏名梗盘点（mingchao.site）",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "剧情泪点与网络素材结合的玩家梗。"
+  },
+  {
+    "id": "wuwa-jianghu-dream",
+    "title": "江湖梦VS校园梦（光速变心）",
+    "summary": "官方公布仇远立绘时玩家大呼“江湖梦”，结果仇远未上线，千咲的校园风海报空降，舆论立刻转向“校园梦”；玩家总结出“孩子们不要忘了江湖梦”的反讽热梗，用来吐槽官方排期与建模审美。",
+    "tags": ["仇远", "千咲", "江湖梦", "校园梦", "光速变心", "3.1", "排期"],
+    "category": "community",
+    "source_name": "鸣潮游戏名梗盘点 / 鸣潮热梗大盘点",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "玩家对新角色排期的调侃。"
+  },
+  {
+    "id": "wuwa-qiaolezi",
+    "title": "巧乐兹神器与冰棍姐妹花",
+    "summary": "奥古斯塔的大剑造型酷似巧乐兹冰淇淋，玩家二创出“有什么话去和我的巧乐兹说吧”等名场面；加上喜欢冰棍的大贝姐，两人被合称“冰棍姐妹花”，官方上线期间还真的送出巧乐兹礼盒玩梗。",
+    "tags": ["奥古斯塔", "巧乐兹", "大贝姐", "冰棍姐妹花", "二创", "官方整活"],
+    "category": "community",
+    "source_name": "鸣潮游戏名梗盘点 / 鸣潮热梗大盘点",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "角色武器造型引发的二创与官方联动。"
+  },
+  {
+    "id": "wuwa-fuluo-kitchen",
+    "title": "弗洛游戏·厨师招聘",
+    "summary": "弗洛洛版本期间官方发布特殊招聘启事，抬头写“弗洛游戏”，急招岗位是厨师；对应主线中弗洛洛“做饭女”的威力连贡多拉吃完都反胃，是官方带头整活的名梗。",
+    "tags": ["弗洛洛", "弗洛游戏", "厨师", "做饭", "官方整活"],
+    "category": "community",
+    "source_name": "鸣潮游戏名梗盘点（mingchao.site）",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "官方招聘启事与剧情设定的联动梗。"
+  },
+  {
+    "id": "wuwa-bozai",
+    "title": "棕狸假死（波仔回城特效）",
+    "summary": "穗波市主线尾声，波仔上演化为星光消散的告别戏码，玩家纷纷泪目；回到基地却发现它活蹦乱跳，原来那只是波仔专属的回城特效，由此诞生“被特效欺骗的眼泪”名梗。",
+    "tags": ["波仔", "棕狸", "回城特效", "假死", "穗波", "泪目"],
+    "category": "community",
+    "source_name": "鸣潮游戏名梗盘点（mingchao.site）",
+    "source_url": "https://mingchao.site/news/wuthering-waves-popular-memes",
+    "source_note": "剧情演出与玩法机制反差产生的梗。"
+  },
+  {
+    "id": "wuwa-kuro",
+    "title": "库洛/老库/巨龙称呼",
+    "summary": "库洛（Kuro Games）是《鸣潮》《战双帕弥什》的开发商。玩家社区常用“库洛”“老库”称呼官方，“巨龙”是在战双/A-SOUL 联动语境中粉丝对库洛的戏称；看到疑似商单或官方发力时，社区也会调侃“库洛打米了”。",
+    "tags": ["库洛", "老库", "巨龙", "战双帕弥什", "库洛打米", "开发商", "商单"],
+    "category": "community",
+    "source_name": "萌娘百科 / 一个魂维基 / B站社区切片",
+    "source_url": "https://wiki.asoul.us.kg/",
+    "source_note": "称呼与“打米”调侃属于社群语境，不推断具体商业安排。"
+  },
+  {
+    "id": "wuwa-tga-2025",
+    "title": "TGA 玩家之声与 3.0 热度",
+    "summary": "2025 年 12 月《鸣潮》拿下 TGA“玩家之声”奖项并上线 3.0 版本，叠加乃琳直播带来的出圈热度，被媒体称为 2025 年末“刷足存在感”的游戏节点。",
+    "tags": ["TGA", "玩家之声", "3.0", "2025", "奖项"],
+    "category": "community",
+    "source_name": "网易新闻 / 虎嗅",
+    "source_url": "https://m.163.com/dy/article/KIE3GQD90526D7OK.html",
+    "source_note": "公开奖项与版本节点，不延伸评价。"
+  },
+  {
+    "id": "zj-nailin-wuwaves",
+    "title": "乃琳直播《鸣潮》与企划回暖",
+    "summary": "乃琳于 2025-12-09 开始直播《鸣潮》，首播同接破 7 万、粉丝突破 80 万，被媒体称为“NTR味的直播”和 A-SOUL 意外翻红、老粉回流的转折点；虎嗅等媒体以“国V最高的山起死回生”报道，社区流传“我们不去鸟巢了，我们去鸣潮”。",
+    "tags": ["乃琳", "鸣潮", "2025", "同接7万", "80万粉", "翻红", "NTR", "老au回流"],
+    "category": "zhijiang",
+    "source_name": "虎嗅 / 网易新闻 / 一个魂维基",
+    "source_url": "https://www.huxiu.com/article/4821473.html",
+  "source_note": "媒体标题与社区梗并存，直播数据以官方录播为准。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams"
+  ]
+  },
+  {
+    "id": "zj-nailin-3point1",
+    "title": "乃琳鸣潮3.1：百万粉与22万同接",
+    "summary": "2026-02-11 乃琳直播《鸣潮》3.1 版本，粉丝数突破 100 万，同时在线最高约 22 万，超过 A-SOUL 组合历史巅峰同接，成为鸣潮区二游主播直播记录的标志性事件，社区称“琳神”。",
+    "tags": ["乃琳", "鸣潮3.1", "百万粉", "22万同接", "琳神", "2026", "巅峰记录"],
+    "category": "zhijiang",
+    "source_name": "360游戏 / 一个魂维基 / B站社区",
+    "source_url": "https://360game.360.cn/article/content?id=698d3e369d3bee9e57c52984",
+  "source_note": "数据来自报道与维基整理，直播数据以官方口径为准。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams",
+    "zhijiang/timeline-2026"
+  ]
+  },
+  {
+    "id": "zj-rerong",
+    "title": "重铸A-SOUL荣光，我辈义不容辞",
+    "summary": "乃琳 2025-12-16 粉丝突破 80 万时，纪念动态使用“重铸A-SOUL荣光，我辈义不容辞”作为应援口号，配合鸣潮直播热度成为枝江二创社区名梗，常被一个魂用来表达企划回暖。",
+    "tags": ["重铸A-SOUL荣光", "我辈义不容辞", "乃琳", "80万粉", "应援", "2025"],
+    "category": "zhijiang",
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "公开动态与粉丝应援语，属于社群文化。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams"
+  ]
+  },
+  {
+    "id": "zj-jialan-9hours",
+    "title": "嘉然通宵9小时过鸣潮1.0主线",
+    "summary": "2026-02-03 嘉然直播《鸣潮》，连续约 9 小时通宵过完 1.0 主线，凌晨仍有上万人在看，弹幕戏称“潮友a友然然全都神了”；社区也流传“库洛打米了”等关于商单的调侃。",
+    "tags": ["嘉然", "鸣潮1.0", "9小时", "通宵", "主线", "潮友", "2026"],
+    "category": "zhijiang",
+    "source_name": "B站直播切片 / 一个魂维基",
+    "source_url": "https://www.bilibili.com/video/BV17jFLzoERe/",
+  "source_note": "直播时长与弹幕梗来自社区记录，“库洛打米”是调侃不作事实判断。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams"
+  ]
+  },
+  {
+    "id": "zj-jialan-birthday",
+    "title": "嘉然生日会14000舰与潮友应援",
+    "summary": "2026-03-14 嘉然生日会“以爱之名”获得约 14000 舰长，是 A-SOUL 的又一次万舰；鸣潮直播带来的潮友与一个魂合流，被社区视为应援的重要力量，但具体关联属社群说法。",
+    "tags": ["嘉然", "生日会", "14000舰", "万舰", "以爱之名", "潮友", "2026"],
+    "category": "zhijiang",
+    "source_name": "一个魂维基 A-SOUL WIKI",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "舰长数据以官方统计为准，潮友关联是社区讨论。",
+  "related_ids": [
+    "zhijiang/timeline-2026"
+  ]
+  },
+  {
+    "id": "zj-bella-yun3d",
+    "title": "贝拉晕3D与晕车药",
+    "summary": "贝拉因晕 3D 一直未播鸣潮，社区早有“备战晕车药广告”的调侃；2026-06-09 她首播《鸣潮》3.4“边缘行者”联动剧情，为此提前准备晕车药，成为枝江社区“用行动克服晕3D”的名场面。",
+    "tags": ["贝拉", "晕3D", "晕车药", "鸣潮3.4", "边缘行者", "首播", "2026"],
+    "category": "zhijiang",
+    "source_name": "一个魂维基 / 鸣潮吧社区讨论",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "晕车药细节来自直播自述与社区记录。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams"
+  ]
+  },
+  {
+    "id": "zj-lao-ku-shen-le",
+    "title": "老库神了/库跌神了（贝拉战双突击）",
+    "summary": "2026-03-13 贝拉突击直播下播前突然放起战双的歌，弹幕全是问号，被戏称“老库神了”；随后 3-17 贝拉官宣战双帕弥什突击直播并演唱六周年主题曲《I always do》，成为 A-SOUL 与库洛游戏合作的标志性节点。",
+    "tags": ["老库神了", "库跌神了", "贝拉", "战双帕弥什", "突击直播", "I always do", "2026"],
+    "category": "zhijiang",
+    "source_name": "B站切片 / 一个魂维基",
+    "source_url": "https://www.bilibili.com/video/BV1oUw9zKEE7/",
+    "source_note": "直播名场面与弹幕梗，合作细节以官方信息为准。"
+  },
+  {
+    "id": "zj-ganxie-julong",
+    "title": "感谢巨龙，你很有眼光",
+    "summary": "贝拉在战双突击直播预告中说出“感谢巨龙，你很有眼光！下周二战双突击！”，其中“巨龙”是粉丝对库洛的戏称；该发言被切片广泛传播，成为枝江社区感谢库洛商单的固定句式。",
+    "tags": ["感谢巨龙", "你很有眼光", "贝拉", "库洛", "战双", "商单梗"],
+    "category": "zhijiang",
+    "source_name": "一个魂维基 A-SOUL WIKI / B站切片",
+    "source_url": "https://wiki.asoul.us.kg/",
+  "source_note": "直播原话与“巨龙”称呼均属社群语境。",
+  "related_ids": []
+  },
+  {
+    "id": "zj-tebie-mingxie",
+    "title": "特别鸣谢《鸣潮》与“恩情永难忘”",
+    "summary": "2026-03-28 乃琳单人专场“幻变梦境”宣传海报出现“特别鸣谢 鸣潮”，线下舞台也专门感谢库洛；贴吧出现“恩情难忘，乃琳演唱会感谢鸣潮”热帖，社区流行“潮友的恩情永难忘”等感恩梗，标志鸣潮×枝江两个社区的深度绑定。",
+    "tags": ["特别鸣谢鸣潮", "恩情永难忘", "乃琳", "幻变梦境", "专场", "潮友", "库洛", "2026"],
+    "category": "zhijiang",
+    "source_name": "贴吧热帖 / B站 / 一个魂维基",
+    "source_url": "https://tieba.baidu.com/hottopic/browse/hottopic?topic_id=28351866",
+  "source_note": "海报字样与线下致谢为公开信息，社区梗以调侃为主。",
+  "related_ids": [
+    "zhijiang/wuwaves-livestreams",
+    "zhijiang/timeline-2026"
+  ]
+  },
+  {
+    "id": "zj-bella-record",
+    "title": "贝拉战双直播10小时打破枝江最长直播记录",
+    "summary": "2026-05-24 贝拉战双主线“剪身成蝶”突击直播持续约 10 小时，打破枝江最长直播记录，社区用“拉姐神了”等弹幕刷屏，被视为 A-SOUL 与库洛游戏持续联动的名场面。",
+    "tags": ["贝拉", "战双", "剪身成蝶", "10小时", "直播记录", "拉姐神了", "2026"],
+    "category": "zhijiang",
+    "source_name": "B站直播数据切片",
+    "source_url": "https://www.bilibili.com/video/BV1HCGJ6ZEdP/",
+  "source_note": "直播时长与同接来自社区数据整理。",
+  "related_ids": []
+  },
+  {
+    "id": "zj-chaoyou",
+    "title": "“潮友×一个魂”双修社区现象",
+    "summary": "乃琳鸣潮直播出圈后，鸣潮玩家（潮友）与 A-SOUL 粉丝（一个魂/au）大量合流，弹幕常见“潮友a友”共刷，鸣潮大主播也主动给乃琳直播造势，社区戏称“同行之间真是恩人”；两个社区互相玩梗成为 2025-2026 年的独特二创现象。",
+    "tags": ["潮友", "一个魂", "au", "双修", "合流", "二创社区", "同行恩人"],
+    "category": "zhijiang",
+    "source_name": "B站 / 鸣潮吧 / 一个魂维基",
+    "source_url": "https://www.bilibili.com/video/BV12rcYz4Evc/",
+  "source_note": "社区现象描述，不把个别弹幕当作统一立场。",
+    "related_ids": [
+      "zhijiang/wuwaves-livestreams",
+      "zhijiang/timeline-2026"
+    ]
+  },
+  {
+    "id": "wuwa-challenge-shorthand",
+    "title": "全息/深渊/塔/爬塔",
+    "summary": "玩家讨论中常把“全息”作为“全息战略”的简称；“深渊”“塔”“爬塔”通常指“逆境深塔”。这些是便于交流的社区简称，不是独立玩法或官方模式名称。",
+    "tags": ["全息", "全息战略", "深渊", "塔", "爬塔", "逆境深塔", "挑战", "黑话"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "中文玩家社区常用玩法简称；具体开放内容以游戏内入口为准。"
+  },
+  {
+    "id": "wuwa-encore-weapon-hands",
+    "title": "羊咩之手（黑咩/白咩/光咩）",
+    "summary": "“黑咩之手”“白咩之手”“光咩之手”是玩家围绕安可与适配武器形成的称呼：分别指吟霖专武“掣傀之手”、折枝专武“琼枝冰绡”、菲比专武“和光回唱”。“羊咩”来自安可身边的绵羊玩偶；这是社区命名，不代表官方武器分类。",
+    "tags": ["羊咩之手", "黑咩之手", "黑手", "白咩之手", "光咩之手", "安可", "吟霖", "折枝", "菲比", "武器", "专武"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "中文社区对武器适配与造型的称呼；数值和适配结论以当前游戏内说明为准。"
+  },
+  {
+    "id": "wuwa-mysterious-agent",
+    "title": "神秘女特务（吟霖）",
+    "summary": "“神秘女特务”是玩家对吟霖的常用戏称，来自其在剧情中从今州治安署巡尉转为特务身份活动的设定。该称呼用于社区交流，不替代角色的官方档案名称。",
+    "tags": ["神秘女特务", "吟霖", "女特务", "特务", "今州治安署", "角色代称"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "中文社区角色代称；剧情细节以伴星任务和游戏内档案为准。"
+  },
+  {
+    "id": "wuwa-mysterious-scissor-girl",
+    "title": "神秘剪刀女（千咲）",
+    "summary": "“神秘剪刀女”是玩家对千咲的称呼，源于其巨型剪刀造型。该叫法曾被游戏内“穗波怪异物语”相关海报与成就作为彩蛋使用，是角色外观衍生的社区梗。",
+    "tags": ["神秘剪刀女", "千咲", "剪刀", "穗波怪异物语", "波仔", "角色代称"],
+    "category": "community",
+    "source_name": "萌娘百科 鸣潮/用语与梗",
+    "source_url": "https://mzh.moegirl.org.cn/%E9%B8%A3%E6%BD%AE/%E7%94%A8%E8%AF%AD%E4%B8%8E%E6%A2%97",
+    "source_note": "中文社区角色代称及游戏内彩蛋索引；活动内容以当前版本为准。"
+  }
+]

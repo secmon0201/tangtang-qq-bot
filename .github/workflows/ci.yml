@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install project
+        run: python -m pip install -e ".[dev]"
+      - name: Validate repository contents
+        run: python scripts/validate_repository.py
+      - name: Validate documentation
+        run: python scripts/validate_docs.py
+      - name: Validate architecture
+        run: python scripts/validate_architecture.py
+      - name: Validate upstream lock schema
+        run: python scripts/validate_upstream_lock.py --allow-missing
+      - name: Run tests
+        run: python -m pytest

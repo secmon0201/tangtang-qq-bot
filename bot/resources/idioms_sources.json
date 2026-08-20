@@ -1,0 +1,104 @@
+{
+  "generated_at": "2026-07-24T00:57:15.341996+00:00",
+  "filter": "exactly four CJK Unified Ideographs (U+4E00-U+9FFF)",
+  "output": "bot/resources/idioms.txt",
+  "existing_words_before_import": 46234,
+  "total_unique_words": 46234,
+  "curated_words": [
+    "得偿所愿"
+  ],
+  "curated_words_added": 0,
+  "sources": [
+    {
+      "name": "ChID idiom list",
+      "repository": "https://github.com/chujiezheng/ChID-Dataset",
+      "license": "Apache-2.0",
+      "contents_api": "https://raw.githubusercontent.com/chujiezheng/ChID-Dataset/0836ebf72cbe7d2da832021b02ff08f627de885d/Codes%20for%20baseline/idiomList.txt",
+      "revision": "0836ebf72cbe7d2da832021b02ff08f627de885d",
+      "valid_four_character_words": 3848,
+      "new_words_added": 0
+    },
+    {
+      "name": "THUOCL idiom list",
+      "repository": "https://github.com/thunlp/THUOCL",
+      "license": "MIT",
+      "contents_api": "https://raw.githubusercontent.com/thunlp/THUOCL/a30ce79d895d01ab5132a5c74c29703ff7efb4cc/data/THUOCL_chengyu.txt",
+      "revision": "a30ce79d895d01ab5132a5c74c29703ff7efb4cc",
+      "valid_four_character_words": 7874,
+      "new_words_added": 0
+    },
+    {
+      "name": "by-syk Chinese idiom database",
+      "repository": "https://github.com/by-syk/chinese-idiom-db",
+      "license": "Apache-2.0",
+      "contents_api": "https://raw.githubusercontent.com/by-syk/chinese-idiom-db/6689999d9f0baa759d02d17b1e601c240a9a89ac/chinese-idioms-12976.txt",
+      "revision": "6689999d9f0baa759d02d17b1e601c240a9a89ac",
+      "valid_four_character_words": 12179,
+      "new_words_added": 3
+    },
+    {
+      "name": "ghxter Chinese Xinhua idiom database",
+      "repository": "https://github.com/ghxter/chinese-xinhua",
+      "license": "MIT",
+      "contents_api": "https://raw.githubusercontent.com/ghxter/chinese-xinhua/68037fabbcd23e86b36834c40e63d0ef44df1851/data/idiom.json",
+      "revision": "68037fabbcd23e86b36834c40e63d0ef44df1851",
+      "valid_four_character_words": 29502,
+      "new_words_added": 0
+    },
+    {
+      "name": "pwxcoo Chinese Xinhua idiom database",
+      "repository": "https://github.com/pwxcoo/chinese-xinhua",
+      "license": "MIT",
+      "contents_api": "https://raw.githubusercontent.com/pwxcoo/chinese-xinhua/fe6d6c2e8baa82187f4c96bbe042e43f96c05666/data/idiom.json",
+      "revision": "fe6d6c2e8baa82187f4c96bbe042e43f96c05666",
+      "valid_four_character_words": 29502,
+      "new_words_added": 0
+    },
+    {
+      "name": "mapull Chinese dictionary idiom database",
+      "repository": "https://github.com/mapull/chinese-dictionary",
+      "license": "MIT",
+      "contents_api": "https://raw.githubusercontent.com/mapull/chinese-dictionary/e804ada333b68afddfdccbe8dcc938a72da157a7/idiom/idiom.json",
+      "revision": "e804ada333b68afddfdccbe8dcc938a72da157a7",
+      "valid_four_character_words": 45776,
+      "new_words_added": 8166
+    },
+    {
+      "name": "HGCHA public idiom indexes",
+      "repository": "https://www.hgcha.com/chengyu/",
+      "robots": "https://www.hgcha.com/robots.txt",
+      "access_method": "public static letter indexes; /search was not accessed",
+      "index_pages_collected": 345,
+      "valid_four_character_words": 33091,
+      "new_words_added": 7871
+    }
+  ],
+  "four_character_word_sources": [
+    {
+      "name": "Local four-character word data: word.json",
+      "repository": "local user-provided JSON",
+      "access_method": "local JSON import",
+      "valid_four_character_words": 55583,
+      "new_words_added": 55583
+    },
+    {
+      "name": "Local four-character word data: ci.json",
+      "repository": "local user-provided JSON",
+      "access_method": "local JSON import",
+      "valid_four_character_words": 25192,
+      "new_words_added": 0
+    }
+  ],
+  "curated_four_character_words": [
+    "一根手指",
+    "云烟成雨",
+    "勇敢牛牛",
+    "双向奔赴",
+    "嘉然小姐",
+    "如你所愿",
+    "屁用没有",
+    "水母之歌",
+    "永不塌房",
+    "牛气冲天"
+  ]
+}

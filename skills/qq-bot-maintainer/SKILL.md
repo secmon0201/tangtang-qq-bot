@@ -1,0 +1,36 @@
+---
+name: qq-bot-maintainer
+description: Maintain the 通讯程序集成管理机器人 workspace by adding, editing, or removing QQ bot features through the plugin registry while preserving plugin/application/services boundaries, NTE-only game compatibility, clean upstream GsUID.Core, startup tools, validators, and focused local Git commits. Use automatically for feature changes, NTE compatibility work, architecture protection, restart verification, or repository maintenance in that workspace.
+---
+
+# QQ Bot Maintainer
+
+Maintenance contract for `C:\Users\59586\Documents\通讯程序集成管理机器人`. These files are the canonical instructions for future sessions; `AGENTS.md` is the human-readable summary of the same rules.
+
+## Invariants
+
+- Layer flow: `bot/plugins -> bot/application -> bot/services`; `bot/integrations` wraps external runtimes. Plugins never import plugins; services and application never import plugins.
+- Every `bot/plugins/*.py` entry, except `__init__.py`, is registered exactly once in `bot/application/plugin_registry.py`. Do not rebuild a plugin list in `bot/__main__.py`.
+- NTE (`#nte`) is the only enabled game interface. Ranking, help, and command takeover stay under `bot/`; never modify `GsUID.Core` or NTEUID; read `GsData.db` read-only.
+- A feature lives in its own plugin, service, resources, tests, and docs. Touching another feature is only legitimate as an intentional shared-contract change that updates the shared module, its tests, and all consumers together.
+- Windows-local deployment only. Never commit `.env`, databases, logs, caches, or upstream repositories.
+- QQ/NapCat login is user-operated. Never ask for or handle credentials.
+
+## Workflow
+
+1. Identify the change: read [references/feature-lifecycle.md](references/feature-lifecycle.md) for feature add/edit/remove; [references/architecture.md](references/architecture.md) for boundaries, ownership, and shared contracts; [references/nte-upstream.md](references/nte-upstream.md) for NTE or upstream work; [references/operations.md](references/operations.md) for validation, restart, and Git.
+2. Change code, registry, tests, and user docs in one pass.
+3. Run the repository gates from `operations.md`. Do not bypass them.
+4. Restart NoneBot only when the live bot must pick up the change. Verify postconditions, never script exit codes alone.
+5. Commit the complete project-owned change in one focused commit.
+
+## Common failure modes
+
+- New `bot/plugins/x.py` without a registry entry or `docs/全部#指令清单.md` rows: registry and command-catalog tests fail.
+- Writing to `GsData.db` or editing upstream assets: breaks NTE isolation and future upstream updates.
+- Reimplementing shared avatar/roles/media/report logic inside a plugin: the architecture validator rejects substantial duplicate bodies.
+- Restarting NapCat/QQ for a Python-only change: unnecessary login risk.
+
+## Keep this skill current
+
+When repository rules change, update these files and commit them with the code change. The local skill link (see `skills/link-local-skill.ps1`) must point at this directory; do not edit a copy outside the repository.

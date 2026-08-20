@@ -18,6 +18,7 @@
 - `docs`: current user and maintainer documentation.
 - `config`: non-secret version pins and repository configuration.
 - `启动工具`: Chinese operator-facing batch shortcuts; implementations stay in `scripts`.
+- `skills`: repository-owned Codex maintenance skill and its local link helper.
 
 `GsUID.Core`, its UID plugins, NapCat, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
 
@@ -59,6 +60,7 @@ Do not restart NapCat or QQ for ordinary Python changes. Prefer `scripts\stop.ps
 
 - Commit the complete project-owned QQ bot in this repository; NTE is not a separate repository.
 - Register every `bot/plugins/*.py` feature exactly once in `bot/application/plugin_registry.py`.
+- Keep `skills/qq-bot-maintainer` in sync with every rule change; link it locally once with `skills\link-local-skill.ps1` and never edit a copied skill directory outside the repository.
 - Keep `main` buildable and use focused commits.
 - Never bypass repository or architecture validators.
 - Do not stash or preserve patches inside upstream repositories. Move required compatibility into `bot/integrations` or `bot/services`.

@@ -1,0 +1,7 @@
+interface:
+  display_name: "QQ Bot Maintainer"
+  short_description: "Maintain this workspace's QQ bot features and boundaries"
+  default_prompt: "Use $qq-bot-maintainer to add, edit, or remove a QQ bot feature while preserving the registry, layer boundaries, NTE isolation, and commit gates."
+
+policy:
+  allow_implicit_invocation: true

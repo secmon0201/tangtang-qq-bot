@@ -6,10 +6,12 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from nonebot import get_bots, logger
+from nonebot.adapters.onebot.v11 import Message
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 
 from bot.config import A_COAST_GROUP_IDS, settings
 from bot.db import Database
+from bot.services.community_web import ALL_GROUP_KEY, public_web_url, ranking_payload
 from bot.services.media import local_image_segment
 from bot.services.qq_platform import call_qq_action
 
@@ -31,12 +33,14 @@ class ACoastDailyRankingDeliveryService:
         report_renderer: Any,
         group_ids: Iterable[int] = A_COAST_GROUP_IDS,
         group_avatar_service: Any | None = None,
+        community_renderer: Any | None = None,
     ) -> None:
         self.database = database
         self.stats_service = stats_service
         self.avatar_service = avatar_service
         self.group_avatar_service = group_avatar_service
         self.report_renderer = report_renderer
+        self.community_renderer = community_renderer
         self.group_ids = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
         self.zone = ZoneInfo(settings.timezone)
         self._lock = asyncio.Lock()
@@ -80,20 +84,44 @@ class ACoastDailyRankingDeliveryService:
                 group_avatar_paths = await self.group_avatar_service.prefetch(
                     [{"user_id": int(row["group_id"])} for row in group_totals]
                 )
-            try:
-                poster = self.report_renderer.render_ranking(
-                    rows,
-                    TITLE,
-                    SUBTITLE,
-                    avatar_paths,
-                    show_group_labels=True,
-                    group_totals=group_totals,
-                    group_avatar_paths=group_avatar_paths,
-                )
-                message: Any = local_image_segment(poster)
-            except Exception:
-                logger.exception("Unable to render scheduled A海岸 daily ranking; using text fallback")
-                message = fallback
+            poster = None
+            if self.community_renderer is not None:
+                try:
+                    payload = ranking_payload(
+                        self.stats_service,
+                        "day",
+                        ALL_GROUP_KEY,
+                        rows=rows,
+                        avatar_paths=avatar_paths,
+                        group_totals=group_totals,
+                        group_avatar_paths=group_avatar_paths,
+                    )
+                    poster = await self.community_renderer.render_ranking(payload)
+                except Exception:
+                    logger.exception(
+                        "Unable to render scheduled A海岸 daily ranking with community HTML; "
+                        "trying Pillow fallback"
+                    )
+            if poster is None:
+                try:
+                    poster = self.report_renderer.render_ranking(
+                        rows,
+                        TITLE,
+                        SUBTITLE,
+                        avatar_paths,
+                        show_group_labels=True,
+                        group_totals=group_totals,
+                        group_avatar_paths=group_avatar_paths,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Unable to render scheduled A海岸 daily ranking; using text fallback"
+                    )
+
+            message = Message(local_image_segment(poster)) if poster is not None else Message(fallback)
+            link = public_web_url("ranking")
+            if link is not None:
+                message += f"\n在线：{link}"
 
             sent = 0
             failed = 0

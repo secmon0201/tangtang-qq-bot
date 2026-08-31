@@ -9,7 +9,8 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from nonebot import logger, on_command
+from fastapi.responses import HTMLResponse
+from nonebot import get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
 from nonebot.rule import Rule
@@ -45,6 +46,12 @@ from bot.services.gateway import OneBotGateway
 from bot.services.avatars import AvatarService
 from bot.services.forward import build_forward_nodes
 from bot.services.media import local_image_segment
+from bot.services.community_web import (
+    help_payload,
+    page_html as community_page_html,
+    public_help_categories,
+    public_web_url,
+)
 from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, passive_settings
@@ -57,6 +64,7 @@ from bot.services.whitelist_menu import (
 
 db = database()
 passive = passive_settings()
+driver = get_driver()
 duplicate_service = DuplicateService(db)
 stats_service = StatsService(
     db,
@@ -135,77 +143,9 @@ async def require_feature_group(
 
 def user_help_categories() -> list[tuple[str, str, list[tuple[str, str, str]]]]:
     """Group the visual manual by user workflow and merge equivalent commands."""
-    prefix = settings.command_prefix
-    categories = [
-        (
-            "使用说明",
-            "",
-            [
-                ("图片帮助", f"{prefix}帮助", "查看完整的普通用户指令说明图片。"),
-                ("折叠文字帮助", f"{prefix}帮助文字", "以合并转发发送可复制指令，不刷屏。"),
-            ],
-        ),
-        (
-            "直播与日程",
-            "本功能由爱驼提供技术支持",
-            [
-                ("直播日程", f"{prefix}枝江直播 / {prefix}直播日程 / {prefix}本周直播", "查看本周直播日程。"),
-                ("每日直播", f"{prefix}今日直播 / {prefix}明日直播", "查看今天或明天的 A-SOUL 直播日程。"),
-            ],
-        ),
-        (
-            "活动功能",
-            "",
-            [
-                ("活动帮助", f"{prefix}活动帮助", "查看活动的专用使用说明。"),
-                ("活动查看", f"{prefix}活动大厅 / {prefix}活动详情 <活动ID>", "查看可参与活动及指定活动详情。"),
-                ("活动名单", f"{prefix}查看名单 <活动ID>", "查看指定活动的报名名单。"),
-                ("活动获奖名单", f"{prefix}获奖名单 <活动ID> / {prefix}查看获奖名单 <活动ID>", "查看抽奖活动的获奖名单。"),
-                ("活动参与", f"{prefix}报名 <活动ID> / {prefix}取消报名 <活动ID> / {prefix}我的活动", "报名、取消报名或查看自己的活动。"),
-            ],
-        ),
-        (
-            "今日老婆",
-            "",
-            [
-                ("今日缘分", f"{prefix}今日老婆 / {prefix}今日缘分 / {prefix}强取 @群友 / {prefix}互动 靠近|倾听|回应|修复|助攻 [@群友]", "随机抽取或定向抽取今日关系，并在群像故事中选择下一步行动。"),
-                ("缘分档案", f"{prefix}我的缘分 / {prefix}群缘分 / {prefix}群缘分 历史 / {prefix}离婚", "查看当前关系、永久个人留档、群内往日摘要，或结束今日关系。"),
-            ],
-        ),
-        (
-            "小游戏",
-            "",
-            [
-                ("小游戏菜单", f"{prefix}游戏列表 / {prefix}小游戏列表", "查看小游戏玩法和入口。"),
-                ("俄罗斯转盘", f"{prefix}装填 / {prefix}开枪", "发起或进行俄罗斯转盘。"),
-                ("定时炸弹", f"{prefix}装弹 / {prefix}丢给 @成员", "发起或传递定时炸弹。"),
-                ("成语炸弹", f"{prefix}装弹成语 [专业/娱乐] [60-600]\n四字词 {prefix}丢给 @成员", "发起或传递成语接龙炸弹。"),
-                ("幸运骰局", f"{prefix}骰子", "发起一局幸运骰局。"),
-                ("猜数字", f"{prefix}猜数 / {prefix}猜 <0-999>", "发起猜数字或提交猜测。"),
-            ],
-        ),
-        (
-            "小游戏榜单",
-            "",
-            [
-                ("群游戏榜单", f"{prefix}转盘榜 / {prefix}炸弹榜 / {prefix}骰子榜 / {prefix}猜数榜", "查看当前群游戏榜单。"),
-                ("总游戏榜单", f"{prefix}转盘总榜 / {prefix}炸弹总榜 / {prefix}骰子总榜 / {prefix}猜数总榜", "查看所有已开启游戏群的榜单。"),
-            ],
-        ),
-    ]
-    if settings.stats_realtime_enabled:
-        categories.append(
-            (
-                "A 海岸发言统计",
-                "",
-                [
-                    ("当前群发言排行", f"{prefix}发言排行 / {prefix}发言榜 / {prefix}统计 [日/周/月/总]", "查看当前 A 海岸群的发言排行。"),
-                    ("A 海岸发言排行", f"{prefix}A海岸发言排行 / {prefix}A海岸发言榜 / {prefix}A海岸统计 [日/周/月/总]", "合并查看五个 A 海岸群的排行。"),
-                    ("发言画像", f"{prefix}发言画像 <QQ号|@成员> / {prefix}画像 <QQ号|@成员>", "生成指定成员的 A 海岸发言画像。"),
-                ],
-            )
-        )
-    return categories
+    return public_help_categories(
+        settings.command_prefix, stats_enabled=settings.stats_realtime_enabled
+    )
 
 
 def user_help_sections() -> list[tuple[str, str, str]]:
@@ -256,18 +196,12 @@ def user_help_image_message(path: Path) -> MessageSegment:
 
 
 async def send_user_help_image(matcher: Any) -> None:
-    """Render first, then finish outside the rendering error boundary."""
-    try:
-        path = report_renderer.render_user_help(
-            "普通用户帮助",
-            "按功能分类；文字版请发送 #帮助文字",
-            user_help_categories(),
-        )
-    except Exception:
-        logger.exception("User help image failed")
-        await matcher.finish("帮助图片生成失败，请稍后再试。")
+    """Return the interactive help entry instead of a long static image."""
+    link = public_web_url("help")
+    if link is None:
+        await matcher.finish("帮助在线页暂时不可用，请稍后再试。")
         return
-    await matcher.finish(user_help_image_message(path))
+    await matcher.finish(f"帮助在线：{link}")
 
 
 user_help = on_command("帮助", priority=5, block=True)
@@ -276,6 +210,16 @@ user_help = on_command("帮助", priority=5, block=True)
 @user_help.handle()
 async def _():
     await send_user_help_image(user_help)
+
+
+@driver.server_app.get("/community/help/", response_class=HTMLResponse)
+async def community_help_page() -> HTMLResponse:
+    return HTMLResponse(community_page_html("help"))
+
+
+@driver.server_app.get("/community/help/api")
+async def community_help_api() -> dict[str, Any]:
+    return help_payload()
 
 
 user_help_text_command = on_command("帮助文字", priority=5, block=True)

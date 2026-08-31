@@ -1,12 +1,9 @@
 import asyncio
-
-from PIL import Image
 import nonebot
 
 nonebot.init()
 
 from bot.plugins import commands
-from bot.services.reports import ReportRenderer
 
 
 def test_user_help_text_contains_only_copyable_public_commands():
@@ -53,7 +50,7 @@ def test_user_help_merges_equivalent_commands_and_game_rankings():
     assert ranking_entries["群游戏榜单"] == "#转盘榜 / #炸弹榜 / #骰子榜 / #猜数榜"
     assert ranking_entries["总游戏榜单"] == "#转盘总榜 / #炸弹总榜 / #骰子总榜 / #猜数总榜"
     assert "缘分档案" not in game_entries
-    assert today_wife_entries["今日缘分"] == "#今日老婆 / #今日缘分 / #强取 @群友 / #互动 靠近|倾听|回应|修复|助攻 [@群友]"
+    assert today_wife_entries["今日缘分"] == "#今日老婆 / #今日缘分 / #强取 @群友"
     assert today_wife_entries["缘分档案"] == "#我的缘分 / #群缘分 / #群缘分 历史 / #离婚"
 
 
@@ -66,19 +63,16 @@ def test_user_help_hides_asoul_third_party_help_and_attributes_live_schedule():
     assert "#A魂帮助" not in commands.user_help_text()
 
 
-def test_user_help_sections_render_as_a_local_image(tmp_path):
-    renderer = ReportRenderer(tmp_path)
+def test_user_help_points_to_the_interactive_short_link():
+    responses = []
 
-    path = renderer.render_user_help(
-        "普通用户帮助",
-        "按功能分类；文字版请发送 #帮助文字",
-        commands.user_help_categories(),
-    )
+    class Matcher:
+        async def finish(self, message):
+            responses.append(message)
 
-    with Image.open(path) as image:
-        assert image.width == ReportRenderer.WIDTH
-        assert image.height > ReportRenderer.HEADER_HEIGHT
-        assert image.getbbox() is not None
+    asyncio.run(commands.send_user_help_image(Matcher()))
+
+    assert responses == ["帮助在线：s.secmon.cn/h"]
 
 
 def test_user_help_text_is_one_folded_forward_node():
@@ -89,28 +83,3 @@ def test_user_help_text_is_one_folded_forward_node():
     assert nodes[0]["data"]["content"] == [
         {"type": "text", "data": {"text": commands.user_help_text()}}
     ]
-
-
-def test_user_help_image_reply_contains_no_text_segment(tmp_path):
-    image_path = tmp_path / "help.png"
-    image_path.touch()
-
-    message = commands.user_help_image_message(image_path)
-
-    assert message.type == "image"
-
-
-def test_successful_user_help_image_has_one_response(monkeypatch, tmp_path):
-    image_path = tmp_path / "help.png"
-    image_path.touch()
-    responses = []
-
-    class Matcher:
-        async def finish(self, message):
-            responses.append(message)
-
-    monkeypatch.setattr(commands.report_renderer, "render_user_help", lambda *_: image_path)
-    asyncio.run(commands.send_user_help_image(Matcher()))
-
-    assert len(responses) == 1
-    assert responses[0].type == "image"

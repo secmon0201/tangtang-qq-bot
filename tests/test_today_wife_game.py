@@ -14,7 +14,7 @@ from bot.db import Database
 from bot.services.mini_game_reports import MiniGameReportRenderer
 from bot.services.today_wife import TodayWifeService
 from bot.services.today_wife_content import THEME_PACKS, mechanic_for, pack_for, script_for
-from bot.services.today_wife_delivery import TodayWifeConclusionDelivery
+from bot.services.today_wife_delivery import ROUND_WINDOWS, TodayWifeRoundDelivery
 from bot.services.today_wife_game import (
     GROUP_DETAIL_RETENTION_DAYS,
     INITIAL_AFFECTION_RANGE,
@@ -34,6 +34,7 @@ import bot.services.today_wife_delivery as delivery_module
 
 NOW = datetime.fromisoformat("2026-08-12T21:00:00+08:00")
 LATE = datetime.fromisoformat("2026-08-12T23:51:00+08:00")
+FINAL_ROUND = datetime.fromisoformat("2026-08-12T23:05:00+08:00")
 GROUP_ID = 1001
 MEMBERS = (
     {"user_id": 1, "nickname": "小明"},
@@ -529,6 +530,129 @@ def test_interaction_persists_the_actual_day_participant_count(tmp_path: Path) -
     assert game.day_state(GROUP_ID, NOW)["state"]["participant_count"] == 5
 
 
+def test_non_first_command_can_silently_trigger_another_active_actor(tmp_path: Path) -> None:
+    wife, game = services(tmp_path)
+    draw(wife, 1, "小明", 2)
+    draw(wife, 3, "小白", 4)
+
+    first = game.passive_interaction_after_command(
+        GROUP_ID,
+        1,
+        "first-command",
+        NOW,
+        probability=1.0,
+    )
+    triggered = game.passive_interaction_after_command(
+        GROUP_ID,
+        3,
+        "second-command",
+        NOW,
+        probability=1.0,
+    )
+
+    assert first.kind == "first_participant"
+    assert triggered.kind == "played" and triggered.event is not None
+    assert triggered.event["actor_id"] == 1
+    assert triggered.event["intent"] in {"靠近", "倾听", "回应", "修复", "助攻"}
+    assert game.day_state(GROUP_ID, NOW)["act"] == 1
+
+
+def test_passive_command_trigger_ignores_people_who_were_only_drawn(tmp_path: Path) -> None:
+    wife, game = services(tmp_path)
+    draw(wife, 1, "小明", 2)
+    draw(wife, 3, "小白", 4)
+
+    target_only = game.passive_interaction_after_command(
+        GROUP_ID,
+        2,
+        "target-only-command",
+        NOW,
+        probability=1.0,
+    )
+
+    assert target_only.kind == "not_eligible"
+    assert game.group_story(GROUP_ID, NOW)["events"] == []
+
+
+def test_first_participant_stays_first_after_divorce_and_redraw(tmp_path: Path) -> None:
+    wife, game = services(tmp_path)
+    draw(wife, 1, "小明", 2)
+    draw(wife, 3, "小白", 4)
+    wife.divorce(GROUP_ID, 1, NOW)
+    draw(wife, 1, "小明", 5)
+
+    result = game.passive_interaction_after_command(
+        GROUP_ID,
+        1,
+        "redrawn-first-command",
+        NOW,
+        probability=1.0,
+    )
+
+    assert result.kind == "first_participant"
+    assert game.group_story(GROUP_ID, NOW)["events"] == []
+
+
+def test_collective_rounds_are_idempotent_and_advance_only_by_round(tmp_path: Path) -> None:
+    wife, game = services(tmp_path)
+    draw(wife, 1, "小明", 2)
+    draw(wife, 3, "小白", 4)
+    draw(wife, 5, "小冬", 1)
+    round_times = (
+        datetime.fromisoformat("2026-08-12T11:45:00+08:00"),
+        datetime.fromisoformat("2026-08-12T17:45:00+08:00"),
+        FINAL_ROUND,
+    )
+
+    first = game.prepare_collective_round(GROUP_ID, 1, round_times[0])
+    replay = game.prepare_collective_round(GROUP_ID, 1, round_times[0])
+    assert first is not None and len(first["events"]) == 3
+    assert replay is not None
+    assert [event["event_id"] for event in replay["events"]] == [
+        event["event_id"] for event in first["events"]
+    ]
+    assert first["events"][0]["event_id"] == first["core_event_id"]
+    assert game.day_state(GROUP_ID, round_times[0])["act"] == 2
+
+    second = game.prepare_collective_round(GROUP_ID, 2, round_times[1])
+    assert second is not None and len(second["events"]) == 3
+    assert game.day_state(GROUP_ID, round_times[1])["act"] == 3
+
+    third = game.prepare_collective_round(GROUP_ID, 3, round_times[2])
+    assert third is not None and len(third["events"]) == 3
+    assert third["conclusion"]["title"]
+    assert game.day_state(GROUP_ID, round_times[2])["status"] == "locked"
+    assert len(game.group_story(GROUP_ID, round_times[2])["events"]) == 9
+    round_path = MiniGameReportRenderer(tmp_path / "reports").render_today_wife_collective_round(third)
+    with Image.open(round_path) as image:
+        assert image.width == 1180
+        assert image.height > 900
+
+
+def test_collective_delivery_spreads_enabled_groups_across_each_window() -> None:
+    groups = (1001, 1002, 1003, 1004, 1005)
+    current = datetime.fromisoformat("2026-08-12T11:30:00+08:00")
+    for round_no, start, end in ROUND_WINDOWS:
+        scheduled = [
+            TodayWifeRoundDelivery.scheduled_at(current, round_no, start, end, groups, group_id)
+            for group_id in groups
+        ]
+        assert len(set(scheduled)) == len(groups)
+        assert all(value.timetz().replace(tzinfo=None) >= start for value in scheduled)
+        assert all(value.timetz().replace(tzinfo=None) < end for value in scheduled)
+
+
+def test_collective_participant_count_excludes_relations_that_are_no_longer_active(tmp_path: Path) -> None:
+    wife, game = services(tmp_path)
+    draw(wife, 1, "小明", 2)
+    draw(wife, 3, "小白", 4)
+    assert game.collective_participant_count(GROUP_ID, NOW) == 2
+
+    wife.divorce(GROUP_ID, 1, NOW)
+
+    assert game.collective_participant_count(GROUP_ID, NOW) == 1
+
+
 def test_response_is_publicly_split_across_everyone_who_drew_the_actor(tmp_path: Path) -> None:
     wife, game = services(tmp_path)
     draw(wife, 1, "小明", 2)
@@ -849,13 +973,14 @@ def test_personal_history_is_permanent_while_group_detail_expires_to_summaries(t
     assert summaries[0]["full_detail"] is False
 
 
-def test_conclusion_delivery_retries_a_failed_send_within_the_late_window(monkeypatch, tmp_path: Path) -> None:
+def test_collective_round_delivery_retries_without_replaying_events(monkeypatch, tmp_path: Path) -> None:
     wife, game = services(tmp_path)
     draw(wife, 1, "小明", 2)
 
     class Renderer:
-        def render_today_wife_conclusion(self, conclusion):
-            assert conclusion["title"]
+        def render_today_wife_collective_round(self, payload):
+            assert payload["round_no"] == 3
+            assert payload["conclusion"]["title"]
             return tmp_path / "conclusion.png"
 
     attempts: list[int] = []
@@ -867,12 +992,19 @@ def test_conclusion_delivery_retries_a_failed_send_within_the_late_window(monkey
 
     monkeypatch.setattr(delivery_module, "local_image_segment", lambda path: f"image:{path}")
     monkeypatch.setattr(delivery_module, "call_qq_action", send)
-    delivery = TodayWifeConclusionDelivery(game, Renderer(), lambda: (GROUP_ID,))
+    delivery = TodayWifeRoundDelivery(
+        game,
+        Renderer(),
+        lambda: (GROUP_ID,),
+        {GROUP_ID: asyncio.Lock()},
+    )
 
-    first = asyncio.run(delivery.deliver_once(object(), LATE))
-    second = asyncio.run(delivery.deliver_once(object(), LATE))
+    first = asyncio.run(delivery.deliver_once(object(), FINAL_ROUND))
+    event_count = len(game.group_story(GROUP_ID, FINAL_ROUND)["events"])
+    second = asyncio.run(delivery.deliver_once(object(), FINAL_ROUND))
 
     assert first == {"status": "processed", "sent": 0, "failed": 1}
     assert second == {"status": "processed", "sent": 1, "failed": 0}
     assert attempts == [GROUP_ID, GROUP_ID]
-    assert game.day_state(GROUP_ID, LATE)["status"] == "published"
+    assert len(game.group_story(GROUP_ID, FINAL_ROUND)["events"]) == event_count
+    assert game.day_state(GROUP_ID, FINAL_ROUND)["status"] == "published"

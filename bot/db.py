@@ -596,6 +596,23 @@ CREATE TABLE IF NOT EXISTS today_wife_interaction_events (
 CREATE INDEX IF NOT EXISTS today_wife_interaction_event_day_idx
     ON today_wife_interaction_events(group_id, day, event_id);
 
+CREATE TABLE IF NOT EXISTS today_wife_collective_rounds (
+    group_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    round_no INTEGER NOT NULL CHECK (round_no BETWEEN 1 AND 3),
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    prepared_at TEXT NOT NULL,
+    delivered_at TEXT,
+    delivery_attempts INTEGER NOT NULL DEFAULT 0,
+    delivery_error TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (group_id, day, round_no),
+    FOREIGN KEY (group_id, day)
+        REFERENCES today_wife_day_states(group_id, day) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS today_wife_collective_round_delivery_idx
+    ON today_wife_collective_rounds(day, round_no, delivered_at);
+
 CREATE TABLE IF NOT EXISTS codex_tasks (
     task_id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,

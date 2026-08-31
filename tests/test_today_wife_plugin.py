@@ -33,6 +33,13 @@ def test_force_command_parser_accepts_compact_and_spaced_mentions() -> None:
     assert today_wife._command(_event(MessageSegment.text("#强取手册"))) == "#强取手册"
 
 
+def test_removed_interaction_and_web_commands_are_not_registered() -> None:
+    assert "#互动" not in today_wife.COMMANDS
+    assert "#老婆网页" not in today_wife.COMMANDS
+    assert "#缘分网页" not in today_wife.COMMANDS
+    assert today_wife._command(_event(MessageSegment.text("#我的老婆 2"))) == "#我的老婆"
+
+
 def test_force_command_rejects_non_numeric_or_multiple_targets_at_parser_boundary() -> None:
     all_target = _event(MessageSegment.text("#强取"), MessageSegment.at("all"))
     multiple = _event(
@@ -55,17 +62,3 @@ def test_force_target_rejects_mixed_all_and_member_mentions() -> None:
     )
 
     assert today_wife._force_target_id(mixed) is None
-
-
-def test_interaction_target_rejects_all_self_and_multiple_mentions() -> None:
-    all_target = _event(MessageSegment.text("#互动 靠近"), MessageSegment.at("all"))
-    self_target = _event(MessageSegment.text("#互动 靠近"), MessageSegment.at("123"))
-    multiple = _event(
-        MessageSegment.text("#互动 助攻"),
-        MessageSegment.at("123"),
-        MessageSegment.at("456"),
-    )
-
-    assert today_wife._interaction_target(all_target, 999) == (None, "invalid")
-    assert today_wife._interaction_target(self_target, 123) == (None, "self")
-    assert today_wife._interaction_target(multiple, 999) == (None, "multiple")

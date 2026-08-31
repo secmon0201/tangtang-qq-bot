@@ -15,7 +15,7 @@ from bot.services.today_wife_content import THEME_PACKS, ThemePack, mechanic_for
 from bot.services.today_wife_story import INTENT_LABELS, StoryDirector
 
 
-LOCK_TIME = time(23, 50)
+LOCK_TIME = time(23, 30)
 MAX_INTERACTIONS = 5
 GROUP_DETAIL_RETENTION_DAYS = 7
 PERSONAL_HISTORY_PAGE_SIZE = 20
@@ -157,6 +157,8 @@ class TodayWifeGameService:
         *,
         intent: str = "auto",
         source_message_id: str | int | None = None,
+        automatic: bool = False,
+        bypass_limit: bool = False,
     ) -> InteractionOutcome:
         current = self.local_now(now)
         day = current.date().isoformat()
@@ -175,7 +177,7 @@ class TodayWifeGameService:
                 if existing is not None:
                     return self._replayed_interaction_outcome(connection, existing)
         if current.timetz().replace(tzinfo=None) >= LOCK_TIME:
-            return InteractionOutcome("locked", message="今晚的篇章已在 23:50 封场，明天再继续写新的故事。")
+            return InteractionOutcome("locked", message="今晚的篇章已在 23:30 封场，明天再继续写新的故事。")
         normalized_intent = str(intent or "auto").strip() or "auto"
         if normalized_intent not in VALID_INTENTS:
             return InteractionOutcome("invalid_intent", message="互动方式请使用：靠近、倾听、回应、修复或助攻。")
@@ -208,7 +210,7 @@ class TodayWifeGameService:
                 """SELECT COUNT(*) AS value FROM today_wife_interaction_events
                    WHERE group_id=? AND day=? AND actor_id=?""", (int(group_id), day, int(actor_id))
             ).fetchone()["value"]
-            if int(used) >= MAX_INTERACTIONS:
+            if not bypass_limit and int(used) >= MAX_INTERACTIONS:
                 return InteractionOutcome("exhausted", message="你今天已经完成了 5 次互动，留一点故事给明天吧。")
             if mentioned is not None and mentioned not in participants:
                 return InteractionOutcome("target_not_joined", message="TA 还没走进今天的篇章，这次指定不会消耗互动次数。")
@@ -217,17 +219,34 @@ class TodayWifeGameService:
             script = script_for(str(state_row["script_id"]), pack.id)
             action_state = self._available_actions(connection, records, int(actor_id), mentioned)
             if normalized_intent == "auto":
-                return self._interaction_prompt(
-                    state_row,
-                    script,
-                    action_state,
-                    MAX_INTERACTIONS - int(used),
+                if not automatic:
+                    return self._interaction_prompt(
+                        state_row,
+                        script,
+                        action_state,
+                        MAX_INTERACTIONS - int(used),
+                    )
+                options = tuple(
+                    dict(option)
+                    for option in action_state.get("action_options", ())
+                    if isinstance(option, Mapping) and str(option.get("intent") or "") in VALID_INTENTS
                 )
+                if not options:
+                    return InteractionOutcome("no_valid_action", message="当前没有可自动执行的有效互动。")
+                selected_action = self.rng.choice(options)
+                normalized_intent = str(selected_action["intent"])
+                try:
+                    mentioned = int(selected_action.get("mentioned_id")) if selected_action.get("mentioned_id") else None
+                except (TypeError, ValueError):
+                    mentioned = None
+                action_state = self._available_actions(connection, records, int(actor_id), mentioned)
+            else:
+                selected_action = None
             selected_action = self._matching_action_option(
                 action_state,
                 normalized_intent,
                 mentioned,
-            )
+            ) or selected_action
             if selected_action is None and not self._legacy_action_is_compatible(
                 action_state,
                 normalized_intent,
@@ -304,6 +323,209 @@ class TodayWifeGameService:
             event["action_options"] = post_actions["action_options"]
             event["current_hook"] = post_actions["current_hook"]
         return InteractionOutcome("played", event)
+
+    def passive_interaction_after_command(
+        self,
+        group_id: int,
+        trigger_user_id: int,
+        source_message_id: str | int,
+        now: datetime | None = None,
+        *,
+        probability: float = 0.35,
+    ) -> InteractionOutcome:
+        """Silently run one valid event after a non-first participant's command."""
+
+        current = self.local_now(now)
+        day = current.date().isoformat()
+        with self.database.connect() as connection:
+            records = self._records(connection, int(group_id), day)
+        actors = self._active_actor_rows(records)
+        participants = {
+            int(record["actor_id"]): record
+            for record in actors
+        }
+        if len(participants) < 2 or int(trigger_user_id) not in participants:
+            return InteractionOutcome("not_eligible")
+        first_actor_record = min(
+            (record for record in records if int(record["actor_id"]) in participants),
+            key=lambda row: (str(row.get("drawn_at") or ""), int(row["actor_id"])),
+        )
+        if int(first_actor_record["actor_id"]) == int(trigger_user_id):
+            return InteractionOutcome("first_participant")
+        if self.rng.random() >= max(0.0, min(float(probability), 1.0)):
+            return InteractionOutcome("not_triggered")
+        candidates = [row for row in actors if int(row["actor_id"]) != int(trigger_user_id)]
+        if not candidates:
+            return InteractionOutcome("no_other_active_participant")
+        actor = self.rng.choice(candidates)
+        return self.interaction(
+            int(group_id),
+            int(actor["actor_id"]),
+            str(actor.get("actor_nickname") or "这位群友"),
+            now=current,
+            intent="auto",
+            source_message_id=f"passive:{source_message_id}",
+            automatic=True,
+        )
+
+    def prepare_collective_round(
+        self,
+        group_id: int,
+        round_no: int,
+        now: datetime | None = None,
+    ) -> dict[str, Any] | None:
+        """Persist one all-participant round and return its render payload."""
+
+        if int(round_no) not in (1, 2, 3):
+            raise ValueError("collective round must be 1, 2, or 3")
+        current = self.local_now(now)
+        day = current.date().isoformat()
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                """SELECT payload_json FROM today_wife_collective_rounds
+                   WHERE group_id=? AND day=? AND round_no=?""",
+                (int(group_id), day, int(round_no)),
+            ).fetchone()
+            if existing is not None:
+                payload = self._json_object(existing["payload_json"])
+                return payload or None
+            records = self._records(connection, int(group_id), day)
+        actors = self._active_actor_rows(records)
+        if not actors:
+            return None
+
+        events: list[dict[str, Any]] = []
+        for actor in actors:
+            result = self.interaction(
+                int(group_id),
+                int(actor["actor_id"]),
+                str(actor.get("actor_nickname") or "这位群友"),
+                now=current,
+                intent="auto",
+                source_message_id=f"collective:{day}:{int(round_no)}:{int(actor['actor_id'])}",
+                automatic=True,
+                bypass_limit=True,
+            )
+            if result.kind == "played" and result.event is not None:
+                events.append(result.event)
+        if not events:
+            return None
+
+        core = self.rng.choice(events)
+        ordered = [
+            core,
+            *sorted(
+                (event for event in events if event is not core),
+                key=self._collective_event_rank,
+                reverse=True,
+            ),
+        ]
+        act_after = 2 if int(round_no) == 1 else 3
+        stamp = current.isoformat(timespec="seconds")
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            state = self._ensure_day_state(connection, int(group_id), current)
+            state_payload = self._json_object(state["state_json"])
+            state_payload["last_turn"] = {
+                "event_id": int(core.get("event_id") or 0),
+                "route": str(state["route_key"]),
+                "at": stamp,
+                "round": int(round_no),
+            }
+            state_payload["turning_point"] = str(core.get("narrative") or core.get("title") or "")
+            state_payload["collective_round"] = int(round_no)
+            connection.execute(
+                """UPDATE today_wife_day_states
+                   SET act=?,last_event_id=?,state_json=?,updated_at=?
+                   WHERE group_id=? AND day=?""",
+                (
+                    act_after,
+                    int(core.get("event_id") or 0),
+                    json.dumps(state_payload, ensure_ascii=False),
+                    stamp,
+                    int(group_id),
+                    day,
+                ),
+            )
+            refreshed = connection.execute(
+                "SELECT * FROM today_wife_day_states WHERE group_id=? AND day=?",
+                (int(group_id), day),
+            ).fetchone()
+            payload = {
+                "group_id": int(group_id),
+                "day": day,
+                "round_no": int(round_no),
+                "title": ("午间集体互动", "傍晚集体互动", "今日故事收官")[int(round_no) - 1],
+                "core_event_id": int(core.get("event_id") or 0),
+                "events": ordered,
+                "participant_count": len(actors),
+                "day_state": self._present_day_state(refreshed),
+            }
+            connection.execute(
+                """INSERT INTO today_wife_collective_rounds
+                   (group_id,day,round_no,payload_json,prepared_at)
+                   VALUES (?,?,?,?,?)""",
+                (int(group_id), day, int(round_no), json.dumps(payload, ensure_ascii=False), stamp),
+            )
+        if int(round_no) == 3:
+            conclusion_state = self.lock_and_conclude(int(group_id), current)
+            payload["conclusion"] = conclusion_state.get("conclusion") or {}
+            with self.database.connect() as connection:
+                connection.execute(
+                    """UPDATE today_wife_collective_rounds SET payload_json=?
+                       WHERE group_id=? AND day=? AND round_no=3""",
+                    (json.dumps(payload, ensure_ascii=False), int(group_id), day),
+                )
+        return payload
+
+    def collective_round_delivered(self, group_id: int, round_no: int, now: datetime | None = None) -> bool:
+        current = self.local_now(now)
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """SELECT delivered_at FROM today_wife_collective_rounds
+                   WHERE group_id=? AND day=? AND round_no=?""",
+                (int(group_id), current.date().isoformat(), int(round_no)),
+            ).fetchone()
+        return bool(row is not None and row["delivered_at"])
+
+    def collective_participant_count(self, group_id: int, now: datetime | None = None) -> int:
+        current = self.local_now(now)
+        with self.database.connect() as connection:
+            records = self._records(connection, int(group_id), current.date().isoformat())
+        return len(self._active_actor_rows(records))
+
+    def mark_collective_round_delivery(
+        self,
+        group_id: int,
+        round_no: int,
+        now: datetime | None = None,
+        *,
+        error: str = "",
+    ) -> None:
+        current = self.local_now(now)
+        stamp = current.isoformat(timespec="seconds")
+        with self.database.connect() as connection:
+            if error:
+                connection.execute(
+                    """UPDATE today_wife_collective_rounds
+                       SET delivery_attempts=delivery_attempts+1,delivery_error=?
+                       WHERE group_id=? AND day=? AND round_no=?""",
+                    (str(error)[:300], int(group_id), current.date().isoformat(), int(round_no)),
+                )
+            else:
+                connection.execute(
+                    """UPDATE today_wife_collective_rounds
+                       SET delivered_at=?,delivery_attempts=delivery_attempts+1,delivery_error=''
+                       WHERE group_id=? AND day=? AND round_no=?""",
+                    (stamp, int(group_id), current.date().isoformat(), int(round_no)),
+                )
+                if int(round_no) == 3:
+                    connection.execute(
+                        """UPDATE today_wife_day_states
+                           SET status='published',delivered_at=?,delivery_error='',updated_at=?
+                           WHERE group_id=? AND day=?""",
+                        (stamp, stamp, int(group_id), current.date().isoformat()),
+                    )
 
     def personal_archive(self, group_id: int, user_id: int, now: datetime | None = None) -> dict[str, Any]:
         current = self.local_now(now)
@@ -1206,19 +1428,11 @@ class TodayWifeGameService:
         route = self._dominant_route(route_scores)
         payload["route_scores"] = route_scores
         payload["turning_point"] = self._turning_point(prepared, route)
-        # Fixed 8/20 thresholds leave small groups permanently in the opening.
-        # Scale the shared arc to actual story participation while retaining the
-        # director's pacing in an active group.
         participants = int(participant_count or payload.get("participant_count") or 0)
         if participants <= 0:
             participants = 2
-        first_threshold = max(3, min(pack.director.act_thresholds[0], participants + 1))
-        second_threshold = max(first_threshold + 2, min(pack.director.act_thresholds[1], participants * 3 + 2))
-        threshold = first_threshold if act == 1 else second_threshold if act == 2 else 10 ** 9
-        key = bool(prepared["key_event"]) and self.rng.random() < pack.director.key_event_chance
-        if act < 3 and (count >= threshold or key):
-            act += 1
-            payload["last_turn"] = {"event_id": event_id, "route": route, "at": current.isoformat(timespec="seconds")}
+        # Ordinary automatic events update relationship and route state. Only
+        # a completed collective round is allowed to turn the shared act.
         payload["participant_count"] = participants
         return act, route, payload
 
@@ -1499,6 +1713,32 @@ class TodayWifeGameService:
     @staticmethod
     def _participants(records: list[Mapping[str, Any]]) -> set[int]:
         return {int(record["actor_id"]) for record in records} | {int(record["target_id"]) for record in records}
+
+    @staticmethod
+    def _active_actor_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return one current active relationship for every opted-in player."""
+
+        latest: dict[int, dict[str, Any]] = {}
+        for record in records:
+            if str(record.get("status") or "") != "active":
+                continue
+            actor_id = int(record["actor_id"])
+            current = latest.get(actor_id)
+            if current is None or int(record.get("draw_index") or 1) > int(current.get("draw_index") or 1):
+                latest[actor_id] = record
+        return sorted(
+            latest.values(),
+            key=lambda row: (str(row.get("drawn_at") or ""), int(row["actor_id"])),
+        )
+
+    @staticmethod
+    def _collective_event_rank(event: Mapping[str, Any]) -> tuple[int, int, int]:
+        impact = sum(
+            abs(int(effect.get("delta") or 0))
+            for effect in event.get("effects", ())
+            if isinstance(effect, Mapping)
+        )
+        return int(bool(event.get("key_event"))), impact, int(event.get("event_id") or 0)
 
     @staticmethod
     def _latest_active(records: list[dict[str, Any]], actor_id: int) -> dict[str, Any] | None:

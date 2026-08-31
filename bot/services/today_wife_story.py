@@ -180,11 +180,10 @@ class StoryDirector:
         hook_summary = str(hook.get("summary") or f"{prop}还在等一个回应")
         action_options = cls.action_options_for_arc(context, arc)
         available_actions = tuple(str(item["intent"]) for item in action_options)
-        next_action = " 或 ".join(str(item["display_command"]) for item in action_options) or "#互动 靠近 或 #互动 倾听"
         blocks = (
             {"label": "今日开场", "text": str(context["opening"])},
             {"label": "相遇", "text": encounter},
-            {"label": "第一件事", "text": f"{hook_summary}。发送 {next_action}，让这一幕继续往前。"},
+            {"label": "关系走向", "text": f"{hook_summary}。接下来的变化会在今天的三幕故事里自然发生。"},
         )
         return {
             "version": 3,
@@ -194,7 +193,7 @@ class StoryDirector:
             "relationship_label": str(record.get("relationship_key") or arc.get("relationship_label") or "今日同行者"),
             "blocks": blocks,
             "text": "\n".join(str(block["text"]) for block in blocks),
-            "next_action": next_action,
+            "next_action": "",
             "available_actions": available_actions or ("靠近", "倾听"),
             "action_options": action_options,
             "mention_lead": f"《{str(context['title'])}》刚开场，{actor}在{prop}旁遇见了",

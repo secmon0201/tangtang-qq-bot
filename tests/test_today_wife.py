@@ -349,11 +349,11 @@ def test_history_group_graph_and_story_cards_render_with_dynamic_canvas(tmp_path
     with Image.open(paths[0]) as image:
         # The dynamically selected name is rendered with the report accent,
         # rather than disappearing into the surrounding narrative text.
-        assert any(pixel == (243, 93, 145) for pixel in image.get_flattened_data())
+        assert any(pixel[:3] == (243, 93, 145) for pixel in image.get_flattened_data())
     for path in paths[:3]:
         with Image.open(path) as image:
             bottom_safe_area = image.crop((30, image.height - 52, image.width - 30, image.height - 22))
-            assert not any(max(pixel) < 130 for pixel in bottom_safe_area.get_flattened_data())
+            assert not any(max(pixel[:3]) < 130 for pixel in bottom_safe_area.get_flattened_data())
 
 
 def test_clear_group_records_removes_only_the_selected_group(tmp_path):
@@ -831,12 +831,12 @@ def test_interaction_card_reserves_height_for_structured_story_labels(tmp_path):
         + renderer._fate_text_height(paragraph, renderer._font(24), body_width)
         + 24,
     )
-    expected_height = 144 + expected_story_height + 24 + 122 + 30 + 82 + 34
+    expected_height = 144 + expected_story_height + 24 + 122 + 30 + renderer._game_toolbar_height(5) + 34
     with Image.open(path) as image:
         assert image.height == expected_height
 
 
-def test_game_toolbar_expands_for_available_actions_without_changing_default_height(tmp_path):
+def test_game_toolbar_stays_fixed_when_legacy_actions_are_present(tmp_path):
     renderer = MiniGameReportRenderer(tmp_path / "reports")
     event = {
         "title": "今日互动",
@@ -852,10 +852,15 @@ def test_game_toolbar_expands_for_available_actions_without_changing_default_hei
         {},
     )
 
-    assert renderer._game_toolbar_height(5) == 82
-    assert renderer._game_toolbar_height(5, ("靠近", "倾听", "回应", "修复", "助攻")) > 82
+    assert renderer._game_toolbar_actions(("靠近", "倾听", "回应", "修复", "助攻")) == (
+        "#我的缘分",
+        "#群缘分",
+        "#离婚",
+    )
+    assert renderer._game_toolbar_height(5) == 64
+    assert renderer._game_toolbar_height(5, ("靠近", "倾听", "回应", "修复", "助攻")) == 64
     with Image.open(default_path) as default_image, Image.open(expanded_path) as expanded_image:
-        assert expanded_image.height > default_image.height
+        assert expanded_image.height == default_image.height
         assert expanded_image.getbbox() is not None
 
 
@@ -875,7 +880,7 @@ def test_action_prompt_card_renders_current_hook_and_available_actions(tmp_path)
         assert image.height > 300
 
 
-def test_action_prompt_and_toolbar_keep_the_target_bound_command(tmp_path):
+def test_legacy_action_prompt_cannot_put_target_bound_commands_in_the_footer(tmp_path):
     renderer = MiniGameReportRenderer(tmp_path / "reports")
     options = (
         {
@@ -898,7 +903,7 @@ def test_action_prompt_and_toolbar_keep_the_target_bound_command(tmp_path):
         }
     )
 
-    assert "#互动 助攻 + @小夏" in renderer._game_toolbar_actions(options)
+    assert renderer._game_toolbar_actions(options) == ("#我的缘分", "#群缘分", "#离婚")
     with Image.open(path) as image:
         assert image.width == 840
         assert image.height > 360
@@ -971,7 +976,7 @@ def test_narrative_renderer_highlights_every_dynamic_name_and_wraps_long_names(t
     )
 
     assert end_y > 20 + renderer._line_height(font)
-    assert any(pixel == (243, 93, 145) for pixel in image.get_flattened_data())
+    assert any(pixel[:3] == (243, 93, 145) for pixel in image.get_flattened_data())
 
 
 def test_empty_history_and_group_cards_require_randomized_narration(tmp_path):

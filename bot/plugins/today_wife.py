@@ -20,7 +20,7 @@ from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, passive_settings
 from bot.services.today_wife import TodayWifeService
-from bot.services.today_wife_delivery import TodayWifeConclusionDelivery
+from bot.services.today_wife_delivery import TodayWifeRoundDelivery
 from bot.services.today_wife_game import TodayWifeGameService
 from bot.services.today_wife_result import first_draw_result_message
 
@@ -36,7 +36,6 @@ COMMANDS = frozenset(
         "#群缘分",
         "#群老婆",
         "#强取",
-        "#互动",
         "#清缘",
         "#确认清缘",
         "#取消清缘",
@@ -68,10 +67,6 @@ scheduler = AsyncIOScheduler(timezone=ZoneInfo(settings.timezone))
 clear_requests: dict[tuple[int, int], float] = {}
 CLEAR_CONFIRMATION_SECONDS = 60
 timezone = ZoneInfo(settings.timezone)
-INTERACTION_INTENTS = frozenset({"靠近", "倾听", "回应", "修复", "助攻"})
-MULTIPLE_INTERACTION_TARGET_MESSAGE = "一次互动只能 @ 一位群友。"
-INVALID_INTERACTION_TARGET_MESSAGE = "互动目标必须是一位有效的群友，不能用 @全体 或无效 @ 代替。"
-SELF_INTERACTION_TARGET_MESSAGE = "这次互动不能 @ 自己，也不会消耗次数。"
 
 
 def _force_message(kind: str, record: dict[str, Any] | None = None) -> str:
@@ -96,15 +91,13 @@ def _today_wife_groups() -> tuple[int, ...]:
     return tuple(feature_scopes.groups("today_wife"))
 
 
-conclusion_delivery = TodayWifeConclusionDelivery(game_service, renderer, _today_wife_groups)
+round_delivery = TodayWifeRoundDelivery(game_service, renderer, _today_wife_groups, group_locks)
 
 
 def _command(event: MessageEvent) -> str:
     text = event.get_plaintext().strip()
     if text == "#强取" or text.startswith(("#强取 ", "#强取\t", "#强取@")):
         return "#强取"
-    if text.startswith("#互动"):
-        return "#互动"
     for command in ("#我的缘分", "#我的老婆", "#群缘分", "#群老婆"):
         if text == command or text.startswith(command + " "):
             return command
@@ -180,23 +173,6 @@ def _mentioned_user(event: GroupMessageEvent) -> int | None:
     return targets[0] if len(targets) == 1 else None
 
 
-def _interaction_target(event: GroupMessageEvent, actor_id: int) -> tuple[int | None, str | None]:
-    """Parse one interaction mention without silently turning it into no target."""
-
-    segments = [segment for segment in event.get_message() if segment.type == "at"]
-    if len(segments) > 1:
-        return None, "multiple"
-    if not segments:
-        return None, None
-    value = str(segments[0].data.get("qq") or "")
-    if not value.isdigit() or int(value) <= 0:
-        return None, "invalid"
-    target_id = int(value)
-    if target_id == int(actor_id):
-        return None, "self"
-    return target_id, None
-
-
 def _force_target_id(event: GroupMessageEvent) -> int | None:
     """Return a single real member mention; reject @all and mixed mentions."""
 
@@ -207,39 +183,29 @@ def _force_target_id(event: GroupMessageEvent) -> int | None:
     return int(value) if value.isdigit() and int(value) > 0 else None
 
 
-def _interaction_intent(event: GroupMessageEvent) -> str:
-    """Read the optional first action word without treating an @ as prose."""
-
-    argument = _command_argument(event, "#互动")
-    if not argument:
-        return "auto"
-    intent = argument.split(maxsplit=1)[0]
-    return intent if intent in INTERACTION_INTENTS else intent
-
-
 @driver.on_bot_connect
 async def _(bot: Bot) -> None:
-    await conclusion_delivery.deliver_once(bot)
+    await round_delivery.deliver_once(bot)
 
 
-async def _deliver_today_wife_conclusions() -> None:
+async def _deliver_today_wife_rounds() -> None:
     target = next(iter(get_bots().values()), None)
-    await conclusion_delivery.deliver_once(target)
+    await round_delivery.deliver_once(target)
 
 
 @driver.on_startup
 async def _start_today_wife_scheduler() -> None:
     scheduler.add_job(
-        _deliver_today_wife_conclusions,
+        _deliver_today_wife_rounds,
         "interval",
         seconds=30,
-        id="today-wife-conclusion-delivery",
+        id="today-wife-round-delivery",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
     scheduler.start()
-    logger.info("Today-wife conclusion scheduler started; window=23:50-23:59")
+    logger.info("Today-wife round scheduler started; windows=11:30-12:00,17:30-18:00,23:00-23:30")
 
 
 @driver.on_shutdown
@@ -311,7 +277,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
 
     async with group_locks[group_id]:
         locked = game_service.is_locked(group_id)
-        if locked and command in {"#今日老婆", "#今日缘分", "#强取", "#离婚", "#解缘", "#互动"}:
+        if locked and command in {"#今日老婆", "#今日缘分", "#强取", "#离婚", "#解缘"}:
             await today_wife.finish(service.state_message("locked", group_id, actor_id))
             return
 
@@ -340,6 +306,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 members,
                 target_id=target_id,
             )
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
             if outcome.kind in {"force_existing", "existing", "existing_divorced"}:
                 await today_wife.finish(_force_message("existing", outcome.record))
                 return
@@ -378,7 +345,6 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 state,
                 relation or {},
                 draw_reveal=reveal,
-                available_actions=reveal.get("action_options") or reveal.get("available_actions"),
             )
             if int(record.get("draw_index") or 0) == 1:
                 await today_wife.finish(
@@ -401,6 +367,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 )
                 return
             outcome = service.draw(group_id, actor_id, _nickname(event), members)
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
             if outcome.kind == "no_candidates":
                 await today_wife.finish(service.state_message("no_candidates", group_id, actor_id))
                 return
@@ -440,7 +407,6 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 state,
                 relation or {},
                 draw_reveal=reveal,
-                available_actions=reveal.get("action_options") or reveal.get("available_actions"),
             )
             if outcome.kind == "drawn" and int(record.get("draw_index") or 0) == 1:
                 await today_wife.finish(
@@ -456,6 +422,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
             return
 
         if command in {"#离婚", "#解缘"}:
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
             outcome = service.divorce(group_id, actor_id)
             if outcome.kind == "not_found":
                 await today_wife.finish(service.state_message("not_found", group_id, actor_id))
@@ -479,56 +446,6 @@ async def _(bot: Bot, event: GroupMessageEvent):
             await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
             return
 
-        if command == "#互动":
-            mentioned_id, target_error = _interaction_target(event, actor_id)
-            if target_error == "multiple":
-                await today_wife.finish(MULTIPLE_INTERACTION_TARGET_MESSAGE)
-                return
-            if target_error == "invalid":
-                await today_wife.finish(INVALID_INTERACTION_TARGET_MESSAGE)
-                return
-            if target_error == "self":
-                await today_wife.finish(SELF_INTERACTION_TARGET_MESSAGE)
-                return
-            result = game_service.interaction(
-                group_id,
-                actor_id,
-                _nickname(event),
-                mentioned_id,
-                intent=_interaction_intent(event),
-                source_message_id=event.message_id,
-            )
-            if result.kind == "prompt" and result.event is not None:
-                prompt = {**result.event, "message": result.message}
-                path = renderer.render_today_wife_action_prompt(prompt)
-                await today_wife.finish(
-                    MessageSegment.reply(event.message_id) + local_image_segment(path)
-                )
-                return
-            if result.kind != "played" or result.event is None:
-                await today_wife.finish(result.message)
-                return
-            avatar_ids = {actor_id}
-            for item in result.event.get("effects", ()):
-                if not isinstance(item, dict):
-                    continue
-                for key in ("actor_id", "target_id"):
-                    try:
-                        user_id = int(item.get(key) or 0)
-                    except (TypeError, ValueError):
-                        continue
-                    if user_id > 0:
-                        avatar_ids.add(user_id)
-            rows = [{"user_id": user_id} for user_id in sorted(avatar_ids)]
-            avatars = await _avatars(rows)
-            path = renderer.render_today_wife_interaction(
-                result.event,
-                avatars,
-                available_actions=result.event.get("action_options") or result.event.get("available_actions"),
-            )
-            await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
-            return
-
         if command in {"#我的缘分", "#我的老婆"}:
             raw_page = _command_argument(event, command)
             if raw_page:
@@ -537,11 +454,13 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 except ValueError:
                     await today_wife.finish(service.player_message("history_page_invalid", group_id, actor_id))
                     return
+                game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
                 history = game_service.personal_history(group_id, actor_id, page)
                 avatars = await _avatars([{"user_id": int(row["target_id"])} for row in history["rows"]])
                 path = renderer.render_today_wife_history_archive(history, avatars)
                 await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
                 return
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
             archive = game_service.personal_archive(group_id, actor_id)
             avatar_rows = [
                 {"user_id": int(row["target_id"])} for row in archive["own"]
@@ -550,13 +469,13 @@ async def _(bot: Bot, event: GroupMessageEvent):
             path = renderer.render_today_wife_archive(
                 archive,
                 avatars,
-                available_actions=archive.get("action_options") or archive.get("available_actions"),
             )
             await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
             return
 
         raw_day = _command_argument(event, command)
         if raw_day == "历史":
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
             archive = game_service.group_archive(group_id)
             path = renderer.render_today_wife_group_archive(archive)
             await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
@@ -568,6 +487,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
             except ValueError:
                 await today_wife.finish(service.player_message("group_history_argument_invalid", group_id, actor_id))
                 return
+        game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
         story = game_service.group_story(group_id, requested_day=requested_day)
         if not story["full_detail"] and requested_day is not None:
             archive = game_service.group_archive(group_id)

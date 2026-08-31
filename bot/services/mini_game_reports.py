@@ -138,7 +138,7 @@ class MiniGameReportRenderer(ReportRenderer):
         chip_font = self._font(18, True)
         chip_x = 54
         chip_width = 126
-        for label in ("#今日老婆", "#群缘分", "#离婚"):
+        for label in ("#我的缘分", "#群缘分", "#离婚"):
             draw.rounded_rectangle(
                 (chip_x, 378, chip_x + chip_width, 416),
                 radius=19,
@@ -724,7 +724,7 @@ class MiniGameReportRenderer(ReportRenderer):
         stats_height = self._text_block_height(stat_text, self._font(17), width - padding * 2 - 32)
         height = 178 + max(76, ending_height + 38) + sum(row_heights) + 18 * max(0, len(row_heights) - 1) + stats_height + 104
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "23:50 · 今日终章", font=self._font(36, True), fill=self.TEXT)
+        draw.text((padding, 46), "第三轮 · 今日终章", font=self._font(36, True), fill=self.TEXT)
         draw.text((padding, 97), f"《{str(conclusion.get('title') or '今日篇章')}》", font=self._font(25, True), fill=self.ACCENT)
         y = 140
         intro_height = max(76, ending_height + 38)
@@ -742,6 +742,129 @@ class MiniGameReportRenderer(ReportRenderer):
         draw.rounded_rectangle((padding, y, width - padding, y + stats_height + 34), radius=12, fill="#fff7fa", outline="#edc7d6", width=1)
         self._draw_wrapped(draw, padding + 16, y + 15, stat_text, self._font(17), width - padding * 2 - 32, self.MUTED)
         return self._save(image, "today_wife_conclusion")
+
+    def render_today_wife_collective_round(self, payload: Mapping[str, Any]) -> Path:
+        """Render one long 05A recap with representative events first."""
+
+        width, padding = 1180, 58
+        events = tuple(item for item in payload.get("events", ()) if isinstance(item, Mapping))
+        representative_count = min(3, len(events))
+        card_width = width - padding * 2
+        event_heights = [self._collective_event_height(event, card_width) for event in events]
+        conclusion = payload.get("conclusion") if isinstance(payload.get("conclusion"), Mapping) else {}
+        ending = str(conclusion.get("ending") or "").strip()
+        ending_height = (
+            max(112, 64 + self._text_block_height(ending, self._font(22), card_width - 44))
+            if ending
+            else 0
+        )
+        section_headers = 42 + (42 if len(events) > representative_count else 0)
+        toolbar_height = self._game_toolbar_height(None)
+        height = (
+            164
+            + section_headers
+            + sum(event_heights)
+            + 16 * max(0, len(events) - 1)
+            + (ending_height + 28 if ending else 0)
+            + toolbar_height
+            + 58
+        )
+        image, draw = self._new_fate_canvas(width, height)
+        round_no = int(payload.get("round_no") or 1)
+        draw.text((padding, 46), str(payload.get("title") or "今日集体互动"), font=self._font(36, True), fill=self.TEXT)
+        state = payload.get("day_state") if isinstance(payload.get("day_state"), Mapping) else {}
+        self._draw_game_act(draw, padding, 98, state, card_width)
+        draw.text(
+            (padding, 126),
+            f"第 {round_no} 轮 · {int(payload.get('participant_count') or 0)} 位参与者完成自动演算",
+            font=self._font(18, True),
+            fill=self.MUTED,
+        )
+        y = 164
+        draw.text((padding, y), "代表镜头", font=self._font(22, True), fill=self.ACCENT)
+        y += 42
+        core_event_id = int(payload.get("core_event_id") or 0)
+        for index, (event, event_height) in enumerate(zip(events, event_heights, strict=True)):
+            if index == representative_count and len(events) > representative_count:
+                y += 2
+                draw.text((padding, y), "其余互动", font=self._font(22, True), fill=self.ACCENT)
+                y += 42
+            self._draw_collective_event(
+                draw,
+                padding,
+                y,
+                card_width,
+                event_height,
+                event,
+                core=int(event.get("event_id") or 0) == core_event_id,
+            )
+            y += event_height + 16
+        if ending:
+            y += 6
+            draw.rounded_rectangle(
+                (padding, y, width - padding, y + ending_height),
+                radius=8,
+                fill="#ffffff",
+                outline="#d8a9ba",
+                width=2,
+            )
+            draw.text((padding + 22, y + 16), "收官", font=self._font(19, True), fill=self.ACCENT)
+            self._draw_wrapped(
+                draw,
+                padding + 22,
+                y + 44,
+                ending,
+                self._font(22),
+                card_width - 44,
+                self.TEXT,
+            )
+            y += ending_height + 22
+        self._draw_game_toolbar(draw, padding, height - toolbar_height - 24, width - padding, None)
+        return self._save(image, "today_wife_collective_round")
+
+    def _collective_event_height(self, event: Mapping[str, Any], width: int) -> int:
+        narrative = str(event.get("narrative") or "今天留下了一段新的互动。")
+        narrative_height = self._text_block_height(narrative, self._font(21), width - 44)
+        effects = tuple(item for item in event.get("effects", ()) if isinstance(item, Mapping))
+        effect_height = sum(
+            self._text_block_height(
+                f"{effect.get('left')} → {effect.get('right')}  {int(effect.get('delta') or 0):+d} · {effect.get('mark') or '关系发生变化'}",
+                self._font(17, True),
+                width - 44,
+            ) + 7
+            for effect in effects
+        )
+        return max(154, 78 + narrative_height + 16 + effect_height + 20)
+
+    def _draw_collective_event(
+        self,
+        draw: ImageDraw.ImageDraw,
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+        event: Mapping[str, Any],
+        *,
+        core: bool,
+    ) -> None:
+        draw.rounded_rectangle(
+            (left, top, left + width, top + height),
+            radius=8,
+            fill="#ffffff",
+            outline="#d58ea8" if core else "#ead3dc",
+            width=3 if core else 1,
+        )
+        label = "核心事件" if core else str(event.get("role") or "互动事件")
+        draw.text((left + 22, top + 16), label, font=self._font(17, True), fill=self.ACCENT)
+        actor = str(event.get("actor_nickname") or "一位群友")
+        title = str(event.get("title") or "关系发生了新的变化")
+        y = self._draw_wrapped(draw, left + 22, top + 45, f"{actor} · {title}", self._font(23, True), width - 44, self.TEXT)
+        y = self._draw_wrapped(draw, left + 22, y + 10, str(event.get("narrative") or ""), self._font(21), width - 44, self.MUTED)
+        for effect in (item for item in event.get("effects", ()) if isinstance(item, Mapping)):
+            delta = int(effect.get("delta") or 0)
+            color = self.ACCENT if delta >= 0 else "#ae6674"
+            value = f"{effect.get('left')} → {effect.get('right')}  {delta:+d} · {effect.get('mark') or '关系发生变化'}"
+            y = self._draw_wrapped(draw, left + 22, y + 7, value, self._font(17, True), width - 44, color)
 
     def _draw_game_act(self, draw: ImageDraw.ImageDraw, x: int, y: int, state: Mapping[str, Any], width: int) -> None:
         title = str(state.get("theme_title") or "今日篇章")
@@ -862,56 +985,17 @@ class MiniGameReportRenderer(ReportRenderer):
 
     @classmethod
     def _game_toolbar_actions(cls, available_actions: Any | None) -> tuple[str, ...]:
-        """Normalize optional service actions while retaining the legacy quick links."""
-
-        default = ("#互动 靠近", "#互动 回应", "#我的缘分", "#群缘分")
-        if available_actions is None:
-            return default
-        raw_actions: Any
-        if isinstance(available_actions, Mapping):
-            raw_actions = available_actions.get("actions") or available_actions.get("available_actions") or ()
-        else:
-            raw_actions = available_actions
-        if isinstance(raw_actions, str):
-            raw_actions = (raw_actions,)
-        if not isinstance(raw_actions, (tuple, list, set, frozenset)):
-            raw_actions = ()
-        labels: list[str] = []
-        for item in raw_actions:
-            if isinstance(item, Mapping):
-                value = item.get("display_command") or item.get("command") or item.get("label") or item.get("intent") or item.get("action")
-            else:
-                value = item
-            label = str(value or "").strip()
-            if not label:
-                continue
-            if label in {"靠近", "倾听", "回应", "修复", "助攻"}:
-                label = f"#互动 {label}"
-            elif label.startswith("互动 "):
-                label = f"#{label}"
-            if label not in labels:
-                labels.append(label)
-        for label in ("#我的缘分", "#群缘分"):
-            if label not in labels:
-                labels.append(label)
-        return tuple(labels)
+        return ("#我的缘分", "#群缘分", "#离婚")
 
     @classmethod
     def _game_toolbar_columns(cls, available_actions: Any | None) -> int:
-        count = len(cls._game_toolbar_actions(available_actions))
-        if count <= 4 or count >= 7:
-            return min(4, count)
         return 3
 
     @classmethod
     def _game_toolbar_height(cls, interaction_remaining: Any, available_actions: Any | None = None) -> int:
         labels = cls._game_toolbar_actions(available_actions)
         columns = cls._game_toolbar_columns(labels)
-        rows = max(1, (len(labels) + columns - 1) // columns)
-        chip_height, row_gap = 38, 6
-        top = 34 if interaction_remaining is not None else 10
-        bottom = 10
-        return top + rows * chip_height + max(0, rows - 1) * row_gap + bottom
+        return 64
 
     def _draw_game_toolbar(
         self,
@@ -925,21 +1009,20 @@ class MiniGameReportRenderer(ReportRenderer):
         labels = self._game_toolbar_actions(available_actions)
         columns = self._game_toolbar_columns(labels)
         height = self._game_toolbar_height(interaction_remaining, labels)
-        draw.rounded_rectangle((left, y, right, y + height), radius=10, fill="#fff7fa", outline="#edc7d6", width=1)
-        chip_top = y + 34 if interaction_remaining is not None else y + 10
-        if interaction_remaining is not None:
-            draw.text((left + 14, y + 10), "接下来可以做什么", font=self._font(15, True), fill=self.MUTED)
-            text = f"互动剩余 {max(0, int(interaction_remaining))}/5"
-            draw.text((right - self._text_width(text, self._font(15, True)) - 14, y + 10), text, font=self._font(15, True), fill=self.ACCENT)
-        chip_width = (right - left - 24 - 2 * (columns - 1)) // columns
+        draw.rounded_rectangle((left, y, right, y + height), radius=6, fill="#d9dde1", outline="#aeb4ba", width=2)
+        draw.line((left + 10, y + 8, right - 10, y + 8), fill="#f6f7f8", width=2)
+        for rivet_x in (left + 15, right - 15):
+            draw.ellipse((rivet_x - 4, y + 28, rivet_x + 4, y + 36), fill="#92999f", outline="#f4f5f6", width=1)
+        chip_top = y + 13
+        chip_width = (right - left - 52 - 8 * (columns - 1)) // columns
         for index, label in enumerate(labels):
             row, column = divmod(index, columns)
-            chip_left = left + 12 + column * (chip_width + 2)
+            chip_left = left + 26 + column * (chip_width + 8)
             chip_y = chip_top + row * 44
-            draw.rounded_rectangle((chip_left, chip_y, chip_left + chip_width, chip_y + 38), radius=18, fill="#ffffff", outline="#edc7d6", width=1)
+            draw.rounded_rectangle((chip_left, chip_y, chip_left + chip_width, chip_y + 38), radius=5, fill="#f8f8f7", outline="#b9bec3", width=1)
             font = self._font(16, True)
             display_label = self._ellipsize(label, font, chip_width - 18)
-            self._draw_centered(draw, chip_left + chip_width // 2, chip_y + 19, display_label, font, self.ACCENT)
+            self._draw_centered(draw, chip_left + chip_width // 2, chip_y + 19, display_label, font, "#8e4f67")
 
     def _draw_archive_relation(self, draw: ImageDraw.ImageDraw, image: Image.Image, left: int, y: int, right: int, row: Mapping[str, Any], relation: Mapping[str, Any], avatar_paths: Mapping[int, Path]) -> None:
         draw.rounded_rectangle((left, y, right, y + 108), radius=12, fill="#ffffff", outline="#efd8e2", width=1)
@@ -1151,10 +1234,20 @@ class MiniGameReportRenderer(ReportRenderer):
         return self._save(image, "today_wife_group")
 
     def _new_fate_canvas(self, width: int, height: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-        image = Image.new("RGB", (width, height), "#fffafd")
+        image = Image.new("RGB", (width, height), "#eceff1")
         draw = ImageDraw.Draw(image)
-        draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=18, outline="#f1d7e2", width=2)
-        draw.line((44, 36, min(width - 44, 166), 36), fill="#f2a1bc", width=4)
+        draw.rectangle((0, 0, width, 112), fill="#e7b6c6")
+        for x in range(-112, width + 112, 34):
+            draw.line((x, 0, x + 112, 112), fill="#efcbd6", width=13)
+        draw.rectangle((0, 112, width, height), fill="#f7f5f6")
+        draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=8, outline="#ffffff", width=3)
+        draw.rounded_rectangle((25, 25, width - 25, height - 25), radius=6, outline="#c9cdd0", width=1)
+        draw.rounded_rectangle((28, 12, 116, 34), radius=4, fill="#c5c9cc", outline="#f3f4f5", width=2)
+        for rivet_x in (38, 106):
+            draw.ellipse((rivet_x - 4, 19, rivet_x + 4, 27), fill="#858d94", outline="#f8f8f8", width=1)
+        mark_x = width - 92
+        draw.text((mark_x, 33), "X X", font=self._font(17, True), fill="#875166")
+        draw.arc((mark_x + 4, 53, mark_x + 48, 77), 12, 168, fill="#875166", width=3)
         return image, draw
 
     def _draw_fate_wrapped(

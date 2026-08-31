@@ -30,7 +30,10 @@ def test_archive_renderer_renders_search_results_as_a_portrait_image(tmp_path: P
         assert image.width == ACoastArchiveImageRenderer.WIDTH
         assert image.height > ACoastArchiveImageRenderer.HEADER_HEIGHT
         assert image.height < 520
-        assert image.getpixel((74, 110)) == (255, 0, 0)
+        assert image.mode == "RGBA"
+        assert image.getpixel((0, 0))[3] == 0
+        assert image.getpixel((34, 34))[3] == 255
+        assert image.getpixel((74, 110))[:3] == (255, 0, 0)
         assert image.getbbox() is not None
 
 
@@ -66,7 +69,7 @@ def test_profile_renderer_creates_an_adaptive_long_image_with_charts(tmp_path: P
     with Image.open(report) as image:
         assert image.width == ACoastArchiveImageRenderer.WIDTH
         assert image.height > 1500
-        assert image.getpixel((74, 148)) == (255, 0, 0)
+        assert image.getpixel((74, 148))[:3] == (255, 0, 0)
 
 
 def test_profile_renderer_omits_ai_narrative_panel_when_disabled(tmp_path: Path):

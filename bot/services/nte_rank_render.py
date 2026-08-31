@@ -15,6 +15,7 @@ import httpx
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from bot.config import RESOURCE_DIR, ROOT, settings
+from bot.services.image_style import transparent_rounded_corners
 from bot.services.nte_rank_data import RankResult, RankRow
 
 
@@ -378,7 +379,7 @@ class NTERankRenderer:
             except OSError:
                 continue
         path = self.output_dir / f"{prefix}_{uuid4().hex}.png"
-        image.convert("RGB").save(path, format="PNG", optimize=True)
+        transparent_rounded_corners(image).save(path, format="PNG", optimize=True)
         return path
 
 

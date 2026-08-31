@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.services.emoji_text import EmojiTextDraw
 from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
-from bot.services.image_style import paste_horizontal_gradient
+from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
 
 
 class ACoastArchiveImageRenderer:
@@ -789,5 +789,5 @@ class ACoastArchiveImageRenderer:
             except OSError:
                 continue
         path = self.output_dir / f"a_coast_archive_{uuid4().hex}.png"
-        image.save(path, format="PNG", optimize=True)
+        transparent_rounded_corners(image).save(path, format="PNG", optimize=True)
         return path

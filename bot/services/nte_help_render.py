@@ -9,9 +9,10 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.config import RESOURCE_DIR, ROOT, settings
+from bot.services.image_style import transparent_rounded_corners
 
 
-HELP_VERSION = "v8"
+HELP_VERSION = "v9"
 HELP_PATH = ROOT / "bot" / "resources" / "nte_help.json"
 UPSTREAM_HELP_DIR = ROOT / "GsUID.Core" / "gsuid_core" / "plugins" / "NTEUID" / "NTEUID" / "nte_help"
 TEXTURE_DIR = UPSTREAM_HELP_DIR / "texture2d"
@@ -83,7 +84,7 @@ class NTEHelpRenderer:
         draw.text((self.WIDTH // 2, height - 78), self.COMPATIBILITY_NOTE, font=self._font(26, True), fill=self.TEXT, anchor="mm")
         draw.text((self.WIDTH // 2, height - 32), "Created by GsCore & Copyright by 异环", font=self._font(22), fill=self.MUTED, anchor="mm")
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        image.convert("RGB").save(cached, format="PNG", optimize=True)
+        transparent_rounded_corners(image).save(cached, format="PNG", optimize=True)
         return cached
 
     def _draw_banner(self, image: Image.Image, draw: ImageDraw.ImageDraw) -> None:

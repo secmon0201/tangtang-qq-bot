@@ -230,6 +230,9 @@ def test_help_image_has_prefix_compatibility_footer(tmp_path: Path):
     assert renderer.COMPATIBILITY_NOTE == "兼容识别：#NTE、NTE、#nte、nte 均可识别"
     with Image.open(image_path) as image:
         assert image.height >= renderer.FOOTER_HEIGHT
+        assert image.mode == "RGBA"
+        assert image.getpixel((0, 0))[3] == 0
+        assert image.getpixel((34, 34))[3] == 255
 
 
 def test_rank_renderer_grows_with_rows(tmp_path: Path):
@@ -247,6 +250,9 @@ def test_rank_renderer_grows_with_rows(tmp_path: Path):
     with Image.open(image_path) as image:
         assert image.width == NTERankRenderer.WIDTH
         assert image.height > NTERankRenderer.HEADER_HEIGHT + NTERankRenderer.FOOTER_HEIGHT
+        assert image.mode == "RGBA"
+        assert image.getpixel((0, 0))[3] == 0
+        assert image.getpixel((34, 34))[3] == 255
 
 
 def test_role_header_uses_the_matching_original_character_art():

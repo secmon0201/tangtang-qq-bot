@@ -20,7 +20,7 @@ from bot.config import settings
 from bot.openapi import official_runtime
 from bot.services.emoji_text import EmojiTextDraw
 from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
-from bot.services.image_style import paste_horizontal_gradient
+from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
 
 
 def _official_message(event: Event) -> bool:
@@ -87,7 +87,7 @@ def _draw_official_probe_card(path) -> object:
     draw.text((82, 378), "未调用生成式 AI，\n也不会消耗模型 Token。", font=_font(21), fill="#907885", spacing=6)
     draw.rounded_rectangle((82, 466, width - 82, 512), radius=16, fill="#fce4f0")
     draw.text((108, 479), "收到图片即表示官方群消息接收和图片发送均正常。", font=_font(16), fill="#b43e78")
-    image.save(path, format="PNG")
+    transparent_rounded_corners(image).save(path, format="PNG")
     return path
 
 

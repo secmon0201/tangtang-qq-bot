@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 from bot.services.a_coast_archive_render import ACoastArchiveImageRenderer
 from bot.services.asoul import ScheduleItem
 from bot.services.asoul_render import ASoulImageRenderer
+from bot.services.asoul_web_render import ASoulWebRenderer
 from bot.services.mini_game_reports import MiniGameReportRenderer
 from bot.services.reports import ReportRenderer
 from bot.services.zhijiang_live_guard import LiveGuardStatus, LiveSchedule
@@ -26,6 +27,9 @@ NOW = datetime(2026, 7, 28, 1, 56, tzinfo=ZONE)
 
 def write_shared_reports() -> list[Path]:
     renderer = ReportRenderer(OUTPUT_DIR, command_prefix="#")
+    graphic_cover = OUTPUT_DIR / "graphic_announcement_cover.png"
+    graphic_sticker = Path("bot/resources/asoul_stickers/心宜/为你打call-0_sticker_static.png")
+    Image.new("RGB", (2200, 280), "#b6d5e9").save(graphic_cover)
     activity = {
         "activity_id": 518,
         "title": "今晚八点血染钟楼体验局",
@@ -51,7 +55,7 @@ def write_shared_reports() -> list[Path]:
         {"registration_no": 1, "display_user_id": "123****789", "nickname": "嘉然今天吃什么", "group_label": "测试群", "user_id": 1},
         {"registration_no": 2, "display_user_id": "987****321", "nickname": "向晚大魔王", "group_label": "枝江活动一群", "user_id": 2},
     )
-    return [
+    paths = [
         renderer.render_duplicate(
             [
                 {"user_id": 1, "nickname": "嘉然今天吃什么", "groups": list(groups[:2])},
@@ -101,7 +105,15 @@ def write_shared_reports() -> list[Path]:
         renderer.render_activity_participants(activity, participants),
         renderer.render_activity_winners(activity, [{"prize_name": "活动纪念徽章", "nickname": "嘉然今天吃什么", "display_user_id": "123****789", "registration_no": 1, "user_id": 1}]),
         renderer.render_global_announcement("今晚八点 A-SOUL 演唱会开播\n欢迎一起进直播间！"),
+        renderer.render_global_graphic_announcement(
+            "夏日群联动活动开放报名",
+            "本周六 20:00 开始，欢迎各群成员一起参与夏日特别活动。\n请提前确认时间，并在活动网页内填写报名信息；活动开始后会同步公布分组与注意事项。",
+            graphic_cover,
+            sticker=graphic_sticker if graphic_sticker.is_file() else None,
+        ),
     ]
+    graphic_cover.unlink(missing_ok=True)
+    return paths
 
 
 def write_live_reports() -> list[Path]:
@@ -137,12 +149,13 @@ def write_game_reports() -> list[Path]:
 
 async def write_asoul_reports() -> list[Path]:
     renderer = ASoulImageRenderer(OUTPUT_DIR)
+    web_renderer = ASoulWebRenderer(OUTPUT_DIR, sticker_selector=renderer.select_schedule_sticker)
     today = date(2026, 7, 28)
     items = [
         ScheduleItem(datetime(2026, 7, 28, 20, 0, tzinfo=ZONE), ("嘉然",), "夏日晚间歌回", "直播"),
         ScheduleItem(datetime(2026, 7, 28, 22, 0, tzinfo=ZONE), ("向晚", "贝拉"), "深夜电台特别节目", "杂谈"),
     ]
-    return [
+    pillow_paths = [
         await renderer.render_schedule(today, "今日直播", items),
         await renderer.render_week_schedule(((today, items), (today + timedelta(days=1), items[:1]))),
         await renderer.render_bilibili_notification("【B站新动态】测试UP\n今晚八点开播，欢迎提前预约。\nhttps://example.test/d"),
@@ -205,6 +218,75 @@ async def write_asoul_reports() -> list[Path]:
             },
         ),
     ]
+    try:
+        html_paths = [
+            await web_renderer.render_schedule("today", ((today, items),), generated_at="2026-07-28 01:56"),
+            await web_renderer.render_schedule(
+                "tomorrow",
+                ((today + timedelta(days=1), ()),),
+                generated_at="2026-07-28 01:56",
+            ),
+            await web_renderer.render_schedule(
+                "week",
+                ((today, items), (today + timedelta(days=1), items[:1]), (today + timedelta(days=2), ())),
+                generated_at="2026-07-28 01:56",
+            ),
+            await web_renderer.render_notification(
+                "【B站动态】测试 UP\n动态卡片 HTML 预览",
+                dynamic={
+                    "author": "测试 UP",
+                    "profile": "元气满满的 A-SOUL 舞担",
+                    "text": "周五中午 12 点，先来看看最新的枝江通讯，然后一起聊聊夏日舞台。",
+                    "quote_author": "A-SOUL 官方",
+                    "quote_text": "直播预约已开启，期待与你相见。",
+                    "reserve_title": "【突击】夏日回忆特别直播",
+                    "reserve_subtitle": "明天 20:00 开播",
+                    "reserve_action": "预约",
+                    "likes": "18.2万",
+                    "following": "24",
+                    "followers": "73.4万",
+                },
+            ),
+            await web_renderer.render_notification(
+                "【B站视频】测试 UP\n新视频发布",
+                video={
+                    "author": "测试 UP",
+                    "profile": "A-SOUL 成员",
+                    "text": "夏日特别企划：和大家一起完成舞台挑战",
+                    "description": "记录这次舞台筹备的片段，也感谢每一位来到直播间的朋友。",
+                    "likes": "18.2万",
+                    "following": "24",
+                    "followers": "73.4万",
+                },
+            ),
+            await web_renderer.render_notification(
+                "【开播】测试 UP\n夏日晚间歌回",
+                live={
+                    "phase": "start",
+                    "author": "测试 UP",
+                    "profile": "A-SOUL 成员",
+                    "text": "夏日晚间歌回",
+                    "likes": "18.2万",
+                    "following": "24",
+                    "followers": "73.4万",
+                },
+            ),
+            await web_renderer.render_notification(
+                "【下播】测试 UP\n夏日晚间歌回",
+                live={
+                    "phase": "end",
+                    "author": "测试 UP",
+                    "profile": "A-SOUL 成员",
+                    "text": "夏日晚间歌回",
+                    "live_duration": "02:15:32",
+                    "popularity_peak": "12.8万",
+                    "popularity_average": "8.6万",
+                },
+            ),
+        ]
+    finally:
+        await web_renderer.close()
+    return [*pillow_paths, *html_paths]
 
 
 def write_archive_reports() -> list[Path]:

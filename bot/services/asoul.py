@@ -356,8 +356,8 @@ class ASoulService:
                 "avatar_url": str(author.get("face") or profile.get("face") or ""),
                 "profile": str(profile.get("sign") or ""),
                 "text": self._normalize_multiline_text(archive.get("title") or text),
-                "emoji_labels": "|".join(label for label, _ in emoji_urls[:8]),
-                "emoji_urls": "|".join(url for _, url in emoji_urls[:8]),
+                "emoji_labels": "|".join(label for label, _ in emoji_urls),
+                "emoji_urls": "|".join(url for _, url in emoji_urls),
                 "quote_author": quoted_author,
                 "quote_text": self._normalize_multiline_text(quoted_text),
                 "url": self._absolute_url(str(jump)),
@@ -541,7 +541,7 @@ class ASoulService:
             for picture in draw.get("items") or []:
                 if isinstance(picture, dict):
                     add(picture.get("src") or picture.get("url") or picture.get("img_src"))
-        return urls[:4]
+        return urls
 
     @staticmethod
     def _additional_text(value: object) -> str:
@@ -654,32 +654,45 @@ class ASoulService:
         relation, up_stat = await asyncio.gather(
             self._user(uid).get_relation_info(),
             self._user(uid).get_up_stat(),
+            return_exceptions=True,
         )
         archive = up_stat.get("archive") if isinstance(up_stat, dict) else {}
+        stats: dict[str, str] = {}
+        values = (
+            ("likes", up_stat.get("likes") if isinstance(up_stat, dict) else None),
+            ("following", relation.get("following") if isinstance(relation, dict) else None),
+            ("followers", relation.get("follower") if isinstance(relation, dict) else None),
+            ("views", archive.get("view") if isinstance(archive, dict) else None),
+        )
+        for key, value in values:
+            number = self._nonnegative_int(value)
+            if number is not None:
+                stats[key] = str(number)
+        return stats
+
+    async def _enrich_creator_notification(self, item: dict[str, str]) -> dict[str, str]:
+        """Add independently available creator data without discarding the notification."""
+        uid = str(item.get("uid") or "")
+        if not uid:
+            return dict(item)
+        profile_payload, stats_payload = await asyncio.gather(
+            self._user(uid).get_user_info(),
+            self.fetch_profile_stats(uid),
+            return_exceptions=True,
+        )
+        profile = profile_payload if isinstance(profile_payload, dict) else {}
+        stats = stats_payload if isinstance(stats_payload, dict) else {}
         return {
-            "likes": str(up_stat.get("likes") or 0) if isinstance(up_stat, dict) else "0",
-            "following": str(relation.get("following") or 0) if isinstance(relation, dict) else "0",
-            "followers": str(relation.get("follower") or 0) if isinstance(relation, dict) else "0",
-            "views": str(archive.get("view") or 0) if isinstance(archive, dict) else "0",
+            **item,
+            "uid": str(profile.get("mid") or uid),
+            "author": str(item.get("author") or profile.get("name") or uid),
+            "avatar_url": str(item.get("avatar_url") or profile.get("face") or ""),
+            "profile": str(profile.get("sign") or item.get("profile") or ""),
+            **stats,
         }
 
     async def enrich_live_notification(self, live: dict[str, str]) -> dict[str, str]:
-        uid = str(live.get("uid") or "")
-        if not uid:
-            return dict(live)
-        profile_payload, stats = await asyncio.gather(
-            self._user(uid).get_user_info(),
-            self.fetch_profile_stats(uid),
-        )
-        profile = profile_payload if isinstance(profile_payload, dict) else {}
-        return {
-            **live,
-            "uid": str(profile.get("mid") or uid),
-            "author": str(live.get("author") or profile.get("name") or uid),
-            "avatar_url": str(live.get("avatar_url") or profile.get("face") or ""),
-            "profile": str(profile.get("sign") or ""),
-            **stats,
-        }
+        return await self._enrich_creator_notification(live)
 
     def live_notification_details(self, message: str) -> dict[str, str] | None:
         details = self._live_notification_details.get(message)
@@ -700,22 +713,10 @@ class ASoulService:
             self._dynamic_notification_details.pop(next(iter(self._dynamic_notification_details)))
 
     async def enrich_video_notification(self, video: dict[str, str]) -> dict[str, str]:
-        uid = str(video.get("uid") or "")
-        if not uid:
-            return dict(video)
-        profile_payload, stats = await asyncio.gather(
-            self._user(uid).get_user_info(),
-            self.fetch_profile_stats(uid),
-        )
-        profile = profile_payload if isinstance(profile_payload, dict) else {}
-        return {
-            **video,
-            "uid": str(profile.get("mid") or uid),
-            "author": str(video.get("author") or profile.get("name") or uid),
-            "avatar_url": str(profile.get("face") or ""),
-            "profile": str(profile.get("sign") or ""),
-            **stats,
-        }
+        return await self._enrich_creator_notification(video)
+
+    async def enrich_dynamic_notification(self, dynamic: dict[str, str]) -> dict[str, str]:
+        return await self._enrich_creator_notification(dynamic)
 
     def video_notification_details(self, message: str) -> dict[str, str] | None:
         details = self._video_notification_details.get(message)
@@ -981,7 +982,11 @@ class ASoulService:
                             else:
                                 if settings.asoul_bili_push_dynamic:
                                     message = f"【B站新动态】{item['author']}\n{item['text']}\n{item['url']}"
-                                    self._remember_dynamic_notification(message, item)
+                                    try:
+                                        details = await self.enrich_dynamic_notification(item)
+                                    except Exception:
+                                        details = item
+                                    self._remember_dynamic_notification(message, details)
                                     sent.append(message)
                 entry["dynamic_initialized"] = True
             if live_status is not None:

@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>枝江直播日历 · 糖糖</title>
+  <style>
+    :root {
+      --paper: #ffffff;
+      --ink: #17181c;
+      --muted: #755361;
+      --line: #ead0dc;
+      --soft: #fff3f7;
+      --pink: #f25d8e;
+      --xinyi-pink: #ff4f91;
+      --xinyi-blush: #ffe1ec;
+      --xinyi-wine: #6f2548;
+      --xinyi-ink: #30232b;
+      --xinyi-lilac: #d8ccff;
+      --xinyi-silver: #c5c8d0;
+      --cyan: #18a9c5;
+      --lime: #b8ef3d;
+      --red: #ef3f5d;
+      --gold: #d5a841;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--soft); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--soft);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      letter-spacing: 0;
+    }
+    button { font: inherit; letter-spacing: 0; }
+    .page { min-height: 100vh; }
+    .interactive-bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 15px max(20px, calc((100vw - 1080px) / 2));
+      color: #755367;
+      background: repeating-linear-gradient(135deg, #f9dfe9 0 16px, #efd0dd 16px 18px);
+      border-bottom: 2px solid #aa7f90;
+      box-shadow: 0 6px 0 rgba(234, 215, 223, .78);
+    }
+    .interactive-brand {
+      position: relative;
+      padding: 9px 16px;
+      color: #755367;
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid #aa7f90;
+      box-shadow: 4px 4px 0 #ead7df;
+      font-size: 17px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .interactive-brand::after {
+      content: "";
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      width: 7px;
+      height: 7px;
+      background: radial-gradient(circle at 35% 30%, #fff, #b2b3b7 48%, #777a80);
+      border: 1px solid #94969b;
+      border-radius: 50%;
+    }
+    .view-switcher { display: grid; grid-template-columns: repeat(3, minmax(86px, 1fr)); gap: 8px; }
+    .view-switcher button {
+      min-height: 40px;
+      padding: 0 18px;
+      color: #755367;
+      background: rgba(255, 255, 255, .92);
+      border: 1px solid #aa7f90;
+      border-radius: 4px;
+      box-shadow: 3px 3px 0 #ead7df;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .view-switcher button[aria-selected="true"] {
+      color: #59404e;
+      background: #f3c9d9;
+      border-color: #9f7285;
+      box-shadow: 3px 3px 0 #d5a9ba;
+      font-weight: 900;
+    }
+    .shell { width: min(1080px, 100%); margin: 0 auto; padding: 24px; }
+    .capture-card {
+      position: relative;
+      overflow: hidden;
+      width: 100%;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 14px 34px rgba(23, 24, 28, .12);
+    }
+    .capture-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 10px;
+      background: var(--xinyi-pink);
+    }
+    .schedule-capture {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      padding: 0 12px 12px 0;
+      background: linear-gradient(to bottom, #ead7df 0%, #d2d6dc 100%);
+      border: 0;
+      box-shadow: none;
+    }
+    .schedule-capture::before { display: none; }
+    .schedule-card {
+      --z-paper: #f9dfe9;
+      --z-stripe: #efd0dd;
+      --z-line: #aa7f90;
+      --z-deep: #755367;
+      --z-muted: #866f7b;
+      --z-shadow: #ead7df;
+      --z-divider: #d8b9c6;
+      --z-row: #d7b6c3;
+      --z-label: #f4e4ea;
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+      width: 100%;
+      color: #493b43;
+      background: #fffdfd;
+      border: 2px solid var(--z-line);
+      box-shadow: none;
+    }
+    .schedule-card::before { display: none; }
+    .schedule-card::after { display: none; }
+    .masthead {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 30px;
+      align-items: end;
+      padding: 60px 58px 42px;
+      border-bottom: 1px solid var(--line);
+    }
+    .schedule-card .masthead {
+      position: relative;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 36px;
+      align-items: center;
+      padding: 54px 58px 34px;
+      background: repeating-linear-gradient(135deg, var(--z-paper) 0 16px, var(--z-stripe) 16px 18px);
+      border-bottom: 2px solid var(--z-line);
+    }
+    .schedule-eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      color: var(--z-deep);
+      font-size: 16px;
+      font-weight: 900;
+    }
+    .xinyi-mark {
+      position: relative;
+      display: block;
+      flex: 0 0 54px;
+      width: 54px;
+      height: 54px;
+      color: #fffafd;
+      background: var(--z-deep);
+      border: 0;
+      border-radius: 50%;
+      box-shadow: -5px 5px 0 #d5a9ba;
+      transform: rotate(-7deg);
+    }
+    .xinyi-mark::before {
+      content: "×  ×";
+      position: absolute;
+      inset: 8px 0 auto;
+      text-align: center;
+      font-size: 21px;
+      line-height: 1;
+      font-weight: 900;
+    }
+    .xinyi-mark::after {
+      content: "⌣";
+      position: absolute;
+      inset: 24px 0 auto;
+      text-align: center;
+      font-size: 23px;
+      line-height: 1;
+      font-weight: 900;
+    }
+    .masthead h1 { margin: 0; font-size: 64px; line-height: 1.08; font-weight: 900; }
+    .schedule-card .masthead h1 {
+      display: inline;
+      color: #44363f;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: 9px 9px 0 var(--z-shadow);
+    }
+    .schedule-card .masthead-copy { margin-top: 29px; color: var(--z-muted); }
+    .masthead-copy { margin: 16px 0 0; color: var(--muted); font-size: 20px; line-height: 1.7; }
+    .signal-block { min-width: 194px; padding-left: 24px; border-left: 6px solid var(--cyan); }
+    .schedule-card .signal-block {
+      min-width: 208px;
+      padding: 22px 24px;
+      position: relative;
+      color: var(--z-deep);
+      background: rgba(255, 255, 255, .94);
+      border: 2px solid var(--z-line);
+      box-shadow: 7px 7px 0 var(--z-shadow);
+      transform: rotate(1.4deg);
+    }
+    .schedule-card .signal-block::before {
+      content: "";
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 10px;
+      height: 10px;
+      background: radial-gradient(circle at 35% 30%, #fff, #aeb1b8 48%, #737781);
+      border: 1px solid #8d9098;
+      border-radius: 50%;
+    }
+    .schedule-card .signal-value { color: var(--z-deep); }
+    .schedule-card .signal-label { color: var(--z-muted); }
+    .schedule-card .masthead::after {
+      content: "";
+      position: absolute;
+      z-index: 3;
+      top: 32px;
+      right: 52px;
+      width: 42px;
+      height: 72px;
+      border: 5px solid #b2b5ba;
+      border-left-width: 3px;
+      border-radius: 24px 24px 18px 18px;
+      box-shadow: inset 0 0 0 1px #fff;
+      transform: rotate(14deg);
+    }
+    .signal-value { display: block; font-size: 50px; line-height: 1; font-weight: 900; }
+    .signal-label { display: block; margin-top: 10px; color: var(--muted); font-size: 17px; }
+    .schedule-body { padding: 10px 58px 42px; }
+    .schedule-card .schedule-body { padding: 0 58px; background: #fff; }
+    .day-section { display: grid; grid-template-columns: 176px 1fr; border-bottom: 1px solid var(--line); }
+    .schedule-card .day-section {
+      grid-template-columns: 140px minmax(0, 1fr);
+      border-top: 2px dotted var(--z-divider);
+      border-bottom: 0;
+    }
+    .day-section:last-child { border-bottom: 0; }
+    .day-heading { padding: 34px 24px 34px 0; }
+    .schedule-card .day-heading { position: relative; padding: 30px 18px 42px 0; }
+    .day-date { display: block; font-size: 31px; font-weight: 900; }
+    .schedule-card .day-date { color: var(--z-deep); }
+    .schedule-card .date-month,
+    .schedule-card .date-day { display: block; white-space: nowrap; }
+    .day-weekday { display: block; margin-top: 8px; color: var(--muted); font-size: 18px; }
+    .schedule-card .day-weekday { color: var(--z-muted); }
+    .schedule-card .day-heading::after {
+      content: "○  ○  ○";
+      position: absolute;
+      bottom: 18px;
+      left: 0;
+      color: #a5aaaf;
+      font-family: Consolas, monospace;
+      font-size: 18px;
+      letter-spacing: 1px;
+      transform: rotate(-7deg);
+    }
+    .day-list { min-width: 0; padding: 20px 0 20px 32px; border-left: 1px solid var(--line); }
+    .schedule-card .day-list { padding: 16px 0 16px 18px; border-left: 0; }
+    .schedule-row {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr) 132px auto;
+      gap: 22px;
+      align-items: center;
+      padding: 18px 0;
+    }
+    .schedule-card .schedule-row {
+      position: relative;
+      margin: 10px 0;
+      padding: 17px;
+      background: #fff;
+      border: 2px solid var(--z-row);
+      box-shadow: 7px 7px 0 var(--z-shadow);
+    }
+    .schedule-card .schedule-row:nth-child(2) { transform: rotate(-.35deg); }
+    .schedule-row + .schedule-row { border-top: 2px solid var(--z-row); }
+    .schedule-time { font-size: 31px; line-height: 1.2; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .schedule-card .schedule-time {
+      align-self: center;
+      padding: 12px 8px;
+      color: var(--z-deep);
+      background: #fff;
+      border: 2px solid var(--z-line);
+      box-shadow: 4px 4px 0 var(--z-shadow);
+      text-align: center;
+    }
+    .schedule-content { min-width: 0; }
+    .schedule-card .schedule-title { font-size: 21px; line-height: 1.35; overflow-wrap: anywhere; word-break: normal; }
+    .schedule-hosts { margin-top: 7px; color: var(--muted); font-size: 17px; line-height: 1.5; }
+    .schedule-card .schedule-hosts { color: var(--z-muted); }
+    .schedule-sticker {
+      display: block;
+      align-self: center;
+      width: 118px;
+      height: 96px;
+      object-fit: contain;
+    }
+    .schedule-label {
+      align-self: center;
+      min-width: 82px;
+      padding: 8px 12px;
+      text-align: center;
+      color: #2c3035;
+      background: var(--soft);
+      border-left: 4px solid var(--pink);
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .schedule-card .schedule-label {
+      position: relative;
+      color: var(--z-deep);
+      background: var(--z-label);
+      border: 1px solid var(--z-line);
+      border-radius: 16px 3px 15px 4px;
+      box-shadow: 3px 3px 0 var(--z-shadow);
+    }
+    .schedule-card .schedule-label::before,
+    .schedule-card .schedule-label::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      display: none;
+      border-radius: 50%;
+      transform: translateY(-50%);
+    }
+    .schedule-card .schedule-label::before { left: 5px; }
+    .schedule-card .schedule-label::after { right: 5px; }
+    .schedule-row.highlight-pink { background: #fff; }
+    .schedule-row.highlight-red { background: #fff; }
+    .schedule-row.highlight-gold { background: #fff; }
+    .schedule-card .schedule-row::after {
+      content: "";
+      position: absolute;
+      right: 9px;
+      bottom: 9px;
+      width: 9px;
+      height: 9px;
+      background: radial-gradient(circle at 35% 30%, #fff, #b2b3b7 48%, #777a80);
+      border: 1px solid #94969b;
+      border-radius: 50%;
+    }
+    .empty-day { padding: 30px 0; color: var(--muted); font-size: 19px; }
+    .schedule-card .empty-day { color: var(--z-muted); }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 24px 58px 28px;
+      color: #70727a;
+      background: #f6f7f9;
+      border-top: 1px solid var(--line);
+      font-size: 15px;
+    }
+    .schedule-card .footer {
+      position: relative;
+      color: #6b7079;
+      background: linear-gradient(105deg, #f4f5f6 0%, #dfe2e6 45%, #f8f9fa 70%, #d5d8dd 100%);
+      border-top: 2px solid #afb3ba;
+    }
+    .schedule-card .footer strong { color: #555b65; }
+    .loading, .error { padding: 110px 40px; text-align: center; font-size: 22px; }
+    .error { color: var(--red); }
+    .notification { padding: 0 58px 46px; }
+    .notification-card {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      padding: 0 12px 12px 0;
+      background: linear-gradient(to bottom, #ead7df 0%, #d2d6dc 100%);
+      border: 0;
+      box-shadow: none;
+    }
+    .notification-card::before { display: none; }
+    .notification-surface {
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+      width: 100%;
+      color: #493b43;
+      background: #fffdfd;
+      border: 2px solid #aa7f90;
+    }
+    .notification-card .notification { padding: 0 58px 42px; background: #fff; }
+    .creator {
+      display: grid;
+      grid-template-columns: 112px 1fr auto;
+      gap: 24px;
+      align-items: center;
+      padding: 54px 0 32px;
+      border-bottom: 1px solid var(--line);
+    }
+    .notification-card .creator {
+      position: relative;
+      padding: 52px 0 34px;
+      background: repeating-linear-gradient(135deg, #f9dfe9 0 16px, #efd0dd 16px 18px);
+      border-bottom: 2px solid #aa7f90;
+    }
+    .notification-card .creator::after {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      top: 20px;
+      right: 50px;
+      width: 38px;
+      height: 64px;
+      border: 5px solid #b2b5ba;
+      border-left-width: 3px;
+      border-radius: 24px 24px 18px 18px;
+      box-shadow: inset 0 0 0 1px #fff;
+      transform: rotate(14deg);
+    }
+    .avatar {
+      width: 112px;
+      height: 112px;
+      object-fit: cover;
+      background: var(--soft);
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+    }
+    .notification-card .avatar { border-color: #755367; box-shadow: -5px 5px 0 #d5a9ba; }
+    .creator-name { margin: 0; font-size: 38px; line-height: 1.2; font-weight: 900; }
+    .notification-card .creator-name {
+      position: relative;
+      z-index: 1;
+      display: inline;
+      color: #44363f;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: 6px 6px 0 #ead7df;
+    }
+    .creator-profile { margin: 9px 0 0; color: var(--muted); font-size: 17px; line-height: 1.55; }
+    .notification-card .creator-profile { position: relative; z-index: 1; color: #866f7b; }
+    .notification-kind {
+      padding: 11px 16px;
+      color: var(--ink);
+      background: var(--lime);
+      border: 2px solid var(--ink);
+      border-radius: 4px;
+      font-size: 17px;
+      font-weight: 900;
+    }
+    .notification-card .notification-kind {
+      position: relative;
+      z-index: 1;
+      color: #755367;
+      background: #f4e4ea;
+      border-color: #aa7f90;
+      border-radius: 16px 3px 15px 4px;
+      box-shadow: 3px 3px 0 #ead7df;
+    }
+    .notification-title { margin: 38px 0 22px; font-size: 45px; line-height: 1.34; font-weight: 900; word-break: break-word; }
+    .notification-card .notification-title { color: #493b43; }
+    .notification-text { margin: 0 0 26px; font-size: 23px; line-height: 1.72; white-space: pre-wrap; word-break: break-word; }
+    .inline-emoji { display: inline-block; width: 1.5em; height: 1.5em; margin: 0 .05em; vertical-align: -.32em; object-fit: contain; }
+    .media-frame { overflow: hidden; margin: 24px 0; background: #e9ebef; border: 2px solid var(--ink); }
+    .notification-card .media-frame,
+    .notification-card .quote,
+    .notification-card .reservation,
+    .notification-card .stats {
+      background: #fff;
+      border: 2px solid #d7b6c3;
+      box-shadow: 7px 7px 0 #ead7df;
+    }
+    .media-frame img { display: block; width: 100%; height: auto; }
+    .media-fallback { display: grid; min-height: 360px; place-items: center; color: var(--muted); font-size: 24px; font-weight: 800; }
+    .image-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0; }
+    .image-grid.single { grid-template-columns: 1fr; }
+    .image-grid img { display: block; width: 100%; height: auto; background: var(--soft); border: 1px solid var(--line); }
+    .quote { margin: 28px 0; padding: 26px 30px; background: #f3f4f6; border-left: 8px solid var(--cyan); }
+    .notification-card .quote { border-left: 8px solid #d5a9ba; }
+    .quote strong { display: block; margin-bottom: 10px; font-size: 19px; }
+    .quote p { margin: 0; font-size: 19px; line-height: 1.65; white-space: pre-wrap; }
+    .quote .image-grid { margin: 20px 0 0; }
+    .reservation {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 24px;
+      align-items: center;
+      margin: 28px 0;
+      padding: 24px 28px;
+      background: #fff4f8;
+      border: 1px solid #f0c9d8;
+      border-left: 8px solid var(--pink);
+    }
+    .reservation-label { color: #a24e6f; font-size: 15px; font-weight: 800; }
+    .reservation-title { margin-top: 7px; font-size: 22px; line-height: 1.45; font-weight: 900; word-break: break-word; }
+    .reservation-subtitle { margin-top: 5px; color: var(--muted); font-size: 17px; line-height: 1.5; }
+    .reservation-action {
+      min-width: 88px;
+      padding: 10px 16px;
+      color: #fff;
+      background: var(--pink);
+      border: 2px solid var(--ink);
+      border-radius: 4px;
+      text-align: center;
+      font-size: 17px;
+      font-weight: 900;
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 32px; border: 1px solid var(--line); }
+    .stat { padding: 22px; }
+    .stat + .stat { border-left: 1px solid var(--line); }
+    .stat span { display: block; color: var(--muted); font-size: 15px; }
+    .stat strong { display: block; margin-top: 8px; font-size: 29px; }
+    .live-start .notification-kind { color: #fff; background: var(--red); }
+    .live-end .notification-kind { background: #cfd2d9; }
+    .notification-card.live-start .notification-kind { color: #755367; background: #f4e4ea; }
+    .notification-card.live-end .notification-kind { color: #755367; background: #f4e4ea; }
+    .notification-card .footer {
+      position: relative;
+      color: #6b7079;
+      background: linear-gradient(105deg, #f4f5f6 0%, #dfe2e6 45%, #f8f9fa 70%, #d5d8dd 100%);
+      border-top: 2px solid #afb3ba;
+    }
+    .capture-mode { background: transparent; }
+    .capture-mode .interactive-bar { display: none !important; }
+    .capture-mode .shell { width: 1080px; margin: 0; padding: 0; }
+    .capture-mode .capture-card { box-shadow: none; }
+    @media (max-width: 720px) {
+      .interactive-bar { align-items: stretch; flex-direction: column; gap: 12px; }
+      .interactive-brand { text-align: center; }
+      .shell { padding: 12px; }
+      .masthead { grid-template-columns: 1fr; padding: 46px 24px 30px; }
+      .schedule-card .masthead { padding-top: 48px; }
+      .schedule-card .masthead { grid-template-columns: 1fr; }
+      .schedule-card .signal-block { grid-column: 1 / -1; }
+      .masthead h1 { font-size: 42px; }
+      .signal-block { display: flex; align-items: baseline; gap: 10px; padding-left: 14px; }
+      .schedule-card .signal-block { min-width: 0; padding: 16px 18px; }
+      .signal-value { font-size: 34px; }
+      .schedule-body { padding: 0 24px 24px; }
+      .day-section { grid-template-columns: 1fr; }
+      .day-heading { padding: 24px 0 12px; }
+      .day-list { padding: 0; border-left: 0; }
+      .schedule-row { grid-template-columns: 76px minmax(0, 1fr); gap: 12px; }
+      .schedule-card .schedule-row { padding: 14px 12px; }
+      .schedule-time { font-size: 24px; }
+      .schedule-title { font-size: 20px; }
+      .schedule-label { grid-column: 2; justify-self: start; }
+      .schedule-sticker { grid-column: 2; width: 96px; height: 88px; }
+      .footer { align-items: flex-start; flex-direction: column; padding: 20px 24px; }
+      .notification-card .notification { padding: 0 24px 30px; }
+      .creator { grid-template-columns: 78px minmax(0, 1fr); gap: 16px; }
+      .avatar { width: 78px; height: 78px; }
+      .creator-name { font-size: 28px; }
+      .notification-kind { grid-column: 1 / -1; justify-self: start; }
+      .notification-title { font-size: 32px; }
+      .notification-text { font-size: 19px; }
+      .image-grid { grid-template-columns: repeat(2, 1fr); }
+      .reservation { grid-template-columns: 1fr; }
+      .reservation-action { justify-self: start; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body class="__ASOUL_CAPTURE_CLASS__">
+  <div class="page">
+    <header class="interactive-bar">
+      <div class="interactive-brand">枝江直播日历</div>
+      <div class="view-switcher" role="tablist" aria-label="直播日历范围">
+        <button type="button" role="tab" data-view="today">今日</button>
+        <button type="button" role="tab" data-view="tomorrow">明日</button>
+        <button type="button" role="tab" data-view="week">本周</button>
+      </div>
+    </header>
+    <main class="shell"><article id="capture-root" class="capture-card"><div class="loading">正在整理直播日历…</div></article></main>
+  </div>
+  <script>
+  (() => {
+    const embeddedPayload = __ASOUL_PAYLOAD_JSON__;
+    const root = document.querySelector("#capture-root");
+    const labels = { today: "今日直播", tomorrow: "明日直播", week: "本周直播" };
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+    const safeUrl = (value) => /^(https:\/\/|data:image\/)/.test(String(value || "")) ? String(value) : "";
+    const splitUrls = (value) => {
+      if (Array.isArray(value)) return value.filter((item) => safeUrl(item));
+      try { const parsed = JSON.parse(String(value || "[]")); return Array.isArray(parsed) ? parsed.filter((item) => safeUrl(item)) : []; }
+      catch { return String(value || "").split("|").filter((item) => safeUrl(item)); }
+    };
+    const image = (url, className = "") => safeUrl(url) ? `<img class="${className}" src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer">` : "";
+    const highlightClass = (style) => style === "粉色" ? "highlight-pink" : style === "红色" ? "highlight-red" : style === "白金色" ? "highlight-gold" : "";
+    const scheduleDate = (value) => {
+      const match = String(value || "").match(/^(\d{2}月)(\d{2}日)$/);
+      return match
+        ? `<span class="day-date"><span class="date-month">${match[1]}</span><span class="date-day">${match[2]}</span></span>`
+        : `<span class="day-date">${escapeHtml(value)}</span>`;
+    };
+    function renderSchedule(payload) {
+      const days = payload.days || [];
+      root.className = "capture-card schedule-capture";
+      root.innerHTML = `
+        <article class="schedule-card">
+        <section class="masthead">
+          <div><div class="schedule-eyebrow"><span class="xinyi-mark" aria-hidden="true"></span><span>枝江直播日历</span></div><h1>${escapeHtml(payload.title || labels[payload.view] || "直播日历")}</h1><p class="masthead-copy">从开播时间到节目内容，一眼找到值得等候的那一场。</p></div>
+          <div class="signal-block"><span class="signal-value">${Number(payload.event_count || 0)}</span><span class="signal-label">场直播安排</span></div>
+        </section>
+        <div class="schedule-body">${days.map((day) => `
+          <section class="day-section">
+            <header class="day-heading">${scheduleDate(day.date_label)}<span class="day-weekday">${escapeHtml(day.weekday)}</span></header>
+            <div class="day-list">${day.items?.length ? day.items.map((item) => `
+              <article class="schedule-row ${item.highlighted ? highlightClass(item.highlight_style) : ""}">
+                <time class="schedule-time">${escapeHtml(item.time)}</time>
+                <div class="schedule-content"><div class="schedule-title">${escapeHtml(item.content)}</div><div class="schedule-hosts">${escapeHtml(item.hosts?.join(" / ") || "出演成员待确认")}${item.highlighted ? ` · 特别关注 ${escapeHtml(item.highlight_style)}` : ""}</div></div>
+                ${image(item.sticker_url, "schedule-sticker")}
+                <span class="schedule-label">${escapeHtml(item.label || "直播")}</span>
+              </article>`).join("") : `<div class="empty-day">当天暂时没有公开直播安排。</div>`}</div>
+          </section>`).join("")}</div>
+        <footer class="footer"><span>枝江日历功能由爱驼提供技术支持</span><strong>A海岸 Bot · Generated by Secmon</strong></footer>
+        </article>`;
+    }
+    function notificationKind(mode) {
+      return { dynamic: "最新动态", video: "最新视频", "live-start": "正在直播", "live-end": "直播已结束" }[mode] || "B站通知";
+    }
+    function richNodes(value, fallback = "") {
+      try {
+        const nodes = JSON.parse(String(value || "[]"));
+        if (!Array.isArray(nodes) || !nodes.length) return escapeHtml(fallback);
+        return nodes.map((node) => {
+          const text = escapeHtml(node?.text || "");
+          return node?.type === "emoji" ? (image(node.url, "inline-emoji") || text) : text;
+        }).join("");
+      } catch { return escapeHtml(fallback); }
+    }
+    function renderNotification(payload) {
+      const d = payload.details || {};
+      const mode = payload.mode || "dynamic";
+      const title = mode === "dynamic" ? (d.title || "发布了一条新动态") : (d.text || d.title || "新内容已发布");
+      const pictures = mode === "dynamic" ? splitUrls(d.image_urls) : [];
+      const quotePictures = mode === "dynamic" ? splitUrls(d.quote_image_urls) : [];
+      const cover = mode === "video" || mode.startsWith("live-") ? safeUrl(d.cover_url) : "";
+      const profileStats = mode === "live-end"
+        ? [["直播时长", d.live_duration || "未完整观测"], ["人气峰值", d.popularity_peak || "--"], ["人气均值", d.popularity_average || "--"]]
+        : [["获赞", d.likes || "--"], ["关注", d.following || "--"], ["粉丝", d.followers || "--"]];
+      root.className = `capture-card notification-card ${escapeHtml(mode)}`;
+      root.innerHTML = `<article class="notification-surface"><div class="notification">
+        <header class="creator">${image(d.avatar_url, "avatar") || `<div class="avatar"></div>`}<div><h1 class="creator-name">${escapeHtml(d.author || "B站UP主")}</h1><p class="creator-profile">${escapeHtml(d.profile || "来自 Bilibili 的最新信号")}</p></div><span class="notification-kind">${notificationKind(mode)}</span></header>
+        <h2 class="notification-title">${escapeHtml(title)}</h2>
+        ${mode === "dynamic" ? `<p class="notification-text">${richNodes(d.rich_nodes, d.text)}</p>` : ""}
+        ${cover ? `<div class="media-frame">${image(cover)}</div>` : mode !== "dynamic" ? `<div class="media-frame media-fallback">Bilibili ${mode.startsWith("live-") ? "Live" : "Video"}</div>` : ""}
+        ${pictures.length ? `<div class="image-grid ${pictures.length === 1 ? "single" : ""}">${pictures.map((url) => image(url)).join("")}</div>` : ""}
+        ${d.quote_text || d.quote_author || quotePictures.length ? `<blockquote class="quote"><strong>${escapeHtml(d.quote_author || "转发内容")}</strong>${d.quote_text ? `<p>${richNodes(d.quote_rich_nodes, d.quote_text)}</p>` : ""}${quotePictures.length ? `<div class="image-grid ${quotePictures.length === 1 ? "single" : ""}">${quotePictures.map((url) => image(url)).join("")}</div>` : ""}</blockquote>` : ""}
+        ${d.reserve_title || d.reserve_subtitle ? `<section class="reservation"><div><div class="reservation-label">直播预约</div>${d.reserve_title ? `<div class="reservation-title">${escapeHtml(d.reserve_title)}</div>` : ""}${d.reserve_subtitle ? `<div class="reservation-subtitle">${escapeHtml(d.reserve_subtitle)}</div>` : ""}</div><span class="reservation-action">${escapeHtml(d.reserve_action || "预约")}</span></section>` : ""}
+        ${mode === "video" && d.description ? `<p class="notification-text">${escapeHtml(d.description)}</p>` : ""}
+        <div class="stats">${profileStats.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
+      </div><footer class="footer"><span>本功能由爱托提供技术支持</span><strong>A海岸 Bot · Generated by Secmon</strong></footer></article>`;
+    }
+    function render(payload) { payload?.mode === "schedule" ? renderSchedule(payload) : renderNotification(payload || {}); }
+    function selectedView() {
+      const value = new URLSearchParams(location.search).get("view");
+      return ["today", "tomorrow", "week"].includes(value) ? value : "today";
+    }
+    function updateTabs(view) { document.querySelectorAll("[data-view]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.view === view))); }
+    async function loadView(view, replaceHistory = false) {
+      updateTabs(view);
+      root.innerHTML = `<div class="loading">正在整理${labels[view]}…</div>`;
+      const apiBase = location.pathname.startsWith("/live") ? "/live/api" : "/asoul-live/api";
+      try {
+        const response = await fetch(`${apiBase}/schedule?view=${encodeURIComponent(view)}`, { headers: { Accept: "application/json" } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        render(await response.json());
+        const next = new URL(location.href); next.searchParams.set("view", view); history[replaceHistory ? "replaceState" : "pushState"]({}, "", next);
+        document.title = `${labels[view]} · 枝江直播日历`;
+      } catch { root.innerHTML = `<div class="error">直播日历暂时无法读取，请稍后刷新。</div>`; }
+    }
+    document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => loadView(button.dataset.view)));
+    window.addEventListener("popstate", () => loadView(selectedView(), true));
+    if (embeddedPayload) { render(embeddedPayload); updateTabs(embeddedPayload.view || "today"); }
+    else { loadView(selectedView(), true); }
+  })();
+  </script>
+</body>
+</html>

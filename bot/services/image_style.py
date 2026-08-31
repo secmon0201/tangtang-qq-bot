@@ -2,7 +2,31 @@
 
 from __future__ import annotations
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
+
+
+DEFAULT_OUTPUT_CORNER_RADIUS = 34
+
+
+def transparent_rounded_corners(
+    image: Image.Image,
+    *,
+    radius: int = DEFAULT_OUTPUT_CORNER_RADIUS,
+) -> Image.Image:
+    """Return an RGBA image with transparent pixels outside its rounded corners."""
+    result = image.convert("RGBA")
+    actual_radius = min(max(0, radius), min(result.size) // 2)
+    if actual_radius == 0:
+        return result
+
+    mask = Image.new("L", result.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, result.width - 1, result.height - 1),
+        radius=actual_radius,
+        fill=255,
+    )
+    result.putalpha(ImageChops.multiply(result.getchannel("A"), mask))
+    return result
 
 
 def paste_horizontal_gradient(

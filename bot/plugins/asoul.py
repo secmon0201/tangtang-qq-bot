@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from fastapi import HTTPException, status
+from fastapi.responses import HTMLResponse
 from nonebot import get_bots, get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
@@ -16,12 +18,24 @@ from bot.application.command_helpers import text_arg
 from bot.services.asoul import ASoulService
 from bot.services.qq_platform import call_qq_action
 from bot.services.asoul_render import ASoulImageRenderer
+from bot.services.asoul_web_render import (
+    ASoulWebRenderer,
+    VALID_SCHEDULE_VIEWS,
+    asoul_live_web_url,
+    page_html,
+    schedule_payload,
+)
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database
 
 
 service = ASoulService(database())
 renderer = ASoulImageRenderer(settings.report_dir, settings.report_font_path)
+web_renderer = ASoulWebRenderer(
+    settings.report_dir,
+    renderer._remote_image,
+    renderer.select_schedule_sticker,
+)
 driver = get_driver()
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
@@ -53,15 +67,15 @@ async def _send_monitor_messages() -> None:
                 dynamic_details = service.dynamic_notification_details(message)
                 video_details = service.video_notification_details(message)
                 caption = (
-                    dynamic_details["url"]
+                    str(dynamic_details.get("url") or message)
                     if dynamic_details is not None
-                    else video_details["url"]
+                    else str(video_details.get("url") or message)
                     if video_details is not None
                     else message
                 )
                 if settings.asoul_bili_render_cards:
                     try:
-                        card = await renderer.render_bilibili_notification(
+                        card = await web_renderer.render_notification(
                             message,
                             live=live_details,
                             dynamic=dynamic_details,
@@ -69,8 +83,18 @@ async def _send_monitor_messages() -> None:
                         )
                         payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
                     except Exception:
-                        logger.exception("A-SOUL Bilibili card render failed; sending text fallback")
-                        payload = caption
+                        logger.exception("A-SOUL HTML card render failed; trying Pillow fallback")
+                        try:
+                            card = await renderer.render_bilibili_notification(
+                                message,
+                                live=live_details,
+                                dynamic=dynamic_details,
+                                video=video_details,
+                            )
+                            payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
+                        except Exception:
+                            logger.exception("A-SOUL Pillow card render failed; sending text fallback")
+                            payload = caption
                 elif dynamic_details is not None or video_details is not None:
                     payload = caption
                 is_live = message.startswith("【开播】")
@@ -103,6 +127,11 @@ async def _bot_can_at_all(bot: Bot, group_id: int) -> bool:
 
 @driver.on_startup
 async def _start_asoul_monitor() -> None:
+    if settings.asoul_bili_render_cards:
+        try:
+            await web_renderer.warmup()
+        except Exception:
+            logger.exception("A-SOUL HTML renderer warmup failed; Pillow fallback remains available")
     if not settings.asoul_bili_enabled:
         logger.info("A-SOUL Bilibili monitor is disabled")
         return
@@ -127,6 +156,7 @@ async def _start_asoul_monitor() -> None:
 async def _stop_asoul_monitor() -> None:
     if scheduler.running:
         scheduler.shutdown(wait=False)
+    await web_renderer.close()
 
 
 asoul_help = on_command("A魂帮助", aliases={"bot帮助"}, priority=5, block=True)
@@ -148,12 +178,25 @@ async def _():
 async def finish_schedule_reply(matcher: Any, title: str, target_day: datetime, args: str = "") -> None:
     items = await service.schedule_for_day(target_day.date())
     fallback = service.render_schedule(target_day.date(), title, items)
+    view = "tomorrow" if title == "明日直播" else "today"
     try:
-        card = await renderer.render_schedule(target_day.date(), title, items)
+        card = await web_renderer.render_schedule(
+            view,
+            [(target_day.date(), items)],
+            generated_at=datetime.now(service.timezone).strftime("%Y-%m-%d %H:%M"),
+        )
     except Exception:
-        logger.exception("A-SOUL schedule card render failed; sending text fallback")
-        await matcher.finish(fallback)
-    await matcher.finish(MessageSegment.image(file=card.resolve().as_uri()))
+        logger.exception("A-SOUL HTML schedule render failed; trying Pillow fallback")
+        try:
+            card = await renderer.render_schedule(target_day.date(), title, items)
+        except Exception:
+            logger.exception("A-SOUL Pillow schedule render failed; sending text fallback")
+            await matcher.finish(fallback)
+    link = asoul_live_web_url(view)
+    payload: Any = MessageSegment.image(file=card.resolve().as_uri())
+    if link:
+        payload += f"\n线上：{link}"
+    await matcher.finish(payload)
 
 
 async def finish_week_schedule_reply(matcher: Any, args: str = "") -> None:
@@ -167,11 +210,23 @@ async def finish_week_schedule_reply(matcher: Any, args: str = "") -> None:
         blocks.append(service.render_schedule(target_day, "本周直播", items))
         card_days.append((target_day, items))
     try:
-        card = await renderer.render_week_schedule(card_days)
+        card = await web_renderer.render_schedule(
+            "week",
+            card_days,
+            generated_at=now.strftime("%Y-%m-%d %H:%M"),
+        )
     except Exception:
-        logger.exception("A-SOUL weekly schedule card render failed; sending text fallback")
-        await matcher.finish("\n\n".join(blocks))
-    await matcher.finish(MessageSegment.image(file=card.resolve().as_uri()))
+        logger.exception("A-SOUL HTML weekly schedule render failed; trying Pillow fallback")
+        try:
+            card = await renderer.render_week_schedule(card_days)
+        except Exception:
+            logger.exception("A-SOUL Pillow weekly schedule render failed; sending text fallback")
+            await matcher.finish("\n\n".join(blocks))
+    link = asoul_live_web_url("week")
+    payload: Any = MessageSegment.image(file=card.resolve().as_uri())
+    if link:
+        payload += f"\n线上：{link}"
+    await matcher.finish(payload)
 
 
 @today_live.handle()
@@ -182,8 +237,6 @@ async def _(args=CommandArg()):
 @tomorrow_live.handle()
 async def _(args=CommandArg()):
     now = datetime.now(service.timezone)
-    if now.weekday() == 6:
-        await tomorrow_live.finish("还没有下周的直播排表哦")
     await finish_schedule_reply(tomorrow_live, "明日直播", now + timedelta(days=1), text_arg(args))
 
 
@@ -315,13 +368,23 @@ async def _test_bili(matcher: Any, kind: str, uid: str) -> None:
     caption = item["url"] if kind in {"dynamic", "video"} else message
     if settings.asoul_bili_render_cards:
         try:
-            card = await renderer.render_bilibili_notification(
+            card = await web_renderer.render_notification(
                 message,
                 dynamic=item if kind == "dynamic" and video_details is None else None,
                 video=video_details,
             )
         except Exception:
-            logger.exception("A-SOUL Bilibili test card render failed; sending text fallback")
+            logger.exception("A-SOUL HTML test card render failed; trying Pillow fallback")
+            try:
+                card = await renderer.render_bilibili_notification(
+                    message,
+                    dynamic=item if kind == "dynamic" and video_details is None else None,
+                    video=video_details,
+                )
+            except Exception:
+                logger.exception("A-SOUL Pillow test card render failed; sending text fallback")
+            else:
+                await matcher.finish(MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption)
         else:
             await matcher.finish(MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption)
     await matcher.finish(caption)
@@ -341,11 +404,48 @@ async def _bilibili_card_payload(message: str) -> Any:
     if not settings.asoul_bili_render_cards:
         return message
     try:
-        card = await renderer.render_bilibili_notification(message)
+        card = await web_renderer.render_notification(message)
     except Exception:
-        logger.exception("A-SOUL Bilibili card render failed; sending text fallback")
-        return message
+        logger.exception("A-SOUL HTML card render failed; trying Pillow fallback")
+        try:
+            card = await renderer.render_bilibili_notification(message)
+        except Exception:
+            logger.exception("A-SOUL Pillow card render failed; sending text fallback")
+            return message
     return MessageSegment.image(file=card.resolve().as_uri()) + "\n" + message
+
+
+async def _schedule_web_payload(view: str) -> dict[str, Any]:
+    if view not in VALID_SCHEDULE_VIEWS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="view 仅支持 today、tomorrow、week")
+    now = datetime.now(service.timezone)
+    today = now.date()
+    tomorrow = (now + timedelta(days=1)).date()
+    week_end = (now + timedelta(days=6 - now.weekday())).date()
+    last = max(tomorrow, week_end)
+    schedules = await service.schedule_for_days(today, last)
+    if view == "today":
+        targets = [today]
+    elif view == "tomorrow":
+        targets = [tomorrow]
+    else:
+        targets = [today + timedelta(days=offset) for offset in range((week_end - today).days + 1)]
+    return schedule_payload(
+        view,
+        [(target, schedules.get(target, [])) for target in targets],
+        generated_at=now.strftime("%Y-%m-%d %H:%M"),
+    )
+
+
+@driver.server_app.get("/asoul-live/", response_class=HTMLResponse)
+async def asoul_live_web_page() -> HTMLResponse:
+    return HTMLResponse(page_html())
+
+
+@driver.server_app.get("/asoul-live/api/schedule")
+async def asoul_live_web_schedule(view: str = "today") -> dict[str, Any]:
+    payload = await _schedule_web_payload(view)
+    return web_renderer.localize_schedule_stickers(payload)
 
 
 @bili_status.handle()

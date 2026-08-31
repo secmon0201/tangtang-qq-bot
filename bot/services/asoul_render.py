@@ -8,6 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from time import sleep, time_ns
 from typing import Any, Iterable
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from PIL import Image, ImageDraw, ImageFont
@@ -16,7 +17,7 @@ import qrcode
 from bot.config import RESOURCE_DIR
 from bot.services.emoji_text import EmojiTextDraw
 from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
-from bot.services.image_style import paste_horizontal_gradient
+from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
 
 
 class ASoulImageRenderer:
@@ -148,7 +149,7 @@ class ASoulImageRenderer:
     def _day_layout(self, items: list[Any]) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         for item in items:
-            sticker = self._select_sticker(getattr(item, "hosts", ()) or ())
+            sticker = self.select_schedule_sticker(getattr(item, "hosts", ()) or ())
             content_width = 514 if sticker else 704
             lines = self._wrap(str(getattr(item, "content", "")), self._font(29), content_width, 2)
             row_height = max(138, 76 + len(lines) * 39)
@@ -286,6 +287,8 @@ class ASoulImageRenderer:
         image_urls = self._parse_dynamic_image_urls(dynamic.get("image_urls"))
         quote_rich_nodes = self._parse_dynamic_rich_nodes(dynamic.get("quote_rich_nodes"))
         quote_image_urls = self._parse_dynamic_image_urls(dynamic.get("quote_image_urls"))
+        images = self._load_dynamic_images(image_urls)
+        quote_images = self._load_dynamic_images(quote_image_urls)
         body_lines = (
             self._layout_dynamic_nodes(rich_nodes, self._font(30), content_width - 68)
             if rich_nodes
@@ -296,31 +299,26 @@ class ASoulImageRenderer:
                 content_width - 68,
             )
         )
-        if len(body_lines) > 24:
-            body_lines = body_lines[:24]
-            body_lines[-1].append(("text", "…"))
-        max_quote_lines = 15
         quote_lines = (
             self._layout_dynamic_nodes(quote_rich_nodes, self._font(24), content_width - 98, emoji_size=28)
             if quote_rich_nodes
             else [
                 [("text", character) for character in line]
-                for line in self._wrap_preserving_linebreaks(quote_text, self._font(24), content_width - 98, max_quote_lines)
+                for line in self._wrap_preserving_linebreaks(quote_text, self._font(24), content_width - 98, None)
             ]
             if quote_text
             else []
         )
         if quote_image_urls and not quote_lines:
             quote_lines = [[("text", "转发内容附图")]]
-        if len(quote_lines) > max_quote_lines:
-            quote_lines = quote_lines[:max_quote_lines]
-            quote_lines[-1].append(("text", "..."))
-        quote_image_height = self._dynamic_image_grid_height(quote_image_urls, single_height=180, tile_height=140)
+        image_layout = self._dynamic_image_grid_layout(images, self.WIDTH - 224)
+        quote_image_layout = self._dynamic_image_grid_layout(quote_images, self.WIDTH - 280)
+        quote_image_height = self._dynamic_image_grid_height(quote_image_layout)
         quote_height = 62 + len(quote_lines) * 38 + (16 + quote_image_height if quote_image_height else 0) if quote_lines else 0
-        reserve_title_lines = self._wrap_preserving_linebreaks(reserve_title, self._font(25, True), 610, 2) if reserve_title else []
-        reserve_subtitle_lines = self._wrap_preserving_linebreaks(reserve_subtitle, self._font(20), 610, 2) if reserve_subtitle else []
+        reserve_title_lines = self._wrap_preserving_linebreaks(reserve_title, self._font(25, True), 610, None) if reserve_title else []
+        reserve_subtitle_lines = self._wrap_preserving_linebreaks(reserve_subtitle, self._font(20), 610, None) if reserve_subtitle else []
         reserve_height = 34 + len(reserve_title_lines) * 34 + len(reserve_subtitle_lines) * 28 + 18
-        image_height = self._dynamic_image_grid_height(image_urls)
+        image_height = self._dynamic_image_grid_height(image_layout)
         content_top = 274
         content_cursor = content_top + 86 + len(body_lines) * 52
         if image_height:
@@ -370,7 +368,7 @@ class ASoulImageRenderer:
         content_cursor = y
         if image_height:
             image_top = content_cursor + 18
-            self._draw_dynamic_image_grid(image, image_urls, 112, image_top, self.WIDTH - 112, 360, 240)
+            self._draw_dynamic_image_grid(image, image_layout, 112, image_top)
             content_cursor = image_top + image_height
         if quote_lines:
             quote_top = content_cursor + 8
@@ -392,12 +390,9 @@ class ASoulImageRenderer:
             if quote_image_height:
                 self._draw_dynamic_image_grid(
                     image,
-                    quote_image_urls,
+                    quote_image_layout,
                     140,
                     quote_y + 8,
-                    self.WIDTH - 140,
-                    180,
-                    140,
                 )
             content_cursor = quote_bottom
         if reserve_title_lines or reserve_subtitle_lines:
@@ -459,41 +454,57 @@ class ASoulImageRenderer:
             return []
         if not isinstance(raw_urls, list):
             return []
-        return [str(url) for url in raw_urls if str(url).startswith(("https://", "http://"))][:4]
+        return [str(url) for url in raw_urls if str(url).startswith(("https://", "http://"))]
+
+    def _load_dynamic_images(self, urls: list[str]) -> list[Image.Image | None]:
+        return [self._remote_image(url) for url in urls]
 
     @staticmethod
-    def _dynamic_image_grid_height(urls: list[str], single_height: int = 360, tile_height: int = 240) -> int:
-        if not urls:
+    def _scaled_image_height(source: Image.Image | None, width: int, fallback: int) -> int:
+        if source is None or source.width <= 0 or source.height <= 0:
+            return fallback
+        return max(1, round(width * source.height / source.width))
+
+    def _dynamic_image_grid_layout(
+        self, images: list[Image.Image | None], available_width: int
+    ) -> list[tuple[Image.Image | None, int, int, int, int]]:
+        if not images:
+            return []
+        gap = 12
+        columns = 1 if len(images) == 1 else min(3, len(images))
+        tile_width = (available_width - gap * (columns - 1)) // columns
+        layout: list[tuple[Image.Image | None, int, int, int, int]] = []
+        cursor_y = 0
+        for row_start in range(0, len(images), columns):
+            row = images[row_start:row_start + columns]
+            heights = [self._scaled_image_height(source, tile_width, tile_width) for source in row]
+            row_height = max(heights)
+            for column, (source, height) in enumerate(zip(row, heights, strict=True)):
+                left = column * (tile_width + gap)
+                layout.append((source, left, cursor_y, tile_width, height))
+            cursor_y += row_height + gap
+        return layout
+
+    @staticmethod
+    def _dynamic_image_grid_height(layout: list[tuple[Image.Image | None, int, int, int, int]]) -> int:
+        if not layout:
             return 0
-        return single_height if len(urls) == 1 else ((len(urls) + 1) // 2) * tile_height + ((len(urls) - 1) // 2) * 12
+        return max(top + height for _, _, top, _, height in layout)
 
     def _draw_dynamic_image_grid(
         self,
         image: Image.Image,
-        urls: list[str],
+        layout: list[tuple[Image.Image | None, int, int, int, int]],
         left: int,
         top: int,
-        right: int,
-        single_height: int,
-        tile_height: int,
     ) -> None:
-        if not urls:
+        if not layout:
             return
-        gap = 12
-        if len(urls) == 1:
-            boxes = [(left, top, right, top + single_height)]
-        else:
-            width = (right - left - gap) // 2
-            boxes = []
-            for index in range(len(urls)):
-                row, column = divmod(index, 2)
-                image_left = left + column * (width + gap)
-                image_top = top + row * (tile_height + gap)
-                boxes.append((image_left, image_top, image_left + width, image_top + tile_height))
         draw = ImageDraw.Draw(image)
-        for url, box in zip(urls, boxes, strict=False):
+        for source, offset_x, offset_y, width, height in layout:
+            box = (left + offset_x, top + offset_y, left + offset_x + width, top + offset_y + height)
             draw.rounded_rectangle(box, radius=16, fill="#f6eff4")
-            self._paste_cover(image, url, box, radius=16)
+            self._paste_full_image(image, source, box)
 
     def _layout_dynamic_nodes(
         self,
@@ -578,7 +589,9 @@ class ASoulImageRenderer:
         description_lines = self._wrap_preserving_linebreaks(description, self._font(22), 844, 12) if description else []
         title_y = 274
         cover_top = 350 + max(0, len(title_lines) - 1) * 54
-        cover_bottom = cover_top + 480
+        cover_width = self.WIDTH - 152
+        cover = self._remote_image(str(video.get("cover_url") or ""))
+        cover_bottom = cover_top + self._scaled_image_height(cover, cover_width, 480)
         description_top = cover_bottom + 28
         description_height = 62 + len(description_lines) * 32 if description_lines else 0
         stats_top = description_top + description_height + (28 if description_lines else 22)
@@ -611,8 +624,10 @@ class ASoulImageRenderer:
             draw.text((76, title_y + index * 54), line, font=self._font(42, True), fill="#242734")
         cover_box = (76, cover_top, self.WIDTH - 76, cover_bottom)
         draw.rounded_rectangle(cover_box, radius=22, fill="#f6eff4")
-        if not self._paste_cover(image, str(video.get("cover_url") or ""), cover_box, radius=22):
+        if cover is None:
             self._draw_centered(draw, self.WIDTH // 2, (cover_top + cover_bottom) // 2, "Bilibili Video", self._font(38, True), "#81889a")
+        else:
+            self._paste_full_image(image, cover, cover_box)
 
         if description_lines:
             draw.rounded_rectangle(
@@ -659,7 +674,12 @@ class ASoulImageRenderer:
         room_url = str(live.get("url") or (lines[2] if len(lines) > 2 else ""))
         uid = str(live.get("uid") or "")
         profile = str(live.get("profile") or "")
-        height = 1160 if starting else 1540
+        cover_width = self.WIDTH - 152
+        cover = self._remote_image(str(live.get("cover_url") or ""))
+        cover_top = 360
+        cover_height = self._scaled_image_height(cover, cover_width, 500 if starting else 430)
+        cover_bottom = cover_top + cover_height
+        height = cover_bottom + (300 if starting else 750)
         image = Image.new("RGBA", (self.WIDTH, height), "#fff8fb")
         draw = EmojiTextDraw(image)
         draw.rounded_rectangle((0, 0, self.WIDTH, height), radius=42, fill="#fffafd")
@@ -686,13 +706,15 @@ class ASoulImageRenderer:
             draw.text((236, 182), self._ellipsize(profile, self._font(20), 694), font=self._font(20), fill="#8b8f9e")
 
         draw.text((76, 274), self._ellipsize(title, self._font(46, True), 900), font=self._font(46, True), fill="#242734")
-        cover_box = (76, 360, self.WIDTH - 76, 860 if starting else 790)
+        cover_box = (76, cover_top, self.WIDTH - 76, cover_bottom)
         draw.rounded_rectangle(cover_box, radius=22, fill="#f6eff4")
-        if not self._paste_cover(image, str(live.get("cover_url") or ""), cover_box, radius=22):
-            self._draw_centered(draw, self.WIDTH // 2, 610, "Bilibili Live", self._font(38, True), "#81889a")
+        if cover is None:
+            self._draw_centered(draw, self.WIDTH // 2, (cover_top + cover_bottom) // 2, "Bilibili Live", self._font(38, True), "#81889a")
+        else:
+            self._paste_full_image(image, cover, cover_box)
 
         if starting and room_url:
-            profile_top = 910
+            profile_top = cover_bottom + 50
             draw.rounded_rectangle((76, profile_top, self.WIDTH - 76, height - 76), radius=22, fill="#fffafd", outline="#f2dde6", width=1)
             stats = (("获赞", self._format_stat(live.get("likes"))), ("关注", self._format_stat(live.get("following"))), ("粉丝", self._format_stat(live.get("followers"))))
             for index, (label, value) in enumerate(stats):
@@ -706,7 +728,7 @@ class ASoulImageRenderer:
                 qr_x = qr_left + 15
                 image.alpha_composite(qr, (qr_x, profile_top + 17))
         elif not starting:
-            settlement_top = 838
+            settlement_top = cover_bottom + 48
             draw.rounded_rectangle((76, settlement_top, 336, settlement_top + 58), radius=24, fill="#fce0eb")
             self._draw_heart(draw, 111, settlement_top + 28, 15, "#ef5f8d")
             draw.text((140, settlement_top + 14), "直播结算", font=self._font(27, True), fill="#d95080")
@@ -834,9 +856,7 @@ class ASoulImageRenderer:
         if cached is not None:
             return cached.copy()
 
-        candidates = [url]
-        if url.startswith("http://"):
-            candidates.append("https://" + url[len("http://"):])
+        candidates = self._remote_image_candidates(url)
         headers = {
             "User-Agent": "Mozilla/5.0",
             "Referer": "https://www.bilibili.com/",
@@ -856,21 +876,38 @@ class ASoulImageRenderer:
                         sleep(0.25 * (attempt + 1))
         return None
 
+    @staticmethod
+    def _remote_image_candidates(url: str) -> list[str]:
+        """Prefer HTTPS and rotate Bilibili image hosts during CDN failures."""
+        parsed = urlsplit(url)
+        if not parsed.hostname:
+            return [url]
 
-    def _paste_cover(self, image: Image.Image, url: str, box: tuple[int, int, int, int], radius: int) -> bool:
-        source = self._remote_image(url)
+        scheme = "https" if parsed.scheme in {"http", "https"} else parsed.scheme
+        hosts = [parsed.netloc]
+        hostname = parsed.hostname.lower()
+        if hostname in {"i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"}:
+            port = f":{parsed.port}" if parsed.port else ""
+            hosts.extend(f"{host}{port}" for host in ("i0.hdslb.com", "i1.hdslb.com", "i2.hdslb.com"))
+
+        candidates: list[str] = []
+        for host in hosts:
+            candidate = urlunsplit((scheme, host, parsed.path, parsed.query, ""))
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+
+    @staticmethod
+    def _paste_full_image(
+        image: Image.Image, source: Image.Image | None, box: tuple[int, int, int, int]
+    ) -> bool:
         if source is None:
             return False
         left, top, right, bottom = box
         width, height = right - left, bottom - top
-        scale = max(width / source.width, height / source.height)
-        resized = source.resize((round(source.width * scale), round(source.height * scale)), Image.Resampling.LANCZOS)
-        x = (resized.width - width) // 2
-        y = (resized.height - height) // 2
-        crop = resized.crop((x, y, x + width, y + height))
-        mask = Image.new("L", (width, height), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, width, height), radius=radius, fill=255)
-        image.paste(crop, (left, top), mask)
+        resized = source.resize((width, height), Image.Resampling.LANCZOS)
+        image.alpha_composite(resized, (left, top))
         return True
 
     def _paste_circle(self, image: Image.Image, url: str, left: int, top: int, size: int, fallback: str) -> None:
@@ -918,7 +955,8 @@ class ASoulImageRenderer:
             return f"{number / 10_000:.1f}".rstrip("0").rstrip(".") + "万"
         return str(number)
 
-    def _select_sticker(self, hosts: Iterable[str]) -> Path | None:
+    def select_schedule_sticker(self, hosts: Iterable[str]) -> Path | None:
+        """Choose one local sticker belonging to the scheduled hosts."""
         stickers = self._sticker_map()
         candidates = [path for host in hosts for path in stickers.get(str(host), [])]
         return random.choice(candidates) if candidates else None
@@ -1006,13 +1044,13 @@ class ASoulImageRenderer:
         text: str,
         font: ImageFont.ImageFont,
         width: int,
-        maximum: int,
+        maximum: int | None,
     ) -> list[str]:
         lines: list[str] = []
         for paragraph in str(text).replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-            wrapped = self._wrap(paragraph or " ", font, width, maximum)
+            wrapped = self._wrap(paragraph or " ", font, width, maximum or 1_000_000)
             for line in wrapped:
-                if len(lines) == maximum:
+                if maximum is not None and len(lines) == maximum:
                     return lines[: maximum - 1] + [self._ellipsize(lines[maximum - 1], font, width)]
                 lines.append(line)
         return lines
@@ -1040,5 +1078,5 @@ class ASoulImageRenderer:
     def _save(self, image: Image.Image, prefix: str) -> Path:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         path = self.output_dir / f"{prefix}_{time_ns()}.png"
-        image.convert("RGB").save(path, format="PNG", optimize=True)
+        transparent_rounded_corners(image).save(path, format="PNG", optimize=True)
         return path

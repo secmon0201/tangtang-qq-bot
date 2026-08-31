@@ -29,6 +29,41 @@ class FakeMatcher:
         raise _ScheduleFinished()
 
 
+def test_schedule_web_payload_selects_only_requested_view(monkeypatch):
+    captured = {}
+
+    async def fake_schedule_for_days(first, last):
+        captured["range"] = (first, last)
+        return {first: []}
+
+    monkeypatch.setattr(plugin.service, "schedule_for_days", fake_schedule_for_days)
+
+    payload = asyncio.run(plugin._schedule_web_payload("tomorrow"))
+
+    assert payload["view"] == "tomorrow"
+    assert len(payload["days"]) == 1
+    assert captured["range"][1] >= captured["range"][0]
+
+
+def test_public_schedule_api_embeds_host_matched_stickers(monkeypatch):
+    payload = {"view": "week", "days": [{"items": [{"hosts": ["心宜"]}]}]}
+
+    async def fake_payload(view):
+        assert view == "week"
+        return payload
+
+    def localize(value):
+        assert value is payload
+        return {"view": "week", "days": [{"items": [{"sticker_url": "data:image/png;base64,test"}]}]}
+
+    monkeypatch.setattr(plugin, "_schedule_web_payload", fake_payload)
+    monkeypatch.setattr(plugin.web_renderer, "localize_schedule_stickers", localize)
+
+    result = asyncio.run(plugin.asoul_live_web_schedule("week"))
+
+    assert result["days"][0]["items"][0]["sticker_url"].startswith("data:image/png;base64,")
+
+
 def test_schedule_reply_ignores_a_option(monkeypatch):
     matcher = FakeMatcher()
     captured = {}
@@ -45,12 +80,35 @@ def test_schedule_reply_ignores_a_option(monkeypatch):
 
     monkeypatch.setattr(plugin.service, "schedule_for_day", fake_schedule_for_day)
     monkeypatch.setattr(plugin.service, "render_schedule", fake_render_schedule)
+    monkeypatch.setattr(plugin.web_renderer, "render_schedule", fail_card)
     monkeypatch.setattr(plugin.renderer, "render_schedule", fail_card)
 
     with pytest.raises(_ScheduleFinished):
         asyncio.run(plugin.finish_schedule_reply(matcher, "今日直播", datetime(2026, 8, 16, 12, 0), "-a"))
     assert captured["day"] == date(2026, 8, 16)
     assert matcher.finished_message == "完整日程：心宜 / 思诺"
+
+
+def test_schedule_image_reply_uses_the_single_bare_short_link(monkeypatch, tmp_path):
+    matcher = FakeMatcher()
+    card = tmp_path / "schedule.png"
+    card.write_bytes(b"png")
+
+    async def fake_schedule_for_day(day):
+        return []
+
+    async def fake_render_schedule(*args, **kwargs):
+        return card
+
+    monkeypatch.setattr(plugin.service, "schedule_for_day", fake_schedule_for_day)
+    monkeypatch.setattr(plugin.web_renderer, "render_schedule", fake_render_schedule)
+
+    with pytest.raises(_ScheduleFinished):
+        asyncio.run(plugin.finish_schedule_reply(matcher, "今日直播", datetime(2026, 8, 16, 12, 0)))
+
+    rendered = str(matcher.finished_message)
+    assert rendered.endswith("线上：s.secmon.cn/r")
+    assert "https://" not in rendered
 
 
 def test_week_schedule_reply_ignores_a_option(monkeypatch):
@@ -69,6 +127,7 @@ def test_week_schedule_reply_ignores_a_option(monkeypatch):
 
     monkeypatch.setattr(plugin.service, "schedule_for_days", fake_schedule_for_days)
     monkeypatch.setattr(plugin.service, "render_schedule", fake_render_schedule)
+    monkeypatch.setattr(plugin.web_renderer, "render_schedule", fail_card)
     monkeypatch.setattr(plugin.renderer, "render_week_schedule", fail_card)
 
     with pytest.raises(_ScheduleFinished):
@@ -135,6 +194,60 @@ def test_live_push_mentions_all_when_bot_is_admin(monkeypatch):
     assert [action for action, _ in calls] == ["get_group_member_info", "send_group_msg"]
     assert calls[-1][1]["message"][0].type == "at"
     assert calls[-1][1]["message"][0].data["qq"] == "all"
+
+
+def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp_path):
+    bot = FakeBot()
+    calls = []
+    rendered = []
+    card = tmp_path / "05a.png"
+    card.write_bytes(b"png")
+    messages = [
+        "【B站新动态】测试UP\n动态正文\nhttps://example.test/dynamic",
+        "【B站新视频】测试UP\n视频标题\nhttps://example.test/video",
+        "【开播】测试UP\n直播标题\nhttps://example.test/live",
+    ]
+    details = {
+        messages[0]: {"author": "测试UP", "text": "动态正文", "likes": "100", "following": "20", "followers": "300"},
+        messages[1]: {"author": "测试UP", "text": "视频标题", "likes": "101", "following": "21", "followers": "301"},
+        messages[2]: {"phase": "start", "author": "测试UP", "text": "直播标题", "likes": "102", "following": "22", "followers": "302"},
+    }
+
+    async def updates():
+        return messages
+
+    async def render_notification(message, *, live=None, dynamic=None, video=None):
+        rendered.append((message, live, dynamic, video))
+        return card
+
+    async def call_api(_, action, **params):
+        calls.append((action, params))
+        if action == "get_group_member_info":
+            return {"data": {"role": "member"}}
+        return {"message_id": 1}
+
+    monkeypatch.setattr(plugin, "settings", SimpleNamespace(
+        asoul_bili_enabled=True,
+        asoul_bili_effective_group_ids=(1067772451,),
+        asoul_bili_render_cards=True,
+    ))
+    monkeypatch.setattr(plugin.service, "poll_updates", updates)
+    monkeypatch.setattr(plugin.service, "dynamic_notification_details", lambda message: details.get(message) if "动态" in message else None)
+    monkeypatch.setattr(plugin.service, "video_notification_details", lambda message: details.get(message) if "视频" in message else None)
+    monkeypatch.setattr(plugin.service, "live_notification_details", lambda message: details.get(message) if "开播" in message else None)
+    monkeypatch.setattr(plugin.web_renderer, "render_notification", render_notification)
+    monkeypatch.setattr(plugin, "get_bots", lambda: {str(bot.self_id): bot})
+    monkeypatch.setattr(plugin, "call_qq_action", call_api)
+
+    asyncio.run(plugin._send_monitor_messages())
+
+    assert [(dynamic is not None, video is not None, live is not None) for _, live, dynamic, video in rendered] == [
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ]
+    assert [entry[2 if entry[2] is not None else 3 if entry[3] is not None else 1]["likes"] for entry in rendered] == ["100", "101", "102"]
+    assert [action for action, _ in calls] == ["send_group_msg", "send_group_msg", "get_group_member_info", "send_group_msg"]
 
 
 def test_monitor_does_not_poll_before_a_bot_is_connected(monkeypatch):

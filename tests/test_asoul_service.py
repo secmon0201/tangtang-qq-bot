@@ -178,12 +178,12 @@ def test_local_renderer_creates_schedule_and_bilibili_cards(tmp_path):
     with Image.open(reservation_dynamic_path) as image, Image.open(short_dynamic_path) as short_image:
         assert image.height > short_image.height
     with Image.open(long_dynamic_path) as image:
-        assert 1200 < image.height < 1800
+        assert image.height > 1800
     with Image.open(video_path) as image, Image.open(plain_video_path) as plain_image:
         assert image.height > plain_image.height
 
 
-def test_dynamic_forward_quote_uses_up_to_fifteen_adaptive_lines(tmp_path):
+def test_dynamic_forward_quote_keeps_every_adaptive_line(tmp_path):
     renderer = ASoulImageRenderer(tmp_path)
     common = {"author": "测试UP", "text": "转发说明", "emoji_urls": ""}
     fifteen_lines = "\n".join(f"引用内容第 {index} 行" for index in range(15))
@@ -198,7 +198,7 @@ def test_dynamic_forward_quote_uses_up_to_fifteen_adaptive_lines(tmp_path):
 
     with Image.open(fifteen_path) as fifteen_image, Image.open(thirty_path) as thirty_image:
         assert fifteen_image.height > 900
-        assert thirty_image.height == fifteen_image.height
+        assert thirty_image.height > fifteen_image.height
 
 
 def test_dynamic_parser_accepts_null_major_and_opus(tmp_path):
@@ -281,6 +281,14 @@ def test_video_description_keeps_source_linebreaks_in_the_card_renderer(tmp_path
     lines = renderer._wrap_preserving_linebreaks("first line\nsecond line", renderer._font(22), 844, 12)
 
     assert lines == ["first line", "second line"]
+
+
+def test_dynamic_parser_keeps_every_source_image_url():
+    urls = [f"https://example.test/{index}.png" for index in range(7)]
+
+    result = ASoulService._dynamic_image_urls({"major": {"opus": {"pics": [{"url": url} for url in urls]}}})
+
+    assert result == urls
 
 
 def test_card_renderer_uses_twemoji_asset_for_title_emoji(tmp_path):
@@ -522,6 +530,40 @@ def test_video_parser_and_notification_enrichment_include_card_fields(tmp_path):
         "followers": "123456",
         "views": "1",
     }
+    assert asyncio.run(service.enrich_dynamic_notification({"uid": "100", "author": "测试UP", "text": "动态正文"})) == {
+        "uid": "100",
+        "author": "测试UP",
+        "text": "动态正文",
+        "avatar_url": "https://example.test/avatar.jpg",
+        "profile": "测试签名",
+        "likes": "10000",
+        "following": "32",
+        "followers": "123456",
+        "views": "1",
+    }
+
+
+def test_profile_stat_failure_does_not_replace_missing_data_with_zero(tmp_path):
+    service = ASoulService(Database(tmp_path / "bot.db"))
+
+    class FakeUser:
+        async def get_user_info(self):
+            return {"mid": 100, "name": "测试UP"}
+
+        async def get_relation_info(self):
+            raise RuntimeError("relation endpoint unavailable")
+
+        async def get_up_stat(self):
+            return {"likes": 10000}
+
+    service._user = lambda _: FakeUser()  # type: ignore[method-assign]
+
+    details = asyncio.run(service.enrich_dynamic_notification({"uid": "100", "text": "动态正文"}))
+
+    assert details["likes"] == "10000"
+    assert "following" not in details
+    assert "followers" not in details
+
 
 
 def test_archive_dynamic_becomes_a_video_card_item(tmp_path):

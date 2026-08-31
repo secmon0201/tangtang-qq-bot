@@ -30,6 +30,13 @@ def is_super_admin(user_id: int) -> bool:
     return user_role(user_id) is UserRole.SUPER_ADMIN
 
 
+def is_global_announcement_operator(user_id: int) -> bool:
+    value = int(user_id)
+    return is_super_admin(value) or value in getattr(
+        settings, "global_announcement_operator_ids", frozenset()
+    )
+
+
 def is_activity_admin(user_id: int) -> bool:
     return user_role(user_id) in {UserRole.ACTIVITY_ADMIN, UserRole.SUPER_ADMIN}
 

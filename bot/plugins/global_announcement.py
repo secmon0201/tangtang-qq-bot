@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import hmac
 import random
 import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import HTMLResponse, Response
 from nonebot import get_bots, get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
@@ -15,14 +17,23 @@ from bot.config import A_COAST_GROUP_IDS, RESOURCE_DIR, ROOT, settings
 from bot.services.media import local_image_segment
 from bot.services.qq_platform import call_qq_action
 from bot.services.reports import ReportRenderer
-from bot.services.roles import is_super_admin
+from bot.services.roles import is_global_announcement_operator
+from bot.services.global_announcement_web import (
+    UPLOAD_DIR,
+    announcement_web_preview_bytes,
+    announcement_web_base_url,
+    web_sessions,
+)
 
 
 MAX_GLOBAL_ANNOUNCEMENT_CHARS = 1000
+MAX_GRAPHIC_ANNOUNCEMENT_TITLE_CHARS = 80
 MAX_GLOBAL_IMAGE_BYTES = 20 * 1024 * 1024
 GLOBAL_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+GRAPHIC_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 STICKER_DIR = RESOURCE_DIR / "asoul_stickers"
 STICKER_ALIASES = {"大哭": "哭哭"}
+WEB_PAGE_PATH = RESOURCE_DIR / "global_announcement_web.html"
 
 
 renderer = ReportRenderer(
@@ -150,6 +161,7 @@ async def send_global_announcement(
     member: str | None = None,
     sticker_name: str | None = None,
     at_all: bool = False,
+    extra_text: str = "",
 ) -> tuple[int, int]:
     """Render one announcement poster and deliver it to every A-Coast group."""
     targets = announcement_targets()
@@ -160,9 +172,7 @@ async def send_global_announcement(
         logger.exception("Global announcement poster rendering failed")
         return 0, len(targets)
     image = local_image_segment(image_path)
-    message: Any = (
-        Message([MessageSegment.at("all"), image]) if at_all else image
-    )
+    message = global_announcement_message(image, at_all=at_all, extra_text=extra_text)
     sent = 0
     failed = 0
     for group_id in targets:
@@ -199,14 +209,34 @@ def resolve_global_image(raw_path: str) -> Path:
     return path
 
 
-async def send_global_image(bot: Any, image_path: Path, at_all: bool = False) -> tuple[int, int]:
-    return await send_global_image_segment(bot, local_image_segment(image_path), at_all=at_all)
+def global_announcement_message(
+    image: MessageSegment, *, at_all: bool = False, extra_text: str = ""
+) -> MessageSegment | Message:
+    """Build one OneBot message, appending text beneath the announcement image when set."""
+    normalized_extra_text = extra_text.strip()
+    if not at_all and not normalized_extra_text:
+        return image
+    segments: list[MessageSegment] = []
+    if at_all:
+        segments.append(MessageSegment.at("all"))
+    segments.append(image)
+    if normalized_extra_text:
+        segments.append(MessageSegment.text(f"\n{normalized_extra_text}"))
+    return Message(segments)
+
+
+async def send_global_image(
+    bot: Any, image_path: Path, at_all: bool = False, extra_text: str = ""
+) -> tuple[int, int]:
+    return await send_global_image_segment(
+        bot, local_image_segment(image_path), at_all=at_all, extra_text=extra_text
+    )
 
 
 async def send_global_image_segment(
-    bot: Any, image: MessageSegment, at_all: bool = False
+    bot: Any, image: MessageSegment, at_all: bool = False, extra_text: str = ""
 ) -> tuple[int, int]:
-    message: Any = Message([MessageSegment.at("all"), image]) if at_all else image
+    message = global_announcement_message(image, at_all=at_all, extra_text=extra_text)
     sent = 0
     failed = 0
     for group_id in announcement_targets():
@@ -242,6 +272,64 @@ def image_announcement_mentions_all(message: Message) -> bool:
     return bool(re.search(r"(?:^|\s)@(?:全体|all)(?=$|\s)", message.extract_plain_text(), re.I))
 
 
+def _web_session(token: str):
+    session = web_sessions.get(token)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="链接已过期，请重新发送 #公告网页 获取新链接。",
+        )
+    return session
+
+
+def _web_preview_response(preview: bytes) -> Response:
+    """Return a transfer-light preview; the full local poster remains the send source."""
+    return Response(
+        content=preview,
+        media_type="image/webp",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def _web_sticker(
+    member_choice: str, sticker_choice: str, *, allow_none: bool = False
+) -> tuple[str | None, str, Path | None]:
+    if allow_none and member_choice == "__none__":
+        if sticker_choice != "__random__":
+            raise ValueError("无角色时不能选择表情")
+        return None, "无角色", None
+    members = available_sticker_members()
+    member = None if member_choice == "__random__" else member_choice
+    if member is not None and member not in members:
+        raise ValueError("角色选择无效")
+    sticker = None if sticker_choice == "__random__" else sticker_choice
+    if member is None and sticker is not None:
+        raise ValueError("随机角色只能搭配随机表情")
+    path = resolve_announcement_sticker(member, sticker)
+    if path is None:
+        raise ValueError("当前没有可用的公告角色表情")
+    for actual_member in members:
+        for name, candidate in sticker_names(actual_member).items():
+            if candidate == path:
+                return actual_member, name, path
+    raise ValueError("公告角色表情不可用")
+
+
+def _web_at_all(value: str) -> bool:
+    if value.lower() in {"true", "1", "on"}:
+        return True
+    if value.lower() in {"false", "0", "off"}:
+        return False
+    raise ValueError("全体提醒参数无效")
+
+
+def _web_extra_text(value: object) -> str:
+    normalized = str(value or "").strip()
+    if len(normalized) > MAX_GLOBAL_ANNOUNCEMENT_CHARS:
+        raise ValueError(f"附加文字不能超过 {MAX_GLOBAL_ANNOUNCEMENT_CHARS} 个字符")
+    return normalized
+
+
 def _active_onebot() -> Any | None:
     return next(
         (candidate for candidate in get_bots().values() if hasattr(candidate, "call_api")),
@@ -254,6 +342,7 @@ async def deliver_global_announcement(
     member: str | None = None,
     sticker_name: str | None = None,
     at_all: bool = False,
+    extra_text: str = "",
 ) -> tuple[int, int]:
     """Deliver a validated announcement through the currently connected bot."""
     target = _active_onebot()
@@ -265,20 +354,238 @@ async def deliver_global_announcement(
         member=member,
         sticker_name=sticker_name,
         at_all=at_all,
+        extra_text=extra_text,
     )
 
 
-async def deliver_global_image(image_path: Path, at_all: bool = False) -> tuple[int, int]:
+async def deliver_global_image(
+    image_path: Path, at_all: bool = False, extra_text: str = ""
+) -> tuple[int, int]:
     target = _active_onebot()
     if target is None:
         raise RuntimeError("no active OneBot connection is available")
-    return await send_global_image(target, image_path, at_all=at_all)
+    return await send_global_image(target, image_path, at_all=at_all, extra_text=extra_text)
 
 
 def _authorized(request: Request) -> bool:
     token = settings.codex_completion_notify_token
     provided = request.headers.get("X-Codex-Completion-Token", "")
     return bool(token) and hmac.compare_digest(provided, token)
+
+
+@driver.server_app.get("/announcement/{token}", response_class=HTMLResponse)
+async def global_announcement_web_page(token: str) -> HTMLResponse:
+    _web_session(token)
+    if not WEB_PAGE_PATH.is_file():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="公告网页资源不可用")
+    return HTMLResponse(WEB_PAGE_PATH.read_text(encoding="utf-8"))
+
+
+@driver.server_app.get("/announcement/api/{token}/state")
+async def global_announcement_web_state(token: str) -> dict[str, Any]:
+    session = _web_session(token)
+    members = available_sticker_members()
+    return {
+        "members": members,
+        "stickers": {member: sorted(sticker_names(member)) for member in members},
+        "targets": len(announcement_targets()),
+        "remaining_seconds": web_sessions.remaining_seconds(session),
+    }
+
+
+@driver.server_app.post("/announcement/api/{token}/preview")
+async def global_announcement_web_preview(token: str, request: Request) -> Response:
+    session = _web_session(token)
+    if session.delivered or session.sending:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此链接已提交，请重新创建公告。")
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("预览参数必须是对象")
+        text = str(payload.get("text") or "").strip()
+        member_choice = str(payload.get("member") or "__random__")
+        sticker_choice = str(payload.get("sticker") or "__random__")
+        at_all = bool(payload.get("at_all", False))
+        extra_text = _web_extra_text(payload.get("extra_text"))
+        if not text:
+            raise ValueError("公告正文不能为空")
+        if len(text) > MAX_GLOBAL_ANNOUNCEMENT_CHARS:
+            raise ValueError(f"公告正文不能超过 {MAX_GLOBAL_ANNOUNCEMENT_CHARS} 个字符")
+        member, sticker, sticker_path = _web_sticker(
+            member_choice, sticker_choice, allow_none=True
+        )
+        poster = await asyncio.to_thread(
+            renderer.render_global_announcement, text, sticker=sticker_path
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Global announcement web preview failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="海报预览生成失败") from exc
+    session.draft_path = poster
+    session.draft_text = text
+    session.draft_extra_text = extra_text
+    session.draft_at_all = at_all
+    return _web_preview_response(
+        await asyncio.to_thread(announcement_web_preview_bytes, poster)
+    )
+
+
+@driver.server_app.post("/announcement/api/{token}/graphic-preview")
+async def global_announcement_web_graphic_preview(
+    token: str,
+    image: UploadFile = File(...),
+    title: str = Form(""),
+    text: str = Form(""),
+    member: str = Form("__random__"),
+    sticker: str = Form("__random__"),
+    at_all: str = Form("false"),
+    extra_text: str = Form(""),
+) -> Response:
+    session = _web_session(token)
+    if session.delivered or session.sending:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此链接已提交，请重新创建公告。")
+    session.draft_path = None
+    session.draft_text = ""
+    session.draft_extra_text = ""
+    session.draft_at_all = False
+    if session.upload_path is not None:
+        session.upload_path.unlink(missing_ok=True)
+        session.upload_path = None
+    suffix = Path(image.filename or "").suffix.lower()
+    upload_path: Path | None = None
+    try:
+        if suffix not in GRAPHIC_IMAGE_SUFFIXES:
+            raise ValueError("图文海报仅支持 PNG、JPG、JPEG、WebP 图片；动图请使用原图公告")
+        normalized_title = title.strip()
+        normalized_text = text.strip()
+        if not normalized_title:
+            raise ValueError("公告标题不能为空")
+        if not normalized_text:
+            raise ValueError("公告正文不能为空")
+        if len(normalized_title) > MAX_GRAPHIC_ANNOUNCEMENT_TITLE_CHARS:
+            raise ValueError(f"公告标题不能超过 {MAX_GRAPHIC_ANNOUNCEMENT_TITLE_CHARS} 个字符")
+        if len(normalized_text) > MAX_GLOBAL_ANNOUNCEMENT_CHARS:
+            raise ValueError(f"公告正文不能超过 {MAX_GLOBAL_ANNOUNCEMENT_CHARS} 个字符")
+        notify_all = _web_at_all(at_all)
+        normalized_extra_text = _web_extra_text(extra_text)
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        upload_path = UPLOAD_DIR / f"{token}.graphic{suffix}"
+        size = 0
+        with upload_path.open("wb") as destination:
+            while chunk := await image.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_GLOBAL_IMAGE_BYTES:
+                    raise ValueError("图片不能超过 20 MiB")
+                destination.write(chunk)
+        session.upload_path = resolve_global_image(str(upload_path))
+        selected_member, selected_sticker, sticker_path = _web_sticker(
+            member, sticker, allow_none=True
+        )
+        poster = await asyncio.to_thread(
+            renderer.render_global_graphic_announcement,
+            normalized_title,
+            normalized_text,
+            session.upload_path,
+            sticker=sticker_path,
+        )
+    except (ValueError, OSError) as exc:
+        if upload_path is not None:
+            upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except Exception as exc:
+        if upload_path is not None:
+            upload_path.unlink(missing_ok=True)
+        logger.exception("Global announcement web graphic preview failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="图文海报预览生成失败") from exc
+    finally:
+        await image.close()
+    session.draft_path = poster
+    session.draft_text = normalized_text
+    session.draft_extra_text = normalized_extra_text
+    session.draft_at_all = notify_all
+    return _web_preview_response(
+        await asyncio.to_thread(announcement_web_preview_bytes, poster)
+    )
+
+
+@driver.server_app.post("/announcement/api/{token}/send-preview")
+@driver.server_app.post("/announcement/api/{token}/send-text")
+async def global_announcement_web_send_preview(token: str) -> dict[str, int]:
+    session = _web_session(token)
+    if session.draft_path is None or not session.draft_path.is_file():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请先生成海报预览")
+    try:
+        web_sessions.begin_send(token)
+        sent, failed = await deliver_global_image(
+            session.draft_path,
+            at_all=session.draft_at_all,
+            extra_text=session.draft_extra_text,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except Exception as exc:
+        web_sessions.fail_send(token)
+        logger.exception("Global announcement web text delivery failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="公告发送失败") from exc
+    web_sessions.finish_send(token)
+    if session.upload_path is not None:
+        try:
+            session.upload_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {"sent": sent, "failed": failed}
+
+
+@driver.server_app.post("/announcement/api/{token}/send-image")
+async def global_announcement_web_send_image(
+    token: str,
+    image: UploadFile = File(...),
+    at_all: str = Form("false"),
+    extra_text: str = Form(""),
+) -> dict[str, int]:
+    session = _web_session(token)
+    suffix = Path(image.filename or "").suffix.lower()
+    if suffix not in GLOBAL_IMAGE_SUFFIXES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="仅支持 PNG、JPG、JPEG、GIF、WebP 图片")
+    upload_path: Path | None = None
+    try:
+        notify_all = _web_at_all(at_all)
+        normalized_extra_text = _web_extra_text(extra_text)
+        web_sessions.begin_send(token)
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        upload_path = UPLOAD_DIR / f"{token}{suffix}"
+        size = 0
+        with upload_path.open("wb") as destination:
+            while chunk := await image.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_GLOBAL_IMAGE_BYTES:
+                    raise ValueError("图片不能超过 20 MiB")
+                destination.write(chunk)
+        session.upload_path = resolve_global_image(str(upload_path))
+        sent, failed = await deliver_global_image(
+            session.upload_path, at_all=notify_all, extra_text=normalized_extra_text
+        )
+    except ValueError as exc:
+        web_sessions.fail_send(token)
+        if upload_path is not None:
+            upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except Exception as exc:
+        web_sessions.fail_send(token)
+        if upload_path is not None:
+            upload_path.unlink(missing_ok=True)
+        logger.exception("Global announcement web image delivery failed")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="图片公告发送失败") from exc
+    finally:
+        await image.close()
+    web_sessions.finish_send(token)
+    if session.upload_path is not None:
+        try:
+            session.upload_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {"sent": sent, "failed": failed}
 
 
 @driver.server_app.post("/internal/codex/global-announcement")
@@ -372,12 +679,31 @@ global_announcement = on_command("全局通告", priority=5, block=True)
 global_image_announcement = on_command(
     "全局图片公告", aliases={"图片公告"}, priority=5, block=True
 )
+global_announcement_web = on_command(
+    "公告网页", aliases={"公告面板"}, priority=5, block=True
+)
+
+
+@global_announcement_web.handle()
+async def _(event: MessageEvent):
+    if not is_global_announcement_operator(int(event.user_id)):
+        await global_announcement_web.finish("只有超级管理员或公告名单成员可以使用公告网页。")
+    base_url = announcement_web_base_url()
+    if base_url is None:
+        await global_announcement_web.finish(
+            "公告网页隧道尚未启动，请联系超级管理员启动公告网页隧道。"
+        )
+    session = web_sessions.create(int(event.user_id))
+    await global_announcement_web.finish(
+        "公告编辑页（链接仅限本次操作，15 分钟内有效）：\n"
+        f"{base_url}/notice/{session.token}"
+    )
 
 
 @global_image_announcement.handle()
 async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
-    if not is_super_admin(int(event.user_id)):
-        await global_image_announcement.finish("只有超级管理员可以使用全局图片公告。")
+    if not is_global_announcement_operator(int(event.user_id)):
+        await global_image_announcement.finish("只有超级管理员或公告名单成员可以使用全局图片公告。")
     reply_message = event.reply.message if event.reply is not None else None
     image = extract_global_announcement_image(args, reply_message)
     if image is None:
@@ -387,12 +713,12 @@ async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
         )
     if not announcement_targets():
         await global_image_announcement.finish(
-            "当前没有可发送的 A 海岸群，请检查 MANAGED_GROUP_IDS 配置。"
+            "当前没有可发送的目标群，请检查 MANAGED_GROUP_IDS 配置。"
         )
     at_all = image_announcement_mentions_all(args)
     sent, failed = await send_global_image_segment(bot, image, at_all=at_all)
     at_all_text = "并@全体成员" if at_all else "（未@全体）"
-    summary = f"全局图片公告已发送至 {sent} 个 A 海岸群{at_all_text}。"
+    summary = f"全局图片公告已发送至 {sent} 个目标群{at_all_text}。"
     if failed:
         summary += f"  {failed} 个群发送失败，请稍后重试。"
     await global_image_announcement.finish(summary)
@@ -400,8 +726,8 @@ async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
 
 @global_announcement.handle()
 async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
-    if not is_super_admin(int(event.user_id)):
-        await global_announcement.finish("只有超级管理员可以使用全局通告。")
+    if not is_global_announcement_operator(int(event.user_id)):
+        await global_announcement.finish("只有超级管理员或公告名单成员可以使用全局通告。")
     text, member, sticker_name, at_all = parse_announcement_args(args.extract_plain_text())
     if not text:
         await global_announcement.finish(
@@ -413,7 +739,7 @@ async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
         )
     if not announcement_targets():
         await global_announcement.finish(
-            "当前没有可发送的 A 海岸群，请检查 MANAGED_GROUP_IDS 配置。"
+            "当前没有可发送的目标群，请检查 MANAGED_GROUP_IDS 配置。"
         )
     sent, failed = await send_global_announcement(
         bot,
@@ -423,7 +749,7 @@ async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
         at_all=at_all,
     )
     at_all_text = "并@全体成员" if at_all else "（未@全体）"
-    summary = f"全局通告已以图片发送至 {sent} 个 A 海岸群{at_all_text}。"
+    summary = f"全局通告已以图片发送至 {sent} 个目标群{at_all_text}。"
     if failed:
         summary += f"  {failed} 个群发送失败，请稍后重试。"
     await global_announcement.finish(summary)

@@ -180,6 +180,28 @@ def test_recent_group_daily_totals_uses_a_fixed_seven_day_window(tmp_path):
     assert [row["message_count"] for row in rows] == [0, 0, 0, 0, 0, 0, 1]
 
 
+def test_personal_group_totals_excludes_zero_groups_and_sorts_by_count(tmp_path):
+    db = Database(tmp_path / "bot.db")
+    db.configure_groups((1001, 1002, 1003))
+    db.set_group_info(1001, "海岸一群")
+    db.set_group_info(1002, "海岸二群")
+    stamp = datetime(2026, 7, 22, 10, 0)
+    for index in range(2):
+        assert db.record_message(f"one-{index}", 1001, 7, "成员 A", stamp)
+    for index in range(5):
+        assert db.record_message(f"two-{index}", 1002, 7, "成员 A", stamp)
+    assert db.record_message("other", 1003, 8, "成员 B", stamp)
+
+    service = StatsService(db, group_ids=(1001, 1002, 1003))
+    service.local_now = lambda: datetime(2026, 7, 22, 12, 0, tzinfo=service.zone)  # type: ignore[method-assign]
+    rows = service.personal_group_totals(7, "day")
+
+    assert rows == [
+        {"group_id": 1002, "group_name": "海岸二群", "message_count": 5},
+        {"group_id": 1001, "group_name": "海岸一群", "message_count": 2},
+    ]
+
+
 def test_stats_listener_runs_before_blocking_passive_listeners():
     source = Path("bot/plugins/stats.py").read_text(encoding="utf-8")
     tree = ast.parse(source)

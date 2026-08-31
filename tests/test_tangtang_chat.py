@@ -559,7 +559,7 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     assert recorded[0]["reply_text"] == "今天的直播给你找出来啦。"
 
 
-def test_explicit_ranking_router_sends_local_persona_line_before_feature(monkeypatch):
+def test_personal_ranking_router_sends_local_persona_line_before_feature(monkeypatch):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
@@ -590,8 +590,49 @@ def test_explicit_ranking_router_sends_local_persona_line_before_feature(monkeyp
     assert handled is True
     assert usage == {}
     assert sequence == [
-        "line:好呀，糖糖这就看看群里今天谁最能聊。",
-        "feature:ranking:日",
+        "line:好呀，糖糖这就算算今天的个人发言。",
+        "feature:personal_stats:日",
+    ]
+
+
+def test_personal_stats_router_uses_the_mentioned_member(monkeypatch):
+    from bot.plugins import tangtang_chat as plugin
+
+    sequence: list[str] = []
+
+    class FakeMatcher:
+        async def send(self, message: str) -> None:
+            sequence.append(f"line:{message}")
+
+    async def fake_run(matcher, bot, event, request):
+        del matcher, bot, event
+        sequence.append(
+            f"feature:{request.action}:{request.args}:{request.personal_target}"
+        )
+        return True
+
+    monkeypatch.setattr(plugin, "tangtang_call", FakeMatcher())
+    monkeypatch.setattr(plugin, "run_feature_call", fake_run)
+    monkeypatch.setattr(plugin.service, "record_feature", lambda **kwargs: None)
+    event = SimpleNamespace(
+        group_id=1001,
+        user_id=42,
+        message_id="test",
+        message=Message([
+            MessageSegment.text("糖糖看看他本月发言统计"),
+            MessageSegment.at("903848042"),
+        ]),
+    )
+
+    handled, usage = asyncio.run(
+        plugin._feature_router(SimpleNamespace(self_id=2), event, enabled_config(), "糖糖看看他本月发言统计")
+    )
+
+    assert handled is True
+    assert usage == {}
+    assert sequence == [
+        "line:好呀，糖糖这就算算本月的个人发言。",
+        "feature:personal_stats:月:mentioned",
     ]
 
 

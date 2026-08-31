@@ -21,7 +21,8 @@ class StatsService:
         self.database = database
         self.zone = ZoneInfo(settings.timezone)
         self.realtime_enabled = realtime_enabled
-        self.group_ids = frozenset(int(group_id) for group_id in group_ids)
+        self._group_order = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
+        self.group_ids = frozenset(self._group_order)
 
     def enabled_groups(self) -> frozenset[int]:
         return self.group_ids
@@ -182,6 +183,15 @@ class StatsService:
             group_ids, self.window_start(scope, self.local_now().date())
         )
 
+    def personal_group_totals(self, user_id: int, scope: str) -> list[dict[str, Any]]:
+        """Aggregate one member across the five fixed A Coast groups."""
+        group_ids = self._ranking_group_ids(None)
+        return self.database.user_group_message_totals(
+            user_id,
+            group_ids,
+            self.window_start(scope, self.local_now().date()),
+        )
+
     def recent_group_daily_totals(
         self, group_id: int, days: int = 7, today: date | None = None
     ) -> list[dict[str, Any]]:
@@ -194,7 +204,7 @@ class StatsService:
 
     def _ranking_group_ids(self, group_id: int | None) -> tuple[int, ...]:
         if group_id is None:
-            return tuple(group for group in A_COAST_GROUP_IDS if group in self.enabled_groups())
+            return self._group_order
         return (group_id,) if group_id in self.enabled_groups() else ()
 
     @staticmethod

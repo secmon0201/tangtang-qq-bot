@@ -112,6 +112,7 @@ class Settings:
     game_api_group_ids: tuple[int, ...]
     activity_group_ids: tuple[int, ...]
     operator_ids: frozenset[int]
+    global_announcement_operator_ids: frozenset[int]
     activity_admin_ids: frozenset[int]
     activity_admin_blacklist_ids: frozenset[int]
     command_prefix: str
@@ -257,6 +258,9 @@ class Settings:
             os.getenv("ASOUL_BILI_A_COAST_GROUP_IDS", ",".join(map(str, A_COAST_GROUP_IDS)))
         )
         operators = frozenset(_csv_ints(os.getenv("BOT_OPERATOR_IDS")))
+        global_announcement_operators = frozenset(
+            _csv_ints(os.getenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS"))
+        )
         activity_admins = frozenset(_csv_ints(os.getenv("ACTIVITY_ADMIN_IDS")))
         activity_admin_blacklist = frozenset(
             _csv_ints(os.getenv("ACTIVITY_ADMIN_BLACKLIST_IDS"))
@@ -595,6 +599,7 @@ class Settings:
             game_api_group_ids=game_api_groups,
             activity_group_ids=activity_groups,
             operator_ids=operators,
+            global_announcement_operator_ids=global_announcement_operators,
             activity_admin_ids=activity_admins,
             activity_admin_blacklist_ids=activity_admin_blacklist,
             command_prefix=prefix,

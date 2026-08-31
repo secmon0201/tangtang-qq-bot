@@ -46,11 +46,19 @@ from bot.services.gateway import OneBotGateway
 from bot.services.avatars import AvatarService
 from bot.services.forward import build_forward_nodes
 from bot.services.media import local_image_segment
+from bot.services.operator_web import (
+    operator_web_base_url,
+    operator_web_sessions,
+    operator_web_url,
+)
 from bot.services.community_web import (
+    ALL_GROUP_KEY,
+    CommunityWebRenderer,
     help_payload,
     page_html as community_page_html,
     public_help_categories,
     public_web_url,
+    ranking_payload,
 )
 from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
@@ -64,7 +72,6 @@ from bot.services.whitelist_menu import (
 
 db = database()
 passive = passive_settings()
-driver = get_driver()
 duplicate_service = DuplicateService(db)
 stats_service = StatsService(
     db,
@@ -80,6 +87,21 @@ avatar_service = AvatarService(
     max_refresh_per_call=settings.avatar_refresh_max_per_call,
     concurrency=settings.avatar_refresh_concurrency,
 )
+community_web_renderer = CommunityWebRenderer(settings.report_dir)
+driver = get_driver()
+
+
+@driver.on_startup
+async def _warm_community_web_renderer() -> None:
+    try:
+        await community_web_renderer.warmup()
+    except Exception:
+        logger.exception("Community HTML renderer warmup failed; Pillow fallback remains available")
+
+
+@driver.on_shutdown
+async def _close_community_web_renderer() -> None:
+    await community_web_renderer.close()
 
 
 @dataclass(slots=True)
@@ -179,6 +201,8 @@ def user_help_text() -> str:
             f"{prefix}发言排行 [日/周/月/总]", f"{prefix}发言榜 [日/周/月/总]", f"{prefix}统计 [日/周/月/总]",
             f"{prefix}A海岸发言排行 [日/周/月/总]", f"{prefix}A海岸发言榜 [日/周/月/总]", f"{prefix}A海岸统计 [日/周/月/总]",
             f"{prefix}a海岸发言排行 [日/周/月/总]", f"{prefix}a海岸发言榜 [日/周/月/总]", f"{prefix}a海岸统计 [日/周/月/总]",
+            f"{prefix}个人发言统计 [QQ号|@成员] [日/周/月/总]", f"{prefix}个人发言榜 [QQ号|@成员] [日/周/月/总]", f"{prefix}个人统计 [QQ号|@成员] [日/周/月/总]",
+            f"{prefix}我的发言统计 [日/周/月/总]", f"{prefix}我的发言榜 [日/周/月/总]", f"{prefix}我的统计 [日/周/月/总]",
             f"{prefix}发言画像 <QQ号|@成员>", f"{prefix}画像 <QQ号|@成员>",
         ))
     return "\n".join(commands)
@@ -275,6 +299,46 @@ async def cached_avatar_paths(rows: list[dict[str, Any]]) -> dict[int, Path]:
         avatar_prefetch_tasks.add(task)
         task.add_done_callback(avatar_prefetch_tasks.discard)
     return cached
+
+
+async def build_community_ranking_payload(
+    scope: str,
+    group_key: str,
+    *,
+    rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Restore the ranking's avatar and comparison-series contract for web and QQ."""
+    if scope not in {value[0] for value in RANKING_SCOPES.values()}:
+        raise ValueError("scope 仅支持 day、week、month、total")
+    if group_key == ALL_GROUP_KEY:
+        group_id = None
+    else:
+        try:
+            group_id = int(group_key)
+        except ValueError as exc:
+            raise ValueError("group 不受支持") from exc
+        if group_id not in stats_service.enabled_groups():
+            raise ValueError("group 不受支持")
+
+    ranking_rows = (
+        rows if rows is not None else user_report_rows(stats_service.ranking_rows(scope, group_id))
+    )
+    avatar_paths = await cached_avatar_paths(ranking_rows)
+    group_totals = stats_service.group_totals(scope) if group_id is None else []
+    group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
+    daily_totals = (
+        stats_service.recent_group_daily_totals(group_id) if group_id is not None else []
+    )
+    return ranking_payload(
+        stats_service,
+        scope,
+        group_key,
+        rows=ranking_rows,
+        avatar_paths=avatar_paths,
+        group_totals=group_totals,
+        group_avatar_paths=group_avatars,
+        daily_totals=daily_totals,
+    )
 
 
 async def finish_whitelist_forward(
@@ -518,6 +582,33 @@ async def handle_duplicate_command(
             logger.exception("Local duplicate report rendering failed; using text fallback")
     page_paths.append(path)
     await send_duplicate_pages(bot, event, matcher, page_messages, page_paths)
+
+
+operator_web = on_command("运营网页", aliases={"运营面板"}, priority=5, block=True)
+duplicate_web = on_command("查重网页", aliases={"查重面板", "白名单网页"}, priority=5, block=True)
+
+
+async def _open_operator_web(matcher: object, event: MessageEvent, kind: str, label: str) -> None:
+    if not is_super_admin(user_id(event)):
+        await matcher.finish(f"只有超级管理员可以使用{label}。")  # type: ignore[attr-defined]
+    base_url = operator_web_base_url()
+    if base_url is None:
+        await matcher.finish("运营网页隧道尚未启动，请先启动运营网页隧道。")  # type: ignore[attr-defined]
+    session = operator_web_sessions.create(user_id(event), kind, is_super_admin=True)
+    await matcher.finish(
+        f"{label}（链接仅限本次操作，15 分钟内有效）：\n"
+        + operator_web_url(base_url, kind, session.token)
+    )  # type: ignore[attr-defined]
+
+
+@operator_web.handle()
+async def _(event: MessageEvent):
+    await _open_operator_web(operator_web, event, "operations", "运营配置页")
+
+
+@duplicate_web.handle()
+async def _(event: MessageEvent):
+    await _open_operator_web(duplicate_web, event, "duplicate", "查重与白名单页")
 
 
 duplicate_all = on_command("查重1", priority=5, block=True)
@@ -1097,7 +1188,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 (
                     "A海岸全群通告",
                     f"{prefix}全局通告 [@全体] [人物] [表情包名] <内容>\n{prefix}全局图片公告 [@全体]\n{prefix}图片公告 [@全体]",
-                    "仅超级管理员可用。图片公告可回复一张图片后发送指令，也可将指令和图片放在同一条消息中；只取第一张图片，固定发送到五个 A海岸群。默认不 @ 全体，加入 @全体 或 @all 才会提醒全体成员。",
+                    "超级管理员或公告名单成员可用。图片公告可回复一张图片后发送指令，也可将指令和图片放在同一条消息中；只取第一张图片，固定发送到五个 A海岸群。默认不 @ 全体，加入 @全体 或 @all 才会提醒全体成员。",
                 ),
                 (
                     "Codex 持续任务",
@@ -1319,6 +1410,48 @@ RANKING_TITLES = {
     "total": ("本群传奇灌水王", "A海岸传奇灌水王"),
 }
 RANKING_SUBTITLE = "前 100 名｜按发言数降序、QQ 号升序｜记录自 2026-07-28 起"
+PERSONAL_STATS_TITLES = {
+    "day": "今日个人发言统计",
+    "week": "本周个人发言统计",
+    "month": "本月个人发言统计",
+    "total": "个人累计发言统计",
+}
+
+
+def personal_stats_query(args: Message, default_user_id: int) -> tuple[int, str] | None:
+    """Parse an optional QQ/@ target followed by an optional ranking scope."""
+    mentions: list[MessageSegment] = []
+    text_parts: list[str] = []
+    for segment in args:
+        if segment.type == "at":
+            mentions.append(segment)
+        elif segment.type == "text":
+            text_parts.append(str(segment.data.get("text", "")))
+        else:
+            return None
+    tokens = "".join(text_parts).split()
+    if mentions:
+        if len(mentions) != 1 or len(tokens) > 1:
+            return None
+        target = valid_qq_id(str(mentions[0].data.get("qq", "")))
+        if target is None:
+            return None
+        scope_token = tokens[0] if tokens else "日"
+    elif not tokens:
+        return default_user_id, "day"
+    elif len(tokens) == 1:
+        if tokens[0] in RANKING_SCOPES:
+            return default_user_id, RANKING_SCOPES[tokens[0]][0]
+        target = valid_qq_id(tokens[0])
+        scope_token = "日"
+    elif len(tokens) == 2:
+        target = valid_qq_id(tokens[0])
+        scope_token = tokens[1]
+    else:
+        return None
+    if target is None or scope_token not in RANKING_SCOPES:
+        return None
+    return target, RANKING_SCOPES[scope_token][0]
 
 
 async def finish_message_ranking(
@@ -1335,25 +1468,101 @@ async def finish_message_ranking(
             await matcher.finish("发言排行榜仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
     elif group_id not in stats_service.enabled_groups():
         await matcher.finish("发言排行榜仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
-    rows = user_report_rows(stats_service.ranking_rows(scope, None if a_coast else group_id))
+    ranking_rows = stats_service.ranking_rows(scope, None if a_coast else group_id)
+    rows = user_report_rows(ranking_rows)
+    web_payload = await build_community_ranking_payload(
+        scope,
+        ALL_GROUP_KEY if a_coast else str(group_id),
+        rows=rows,
+    )
     title = RANKING_TITLES[scope][1 if a_coast else 0]
-    group_totals = stats_service.group_totals(scope) if a_coast else ()
-    group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
-    daily_totals = stats_service.recent_group_daily_totals(group_id) if group_id is not None and not a_coast else ()
-    fallback = f"{stats_service.render_rows(rows, title)}\n记录自 2026-07-28 起"
-    avatar_paths = await cached_avatar_paths(rows)
+    message_prefix = Message(MessageSegment.at(user_id(event))) if group_id is not None else Message()
+    link = public_web_url("ranking")
+    try:
+        image = await community_web_renderer.render_ranking(web_payload)
+    except Exception:
+        logger.exception("Community ranking HTML render failed; trying Pillow fallback")
+        fallback = f"{stats_service.render_rows(rows, title)}\n记录自 2026-07-28 起"
+        avatar_paths = await cached_avatar_paths(rows)
+        group_totals = stats_service.group_totals(scope) if a_coast else ()
+        group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
+        daily_totals = (
+            stats_service.recent_group_daily_totals(group_id)
+            if group_id is not None and not a_coast
+            else ()
+        )
+        await finish_with_image_or_text(
+            matcher,
+            fallback,
+            lambda: report_renderer.render_ranking(
+                rows,
+                title,
+                RANKING_SUBTITLE,
+                avatar_paths,
+                show_group_labels=a_coast,
+                group_totals=group_totals,
+                group_avatar_paths=group_avatars,
+                daily_totals=daily_totals,
+            ),
+            prefix=MessageSegment.at(user_id(event)) if group_id is not None else None,
+        )
+        return
+    payload = message_prefix + local_image_segment(image)
+    if link is not None:
+        payload += f"\n在线：{link}"
+    await matcher.finish(payload)
+
+
+async def finish_personal_message_stats(
+    matcher: object, event: MessageEvent, args: Message
+) -> None:
+    query = personal_stats_query(args, user_id(event))
+    if query is None:
+        await matcher.finish(
+            f"用法：{settings.command_prefix}个人发言统计 [QQ号|@成员] [日|周|月|总]"
+        )  # type: ignore[attr-defined]
+    target_user_id, scope = query
+    await finish_personal_message_stats_for_target(matcher, event, target_user_id, scope)
+
+
+async def finish_personal_message_stats_for_target(
+    matcher: object, event: MessageEvent, target_user_id: int, scope: str
+) -> None:
+    group_id = current_group(event)
+    if group_id is None:
+        if not is_super_admin(user_id(event)):
+            await matcher.finish("个人发言统计仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
+    elif group_id not in stats_service.enabled_groups():
+        await matcher.finish("个人发言统计仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
+    group_totals = stats_service.personal_group_totals(target_user_id, scope)
+    title = PERSONAL_STATS_TITLES[scope]
+    if not group_totals:
+        await matcher.finish(f"该成员在本次统计范围内暂无 A海岸群发言数据。")  # type: ignore[attr-defined]
+    profiles = user_report_rows([{"user_id": target_user_id, "message_count": sum(int(row["message_count"]) for row in group_totals)}])
+    profile = profiles[0]
+    avatar_paths = await cached_avatar_paths(profiles)
+    group_avatars = await group_avatar_paths(group_totals)
+    fallback = "\n".join(
+        [
+            f"{profile['nickname'] or target_user_id}｜{title}",
+            f"五群合计：{profile['message_count']} 条",
+            *(
+                f"{row['group_name']}：{row['message_count']} 条"
+                for row in group_totals
+            ),
+            "记录自 2026-07-28 起",
+        ]
+    )
     await finish_with_image_or_text(
         matcher,
         fallback,
-        lambda: report_renderer.render_ranking(
-            rows,
+        lambda: report_renderer.render_personal_message_stats(
+            profile,
             title,
-            RANKING_SUBTITLE,
-            avatar_paths,
-            show_group_labels=a_coast,
-            group_totals=group_totals,
-            group_avatar_paths=group_avatars,
-            daily_totals=daily_totals,
+            "五群合计｜仅展示本次统计范围内有发言的群｜按发言数降序",
+            avatar_paths.get(target_user_id),
+            group_totals,
+            group_avatars,
         ),
         prefix=MessageSegment.at(user_id(event)) if group_id is not None else None,
     )
@@ -1387,6 +1596,21 @@ a_coast_ranking._tangtang_skip_quote = True
 @a_coast_ranking.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
     await finish_message_ranking(a_coast_ranking, event, args, a_coast=True)
+
+
+personal_message_stats = on_command(
+    "个人发言统计",
+    aliases={"个人发言榜", "个人统计", "我的发言统计", "我的发言榜", "我的统计"},
+    rule=Rule(lambda: settings.stats_realtime_enabled),
+    priority=5,
+    block=True,
+)
+personal_message_stats._tangtang_skip_quote = True
+
+
+@personal_message_stats.handle()
+async def _(event: MessageEvent, args: Message = CommandArg()):
+    await finish_personal_message_stats(personal_message_stats, event, args)
 
 
 status = on_command("机器人状态", priority=5, block=True)
@@ -1434,3 +1658,23 @@ async def _run_local_ranking_feature(
         Message(request.args),
         a_coast=request.a_coast,
     )
+
+
+@register_local_feature("personal_stats")
+async def _run_local_personal_stats_feature(
+    matcher: object,
+    bot: Bot,
+    event: MessageEvent,
+    request: FeatureRequest,
+) -> None:
+    if request.personal_target == "self":
+        target_user_id = user_id(event)
+    else:
+        from bot.services.tangtang_features import mentioned_user_ids
+
+        targets = mentioned_user_ids(event.message, bot.self_id)
+        if len(targets) != 1:
+            await matcher.finish("查询某位成员的发言，请只 @ 一位成员。")
+        target_user_id = targets[0]
+    scope, _ = RANKING_SCOPES.get(request.args, RANKING_SCOPES["日"])
+    await finish_personal_message_stats_for_target(matcher, event, target_user_id, scope)

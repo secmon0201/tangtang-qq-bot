@@ -27,6 +27,9 @@ def test_duplicate_report_renders_one_image_sized_page(tmp_path: Path):
     with Image.open(report) as image:
         assert image.width == ReportRenderer.WIDTH
         assert image.height <= 1100
+        assert image.mode == "RGBA"
+        assert image.getpixel((0, 0))[3] == 0
+        assert image.getpixel((34, 34))[3] == 255
         assert image.getbbox() is not None
 
 
@@ -191,6 +194,26 @@ def test_group_ranking_report_adds_a_fixed_daily_trend_chart(tmp_path: Path):
 
     with Image.open(plain) as plain_image, Image.open(trend) as trend_image:
         assert trend_image.height > plain_image.height
+
+
+def test_personal_message_stats_report_renders_only_active_group_trend(tmp_path: Path):
+    renderer = ReportRenderer(tmp_path)
+
+    report = renderer.render_personal_message_stats(
+        {"user_id": 2120682836, "nickname": "测试成员", "message_count": 9},
+        "本周个人发言统计",
+        "五群合计",
+        None,
+        [
+            {"group_id": 1002, "group_name": "海岸二群", "message_count": 7},
+            {"group_id": 1001, "group_name": "海岸一群", "message_count": 2},
+        ],
+    )
+
+    assert report.exists()
+    with Image.open(report) as image:
+        assert image.width == ReportRenderer.WIDTH
+        assert image.height > 400
 
 
 def test_admin_panel_renders_group_scope_and_command_sections(tmp_path: Path):

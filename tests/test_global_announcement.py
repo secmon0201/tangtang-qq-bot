@@ -1,11 +1,16 @@
 from PIL import Image
 import asyncio
+from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from starlette.responses import Response
+from starlette.datastructures import UploadFile
 
 from bot.config import A_COAST_GROUP_IDS
 from bot.services.reports import ReportRenderer
+from bot.services import roles
 
 
 def announcement_plugin():
@@ -20,6 +25,23 @@ def announcement_plugin():
     return global_announcement
 
 
+def test_global_announcement_permission_allows_super_admin_or_configured_member(monkeypatch):
+    monkeypatch.setattr(
+        roles,
+        "settings",
+        SimpleNamespace(
+            operator_ids=frozenset({100}),
+            global_announcement_operator_ids=frozenset({200}),
+            activity_admin_blacklist_ids=frozenset(),
+            activity_admin_ids=frozenset(),
+        ),
+    )
+
+    assert roles.is_global_announcement_operator(100)
+    assert roles.is_global_announcement_operator(200)
+    assert not roles.is_global_announcement_operator(300)
+
+
 def test_global_announcement_poster_is_a_nonempty_png(tmp_path):
     path = ReportRenderer(tmp_path, command_prefix="#").render_global_announcement(
         "宜宝 re 鸣潮演唱会了，aakk 往里进往里进"
@@ -30,7 +52,7 @@ def test_global_announcement_poster_is_a_nonempty_png(tmp_path):
         assert image.height > ReportRenderer.HEADER_HEIGHT
         assert image.getbbox() is not None
         # The announcement poster has no top gradient bar; the header area is plain white.
-        assert image.getpixel((400, 100)) == (255, 255, 255)
+        assert image.getpixel((400, 100))[:3] == (255, 255, 255)
 
 
 def test_global_announcement_width_adapts_to_longest_line(tmp_path):
@@ -64,6 +86,34 @@ def test_global_announcement_pastes_sticker_on_the_left(tmp_path):
             for x in range(60, 260)
         )
     assert found
+
+
+def test_global_graphic_announcement_fills_the_canvas_width_and_grows_with_content(tmp_path):
+    source = tmp_path / "very_wide_source.png"
+    sticker = tmp_path / "sticker.png"
+    Image.new("RGB", (2400, 220), "#a9cde6").save(source)
+    Image.new("RGBA", (80, 80), (240, 80, 145, 255)).save(sticker)
+    renderer = ReportRenderer(tmp_path, command_prefix="#")
+    short = renderer.render_global_graphic_announcement(
+        "活动开放报名", "欢迎一起参加。", source, sticker=sticker
+    )
+    long = renderer.render_global_graphic_announcement(
+        "活动开放报名",
+        "这是一段用于确认自动换行和动态高度的公告正文。" * 24,
+        source,
+        sticker=sticker,
+    )
+
+    with Image.open(short) as short_image, Image.open(long) as long_image:
+        assert short_image.width == 1080
+        assert long_image.height > short_image.height
+        assert short_image.format == "PNG"
+        assert short_image.mode == "RGBA"
+        assert short_image.getpixel((0, 0))[3] == 0
+        assert short_image.getpixel((34, 34))[3] == 255
+        # The source is scaled to the fixed poster width, without side letterboxing.
+        assert short_image.getpixel((0, 180))[:3] == (169, 205, 230)
+        assert short_image.getpixel((1079, 180))[:3] == (169, 205, 230)
 
 
 def test_parse_announcement_args_splits_leading_member(monkeypatch):
@@ -104,6 +154,73 @@ def test_resolve_announcement_sticker_prefers_member_and_falls_back_to_random(tm
     assert plugin.resolve_announcement_sticker("心宜", "大哭", tmp_path) == xinyi_path
     assert plugin.resolve_announcement_sticker("心宜", "不存在", tmp_path) == xinyi_path
     assert plugin.resolve_announcement_sticker(None, None, tmp_path) in {xinyi_path, jiran_path}
+    assert plugin._web_sticker("__none__", "__random__", allow_none=True) == (None, "无角色", None)
+
+
+def test_web_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
+    plugin = announcement_plugin()
+    poster = tmp_path / "poster.png"
+    Image.new("RGB", (10, 10), "white").save(poster)
+    session = plugin.web_sessions.create(100)
+
+    async def request_json():
+        return {
+            "text": "公告内容",
+            "extra_text": "图片下方说明",
+            "member": "__none__",
+            "sticker": "__random__",
+            "at_all": True,
+        }
+
+    monkeypatch.setattr(plugin, "renderer", SimpleNamespace(render_global_announcement=lambda _text, sticker=None: poster))
+    response = asyncio.run(plugin.global_announcement_web_preview(session.token, SimpleNamespace(json=request_json)))
+
+    assert isinstance(response, Response)
+    assert response.media_type == "image/webp"
+    assert response.headers["cache-control"] == "no-store"
+    with Image.open(BytesIO(response.body)) as preview:
+        assert preview.format == "WEBP"
+    assert session.draft_path == poster
+    assert session.draft_extra_text == "图片下方说明"
+    assert session.draft_at_all is True
+
+
+def test_web_graphic_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
+    plugin = announcement_plugin()
+    poster = tmp_path / "poster.png"
+    Image.new("RGB", (10, 10), "white").save(poster)
+    session = plugin.web_sessions.create(100)
+    source = BytesIO()
+    Image.new("RGB", (10, 10), "pink").save(source, format="PNG")
+    source.seek(0)
+
+    monkeypatch.setattr(plugin, "ROOT", tmp_path)
+    monkeypatch.setattr(plugin, "UPLOAD_DIR", tmp_path / "uploads")
+    monkeypatch.setattr(
+        plugin,
+        "renderer",
+        SimpleNamespace(render_global_graphic_announcement=lambda _title, _text, _source, sticker=None: poster),
+    )
+    response = asyncio.run(
+        plugin.global_announcement_web_graphic_preview(
+            session.token,
+            UploadFile(file=source, filename="source.png"),
+            title="公告标题",
+            text="公告正文",
+            extra_text="图片下方说明",
+            member="__none__",
+            sticker="__random__",
+            at_all="false",
+        )
+    )
+
+    assert isinstance(response, Response)
+    assert response.media_type == "image/webp"
+    assert response.headers["cache-control"] == "no-store"
+    with Image.open(BytesIO(response.body)) as preview:
+        assert preview.format == "WEBP"
+    assert session.draft_path == poster
+    assert session.draft_extra_text == "图片下方说明"
 
 
 def test_global_announcement_broadcast_sends_one_image_to_each_a_coast_group(monkeypatch, tmp_path):
@@ -199,6 +316,38 @@ def test_global_image_broadcast_sends_existing_image_to_each_a_coast_group(monke
     assert [kwargs["group_id"] for action, kwargs in sent] == list(A_COAST_GROUP_IDS)
     assert all(action == "send_group_msg" for action, kwargs in sent)
     assert all(kwargs["message"].type == "image" for action, kwargs in sent)
+
+
+def test_global_image_broadcast_appends_optional_text_in_the_same_message(monkeypatch, tmp_path):
+    plugin = announcement_plugin()
+    image_path = tmp_path / "intro.png"
+    Image.new("RGB", (960, 540), "white").save(image_path)
+    sent = []
+
+    async def fake_call_api(_bot, action, **kwargs):
+        sent.append((action, kwargs))
+
+    monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS[:1])
+
+    class FakeBot:
+        self_id = 123
+
+    sent_count, failed_count = asyncio.run(
+        plugin.send_global_image(FakeBot(), image_path, extra_text="  补充说明\n第二行  ")
+    )
+
+    assert (sent_count, failed_count) == (1, 0)
+    message = sent[0][1]["message"]
+    assert [segment.type for segment in message] == ["image", "text"]
+    assert message[1].data["text"] == "\n补充说明\n第二行"
+
+
+def test_global_announcement_message_keeps_the_original_image_for_blank_optional_text():
+    plugin = announcement_plugin()
+    image = MessageSegment.image(file="file:///announcement.png")
+
+    assert plugin.global_announcement_message(image, extra_text="  ") is image
 
 
 def test_global_image_path_must_be_inside_workspace(monkeypatch, tmp_path):

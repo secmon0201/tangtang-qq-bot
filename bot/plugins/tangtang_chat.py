@@ -28,6 +28,7 @@ from bot.services.tangtang_features import (
     TangtangFeatureClassifier,
     classify_local_feature,
     has_feature_hint,
+    mentioned_user_ids,
 )
 
 
@@ -41,7 +42,8 @@ async def _feature_router(
 ) -> tuple[bool, dict[str, Any]]:
     if not has_feature_hint(text):
         return False, {}
-    decision = classify_local_feature(text)
+    targets = mentioned_user_ids(event.message, getattr(bot, "self_id", None))
+    decision = classify_local_feature(text, mentioned_user_count=len(targets))
     if decision is None:
         decision, usage = await feature_classifier.classify(config, text)
     else:

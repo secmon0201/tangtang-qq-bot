@@ -23,8 +23,9 @@ function Test-CoreUp {
             -UseBasicParsing -TimeoutSec 3
         return $request.StatusCode -eq 404
     } catch {
-        if ($null -ne $_.Exception.Response) {
-            return ([int]$_.Exception.Response.StatusCode -eq 404)
+        $responseProperty = $_.Exception.PSObject.Properties['Response']
+        if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+            return ([int]$responseProperty.Value.StatusCode -eq 404)
         }
         return $false
     }

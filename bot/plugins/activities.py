@@ -31,7 +31,13 @@ from bot.services.activities import (
 from bot.services.avatars import AvatarService
 from bot.services.forward import build_forward_nodes
 from bot.services.media import local_image_segment
+from bot.services.operator_web import (
+    operator_web_base_url,
+    operator_web_sessions,
+    operator_web_url,
+)
 from bot.services.qq_platform import call_qq_action
+from bot.services.roles import is_super_admin
 from bot.services.reports import ReportRenderer
 from bot.services.runtime import database, passive_settings
 
@@ -419,6 +425,24 @@ async def send_activity_entry_tutorial(
 
 
 activity_admin_help = on_command("活动管理员帮助", priority=5, block=True)
+
+activity_web = on_command("活动网页", aliases={"活动面板"}, priority=5, block=True)
+
+
+@activity_web.handle()
+async def _(event: MessageEvent):
+    if not service.is_event_activity_admin(event):
+        await activity_web.finish("只有活动管理员、活动有效群的群管理或超级管理员可以使用活动网页。")
+    base_url = operator_web_base_url()
+    if base_url is None:
+        await activity_web.finish("运营网页隧道尚未启动，请联系超级管理员启动运营网页隧道。")
+    session = operator_web_sessions.create(
+        int(event.user_id), "activity", is_super_admin=is_super_admin(int(event.user_id))
+    )
+    await activity_web.finish(
+        "活动管理页（链接仅限本次操作，15 分钟内有效）：\n"
+        + operator_web_url(base_url, "activity", session.token)
+    )
 
 
 @activity_admin_help.handle()

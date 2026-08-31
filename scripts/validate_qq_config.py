@@ -264,6 +264,10 @@ def validate(path: Path) -> tuple[int, int]:
         if invalid:
             raise ValueError(f"{feature_name} contains groups outside MANAGED_GROUP_IDS: {invalid}")
     operators = parse_ids(values.get("BOT_OPERATOR_IDS", ""), "BOT_OPERATOR_IDS")
+    parse_ids(
+        values.get("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", ""),
+        "GLOBAL_ANNOUNCEMENT_OPERATOR_IDS",
+    )
     parse_ids(values.get("ACTIVITY_ADMIN_IDS", ""), "ACTIVITY_ADMIN_IDS")
     parse_ids(values.get("NAPCAT_QQ_ID", ""), "NAPCAT_QQ_ID", maximum=1)
     parse_bool(values.get("A_COAST_PROFILE_ENABLED", "true"), "A_COAST_PROFILE_ENABLED")

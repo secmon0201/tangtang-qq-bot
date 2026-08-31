@@ -68,6 +68,14 @@ PLUGIN_SPECS = (
     PluginSpec("activities", "bot.plugins.activities", "跨群活动", "活动", ("onebot",)),
     PluginSpec("surveys", "bot.plugins.surveys", "群聊调查", "活动", ("onebot",)),
     PluginSpec("global_announcement", "bot.plugins.global_announcement", "全局公告", "活动", ("onebot",)),
+    PluginSpec(
+        "operator_web",
+        "bot.plugins.operator_web",
+        "运营网页",
+        "运行维护",
+        ("onebot",),
+        after=("commands", "activities"),
+    ),
     PluginSpec("hourly_announcements", "bot.plugins.hourly_announcements", "整点报时", "群聊互动", ("onebot",)),
     PluginSpec("official_qq", "bot.plugins.official_qq", "官方 QQ 模式", "备用传输", ("qq_openapi",)),
 )

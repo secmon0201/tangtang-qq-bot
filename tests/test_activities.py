@@ -564,7 +564,7 @@ def test_activity_reports_are_local_png(tmp_path):
             assert image.width == ReportRenderer.WIDTH
             assert image.getbbox() is not None
     with Image.open(detail) as image:
-        assert image.getpixel((0, 0)) == ImageColor.getrgb(ReportRenderer.BACKGROUND)
+        assert image.getpixel((0, 0))[:3] == ImageColor.getrgb(ReportRenderer.BACKGROUND)
 
 
 def test_winner_report_reserves_height_for_all_winner_rows(tmp_path):

@@ -2,11 +2,20 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "napcat_process.ps1")
 
-Write-Host "[0/5] Stopping the NapCat watchdog..."
+Write-Host "[0/8] Stopping the NapCat watchdog..."
 & (Join-Path $PSScriptRoot "stop_watchdog.ps1")
 
-Write-Host "[1/5] Stopping the NTE login tunnel without changing its enabled state..."
+Write-Host "[1/8] Stopping the fixed Tangtang web tunnel without changing its enabled state..."
+& (Join-Path $PSScriptRoot "stop_tangtang_named_tunnel.ps1") -PreserveGuardState
+
+Write-Host "[2/8] Stopping the NTE login tunnel without changing its enabled state..."
 & (Join-Path $PSScriptRoot "stop_nte_tunnel.ps1") -PreserveGuardState
+
+Write-Host "[3/8] Stopping the announcement web tunnel..."
+& (Join-Path $PSScriptRoot "stop_global_announcement_tunnel.ps1")
+
+Write-Host "[4/8] Stopping the operator web tunnel..."
+& (Join-Path $PSScriptRoot "stop_operator_web_tunnel.ps1")
 
 $settings = Get-BotLaunchSettings -Root $Root
 $roots = @(Get-QqRootProcesses)
@@ -27,9 +36,9 @@ foreach ($qqRoot in Get-QqRootsConnectedToPort -Port $settings.Port) {
 }
 
 if ($targets.Count -eq 0) {
-    Write-Host "[2/5] No NapCat QQ process could be safely identified. No ordinary QQ process was closed."
+    Write-Host "[5/8] No NapCat QQ process could be safely identified. No ordinary QQ process was closed."
 } else {
-    Write-Host "[2/5] Stopping verified NapCat QQ process trees..."
+    Write-Host "[5/8] Stopping verified NapCat QQ process trees..."
     foreach ($target in $targets.GetEnumerator()) {
         Write-Host "  PID $($target.Key) ($($target.Value))"
         if (-not (Stop-VerifiedProcessTree -ProcessId ([int]$target.Key))) {
@@ -45,13 +54,13 @@ if ($remainingTargets.Count -eq 0 -and (Test-Path -LiteralPath $settings.StatePa
     Remove-Item -LiteralPath $settings.StatePath -Force
 }
 
-Write-Host "[3/5] Stopping the bot..."
+Write-Host "[6/8] Stopping the bot..."
 & (Join-Path $PSScriptRoot "stop.ps1")
 
-Write-Host "[4/5] Stopping GsUID Core..."
+Write-Host "[7/8] Stopping GsUID Core..."
 & (Join-Path $PSScriptRoot "stop_gsuid_core.ps1")
 
-Write-Host "[5/5] Verifying process state..."
+Write-Host "[8/8] Verifying process state..."
 
 $pythonPath = [regex]::Escape((Join-Path $Root ".venv\Scripts\python.exe"))
 $botResidual = @(Get-CimInstance Win32_Process | Where-Object {

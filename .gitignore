@@ -36,6 +36,9 @@ logs/
 reports/
 downloads/
 backups/
+output/
+tmp/
+site/
 *.log
 
 # Downloaded executables and build tools

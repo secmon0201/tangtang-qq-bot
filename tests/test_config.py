@@ -29,6 +29,7 @@ def test_config_rejects_more_than_ten_groups(monkeypatch):
 def test_config_deduplicates_ids_and_keeps_secrets_out_of_settings(monkeypatch, tmp_path):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1001,1002")
     monkeypatch.setenv("BOT_OPERATOR_IDS", "99")
+    monkeypatch.setenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", "66,66")
     monkeypatch.setenv("ACTIVITY_ADMIN_IDS", "77,77")
     monkeypatch.setenv("ACTIVITY_ADMIN_BLACKLIST_IDS", "88,88")
     monkeypatch.delenv("STATS_GROUP_IDS", raising=False)
@@ -43,6 +44,7 @@ def test_config_deduplicates_ids_and_keeps_secrets_out_of_settings(monkeypatch, 
     config = Settings.from_env()
     assert config.managed_group_ids == (1001, 1002)
     assert config.operator_ids == frozenset({99})
+    assert config.global_announcement_operator_ids == frozenset({66})
     assert config.activity_admin_ids == frozenset({77})
     assert config.activity_admin_blacklist_ids == frozenset({88})
     assert config.activity_withdraw_ack_emoji_id == "32"
@@ -142,6 +144,12 @@ def test_config_uses_custom_a_coast_bilibili_scope(monkeypatch):
 
 def test_config_validates_activity_admin_ids(monkeypatch):
     monkeypatch.setenv("ACTIVITY_ADMIN_IDS", "not-a-qq-number")
+    with pytest.raises(ValueError, match="invalid QQ/group ID"):
+        Settings.from_env()
+
+
+def test_config_validates_global_announcement_operator_ids(monkeypatch):
+    monkeypatch.setenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", "not-a-qq-number")
     with pytest.raises(ValueError, match="invalid QQ/group ID"):
         Settings.from_env()
 

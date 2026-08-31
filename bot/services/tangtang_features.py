@@ -19,6 +19,7 @@ SUPPORTED_ACTIONS = frozenset(
         "activity_hall",
         "group_ranking",
         "a_coast_ranking",
+        "personal_stats",
     }
 )
 RANKING_ACTIONS = frozenset({"group_ranking", "a_coast_ranking"})
@@ -31,6 +32,13 @@ _FEATURE_HINT_RE = re.compile(
 )
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 _RANKING_SUBJECT_RE = re.compile(r"(?:发言|灌水)(?:排行(?:榜)?|榜)|发言统计")
+_PERSONAL_STATS_SUBJECT_RE = re.compile(
+    r"(?:发言|灌水|消息|说话)(?:排行(?:榜)?|榜|统计|数|量|情况|多少)?|"
+    r"说(?:了)?(?:多少|几句|几条)?|活跃(?:度|情况)?"
+)
+_PERSONAL_REFERENCE_RE = re.compile(r"我|本人|自己|某人|这人|他|她|对方")
+_SELF_REFERENCE_RE = re.compile(r"我|本人|自己")
+_EVALUATIVE_RE = re.compile(r"好看吗|好不好看|有意思吗|厉害吗")
 _RANKING_REQUEST_RE = re.compile(
     r"(?:给我|帮我)?(?:看|看看|看下|看一下|查|查下|查一下|显示|发|来)(?:一?下)?|"
     r"(?:我)?要看|想看"
@@ -45,7 +53,8 @@ _FUNCTION_TABLE = """支持的功能：
 - zhijiang_schedule：枝江直播/枝江日程/直播日程
 - activity_hall：活动大厅/现在有哪些活动
 - group_ranking：当前群发言排行，范围 day/week/month/total
-- a_coast_ranking：A海岸/a海岸发言排行，范围 day/week/month/total"""
+- a_coast_ranking：A海岸/a海岸发言排行，范围 day/week/month/total
+- personal_stats：个人在 A海岸五群的发言统计，范围 day/week/month/total"""
 
 _ROUTER_RULES = """把呼叫分成三档：
 - clear：用户明确要求查看某个功能。
@@ -57,6 +66,7 @@ clear/maybe 必须同时给出 action、scope、a_coast、line：
 - action 只能是支持功能里的名字。
 - scope 只在发言排行里用：day/week/month/total；其他功能填空字符串。
 - a_coast 只在 A海岸排行里为 true。
+- personal_stats 的 personal_target 只能是 self 或 mentioned；前者查询呼叫者，后者查询消息中唯一被 @ 的成员。
 - line 是糖糖对用户说的原话，口语自然，1-2 句，不要解释“我帮你调用了什么功能”。
 chat 只输出 {"decision":"chat"}。
 
@@ -76,16 +86,62 @@ class FeatureDecision:
     scope: str
     a_coast: bool
     line: str
+    personal_target: str = ""
 
 
 def has_feature_hint(text: str) -> bool:
     return bool(_FEATURE_HINT_RE.search(text))
 
 
-def classify_local_feature(text: str) -> FeatureDecision | None:
+def mentioned_user_ids(message: Any, bot_user_id: Any = None) -> tuple[int, ...]:
+    """Return unique human @ targets, excluding @all and the bot itself."""
+    bot_id = str(bot_user_id or "")
+    values: list[int] = []
+    for segment in message:
+        if getattr(segment, "type", "") != "at":
+            continue
+        candidate = str(getattr(segment, "data", {}).get("qq", ""))
+        if not candidate.isdigit() or candidate == bot_id:
+            continue
+        value = int(candidate)
+        if value not in values:
+            values.append(value)
+    return tuple(values)
+
+
+def classify_local_feature(
+    text: str, *, mentioned_user_count: int = 0
+) -> FeatureDecision | None:
     """Resolve explicit feature requests locally while preserving persona feedback."""
 
     normalized = re.sub(r"[\s，,。.!！?？：:、]", "", text)
+    personal_subject = _PERSONAL_STATS_SUBJECT_RE.search(normalized)
+    if (
+        personal_subject is not None
+        and (mentioned_user_count > 0 or _PERSONAL_REFERENCE_RE.search(normalized))
+        and not _EVALUATIVE_RE.search(normalized)
+    ):
+        if re.search(r"(?:总|累计|历史)", normalized):
+            scope, scope_label = "total", "累计"
+        elif re.search(r"(?:这个月|本月|月)", normalized):
+            scope, scope_label = "month", "本月"
+        elif re.search(r"(?:这周|本周|周)", normalized):
+            scope, scope_label = "week", "本周"
+        else:
+            scope, scope_label = "day", "今天"
+        return FeatureDecision(
+            tier="clear",
+            action="personal_stats",
+            scope=scope,
+            a_coast=True,
+            line=f"好呀，糖糖这就算算{scope_label}的个人发言。",
+            personal_target=(
+                "self"
+                if mentioned_user_count == 0 and _SELF_REFERENCE_RE.search(normalized)
+                else "mentioned"
+            ),
+        )
+
     subject = _RANKING_SUBJECT_RE.search(normalized)
     if subject is None:
         return None
@@ -178,6 +234,7 @@ class TangtangFeatureClassifier:
             return None
 
         a_coast = bool(data.get("a_coast", False))
+        personal_target = str(data.get("personal_target") or "").strip().lower()
         line = str(data.get("line") or "").strip()
         if not line:
             return None
@@ -190,9 +247,15 @@ class TangtangFeatureClassifier:
                 action = "a_coast_ranking"
             if action == "a_coast_ranking":
                 a_coast = True
+            personal_target = ""
+        elif action == "personal_stats":
+            if scope not in RANKING_SCOPES or personal_target not in {"self", "mentioned"}:
+                return None
+            a_coast = True
         else:
             scope = ""
             a_coast = False
+            personal_target = ""
 
         return FeatureDecision(
             tier=decision,
@@ -200,4 +263,5 @@ class TangtangFeatureClassifier:
             scope=scope,
             a_coast=a_coast,
             line=line,
+            personal_target=personal_target,
         )

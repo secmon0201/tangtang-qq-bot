@@ -1976,6 +1976,53 @@ class Database:
             for group_id in selected
         ]
 
+    def user_group_message_totals(
+        self, user_id: int, group_ids: Iterable[int], start_day: date | None
+    ) -> list[dict[str, Any]]:
+        """Return a user's non-zero per-group totals in the requested window.
+
+        Results are ordered by contribution, with the configured group order as
+        the stable tiebreaker. This keeps the personal trend useful without
+        showing groups in which the member did not speak during the window.
+        """
+        selected = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
+        if not selected:
+            return []
+        placeholders = ",".join("?" for _ in selected)
+        clauses = [f"group_id IN ({placeholders})", "user_id=?"]
+        parameters: list[Any] = [*selected, int(user_id)]
+        if start_day is not None:
+            clauses.append("day>=?")
+            parameters.append(start_day.isoformat())
+        with self.connect() as connection:
+            names = {
+                int(row["group_id"]): str(row["group_name"] or "")
+                for row in connection.execute(
+                    f"SELECT group_id,group_name FROM managed_groups WHERE group_id IN ({placeholders})",
+                    selected,
+                )
+            }
+            counts = {
+                int(row["group_id"]): int(row["message_count"] or 0)
+                for row in connection.execute(
+                    f"SELECT group_id,SUM(message_count) AS message_count FROM daily_counts "
+                    f"WHERE {' AND '.join(clauses)} GROUP BY group_id",
+                    parameters,
+                )
+            }
+        group_order = {group_id: index for index, group_id in enumerate(selected)}
+        return [
+            {
+                "group_id": group_id,
+                "group_name": names.get(group_id) or str(group_id),
+                "message_count": count,
+            }
+            for group_id, count in sorted(
+                counts.items(), key=lambda item: (-item[1], group_order[item[0]])
+            )
+            if count > 0
+        ]
+
     def group_daily_message_totals(
         self, group_id: int, start_day: date, end_day: date
     ) -> list[dict[str, Any]]:

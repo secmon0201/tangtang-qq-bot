@@ -17,6 +17,7 @@ class FeatureRequest:
     action: str
     args: str = ""
     a_coast: bool = False
+    personal_target: str = ""
 
 
 FeatureHandler = Callable[[Any, Bot, Any, FeatureRequest], Awaitable[None]]
@@ -52,6 +53,13 @@ def request_from_decision(decision: FeatureDecision) -> FeatureRequest:
             args=_SCOPE_LABELS.get(decision.scope, decision.scope),
             a_coast=decision.a_coast or decision.action == "a_coast_ranking",
         )
+    if decision.action == "personal_stats":
+        return FeatureRequest(
+            action="personal_stats",
+            args=_SCOPE_LABELS.get(decision.scope, decision.scope),
+            a_coast=True,
+            personal_target=decision.personal_target,
+        )
     return FeatureRequest(action=decision.action, args="", a_coast=False)
 
 
@@ -66,6 +74,8 @@ def feature_label(request: FeatureRequest) -> str:
     if request.action == "ranking":
         name = "A海岸发言排行" if request.a_coast else "发言排行"
         return f"{name} {_SCOPE_LABELS.get(request.args, request.args)}"
+    if request.action == "personal_stats":
+        return f"个人发言统计 {_SCOPE_LABELS.get(request.args, request.args)}"
     return labels.get(request.action, "本地功能")
 
 

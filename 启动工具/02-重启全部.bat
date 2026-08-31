@@ -15,7 +15,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_al
 if errorlevel 1 goto :failed
 
 echo [3/3] Starting the NapCat watchdog...
-if exist "%ROOT%\data\nte_tunnel_disabled.flag" (
+if exist "%ROOT%\data\cloudflared\tangtang-web.yml" (
+    echo NTE login is included in the fixed Tangtang web tunnel.
+) else if exist "%ROOT%\data\nte_tunnel_disabled.flag" (
     echo NTE login tunnel is intentionally disabled; skipping automatic start.
 ) else (
     start "NTE Login Tunnel" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_nte_tunnel.ps1"

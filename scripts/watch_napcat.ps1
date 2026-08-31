@@ -233,13 +233,24 @@ function Invoke-WatchdogCheck {
 }
 
 function Test-NteTunnelHealthy {
-    $cloudflared = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -like "*cloudflared*" -and $_.CommandLine -like "*tunnel*--url*"
-    })
-    $proxy = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -like "python*.exe" -and $_.CommandLine -like "*nte_login_proxy.py*"
-    })
-    $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18765 -ErrorAction SilentlyContinue)
+    $namedConfig = Join-Path $Root 'data\cloudflared\tangtang-web.yml'
+    if (Test-Path -LiteralPath $namedConfig) {
+        $cloudflared = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -like "*cloudflared*" -and $_.CommandLine -like "*tangtang-web.yml*"
+        })
+        $proxy = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -like "python*.exe" -and $_.CommandLine -like "*tangtang_web_gateway.py*"
+        })
+        $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18769 -ErrorAction SilentlyContinue)
+    } else {
+        $cloudflared = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -like "*cloudflared*" -and $_.CommandLine -like "*tunnel*--url*"
+        })
+        $proxy = @(Get-CimInstance Win32_Process | Where-Object {
+            $_.Name -like "python*.exe" -and $_.CommandLine -like "*nte_login_proxy.py*"
+        })
+        $listener = @(Get-NetTCPConnection -State Listen -LocalPort 18765 -ErrorAction SilentlyContinue)
+    }
     $edgeConnections = @(
         foreach ($process in $cloudflared) {
             Get-NetTCPConnection -OwningProcess $process.ProcessId -State Established -ErrorAction SilentlyContinue |
@@ -273,7 +284,12 @@ function Invoke-NteTunnelCheck {
     }
     if ($AllowRecovery -and (Test-RecoveryCooldown -Timestamp ([string]$State.last_nte_tunnel_recovery_at) -CooldownSeconds $NteTunnelRecoveryCooldownSeconds)) {
         Write-WatchdogLog -Event "nte_tunnel_recovery_started"
-        $startScript = Join-Path $PSScriptRoot "start_nte_tunnel.ps1"
+        $namedConfig = Join-Path $Root 'data\cloudflared\tangtang-web.yml'
+        $startScript = if (Test-Path -LiteralPath $namedConfig) {
+            Join-Path $PSScriptRoot 'start_tangtang_named_tunnel.ps1'
+        } else {
+            Join-Path $PSScriptRoot 'start_nte_tunnel.ps1'
+        }
         Start-Process -FilePath "powershell.exe" `
             -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $startScript) `
             -WindowStyle Hidden -Wait | Out-Null

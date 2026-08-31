@@ -1,0 +1,31 @@
+@media (min-width: 1401px) { .hero h1 { font-size: 5.8rem; } }
+@media (min-width: 1050px) { #social .section-heading h2 { white-space: nowrap; } }
+@media (max-width: 980px) {
+  .desktop-nav { display: none; } .menu-button { display: inline-grid; }
+  .hero { grid-template-columns: 1fr; min-height: auto; } .hero-copy { padding-top: 18px; } .hero-stage { min-height: 480px; }
+  .section-heading, .portal-cards, .story-row { grid-template-columns: 1fr; }
+  .game-worlds, .world-details { grid-template-columns: 1fr; } .game-world + .game-world, .world-detail + .world-detail { border-left: 0; border-top: 2px solid var(--ink); }
+  .game-rail { grid-template-columns: repeat(2,1fr); } .game-cell { border-bottom: 2px solid var(--ink); } .game-cell:nth-child(2n) { border-right: 0; } .game-cell:last-child { grid-column: 1/-1; border-bottom: 0; }
+  .architecture-flow { grid-template-columns: 1fr; } .flow-node { min-height: 130px; border-right: 0; border-bottom: 2px solid var(--ink); } .flow-node:last-child { border-bottom: 0; } .flow-node::after { right: 50%; top: auto; bottom: -18px; transform: rotate(90deg); } .flow-node strong { margin-top: 24px; }
+}
+@media (max-width: 720px) {
+  :root { --header: 68px; --shadow: 5px 5px 0 var(--ink); }
+  .nav-shell, .page-shell, .footer-shell { width: min(100% - 28px,var(--max)); } .brand span small { display: none; }
+  .marquee-group { flex: 0 0 auto; width: max-content; min-width: max-content; justify-content: flex-start; }
+  .marquee span { flex: 0 0 auto; }
+  .hero { padding: 30px 0 44px; gap: 18px; } .hero h1 { font-size: 3.25rem; } .page-hero h1 { font-size: 3rem; } .hero-lead { margin-top: 22px; font-size: 1rem; } .hero-note { display: none; } .hero .actions { flex-wrap: nowrap; gap: 8px; margin-top: 22px; } .hero .button { min-height: 44px; padding: 8px 10px; font-size: .78rem; } .hero-stage { min-height: 250px; } .avatar-wrap { width: min(54%,220px); } .float-tag { font-size: .66rem; padding: 6px 8px; } .waveform { height: 54px; }
+  .section { padding: 76px 0; } .section-heading { margin-bottom: 34px; }
+  .section-heading h2 { font-size: 2.65rem; } .story-copy h2, .story-copy h3 { font-size: 2.5rem; } .portal-card h3 { font-size: 2.7rem; } .release-box h1 { font-size: 3.5rem; }
+  .section-beacon { top: 16px; width: 38px; height: 38px; }
+  .capability-grid { grid-template-columns: 1fr; } .capability-tile { min-height: 220px; border-right: 0; border-bottom: 2px solid var(--ink) !important; } .capability-tile:last-child { border-bottom: 0 !important; }
+  .portal-cards { gap: 12px; } .portal-card { min-height: 360px; padding: 24px; } .portal-card img { width: 54%; opacity: .74; }
+  .visual-board { min-height: 380px; padding: 20px; } .rank-stage { min-height: 500px; } .rank-list { width: 78%; } .rank-character { width: 68%; opacity: .76; }
+  .game-rail { grid-template-columns: 1fr; } .game-cell, .game-cell:nth-child(2n) { min-height: 180px; border-right: 0; border-bottom: 2px solid var(--ink); } .game-cell:last-child { grid-column: auto; }
+  .community-constellation { min-height: 0; grid-template-columns: 1fr; gap: 12px; padding: 22px; } .community-links { display: none; } .group-node, .group-node:nth-of-type(n) { min-height: 150px; transform: none; } .community-official { align-items: flex-start; } .community-official span { align-items: flex-start; }
+  .game-world, .world-detail { padding: 22px; } .world-head h3 { font-size: 2.45rem; }
+  .operator-grid, .tech-grid { grid-template-columns: 1fr; } .operator-item, .tech-item, .operator-item:nth-child(2n), .tech-item:nth-child(2n) { border-right: 0; border-bottom: 2px solid var(--ink); } .operator-item:last-child, .tech-item:last-child { border-bottom: 0; }
+  .security-lanes { grid-template-columns: 1fr; } .scope-switch { grid-template-columns: 1fr; } .scope-switch button { border-right: 0; border-bottom: 2px solid var(--ink); } .scope-switch button:last-child { border-bottom: 0; }
+  .modal-list { grid-template-columns: 1fr; } .footer-shell { grid-template-columns: 1fr; } .footer-links { justify-content: flex-start; } .footer-meta { flex-direction: column; gap: 5px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } .reveal { opacity: 1; transform: none; } }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }

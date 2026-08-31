@@ -1,0 +1,43 @@
+.page-hero { min-height: 66svh; position: relative; padding: 80px 0 70px; display: flex; flex-direction: column; justify-content: flex-end; border-bottom: 2px solid var(--ink); overflow: clip; }
+.page-hero h1 { font-size: 6.5rem; }
+.page-hero p { max-width: 750px; margin: 28px 0 0; font-size: 1.3rem; font-weight: 700; }
+.page-index { font-weight: 950; font-size: .82rem; color: var(--pink); margin-bottom: 18px; }
+.page-nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 30px; }
+.page-nav a { padding: 8px 13px; border: 1px solid var(--ink); background: var(--white); font-weight: 800; }
+.story-row { display: grid; grid-template-columns: minmax(260px,.85fr) minmax(0,1.15fr); gap: clamp(34px,7vw,100px); align-items: center; }
+.story-row > * { min-width: 0; }
+.story-row + .story-row { margin-top: 100px; }
+.story-copy h2, .story-copy h3 { margin: 0 0 20px; font-size: 3.5rem; line-height: 1.05; }
+.story-copy p { color: var(--muted); max-width: 620px; }
+.story-copy .command-line { color: var(--ink); font-weight: 850; }
+.visual-board { min-height: 430px; position: relative; padding: 28px; border: 2px solid var(--ink); background: var(--white); box-shadow: var(--shadow); overflow: hidden; }
+.visual-board.dark { background: var(--ink); color: var(--white); border-color: var(--ink); }
+.visual-board.pink { background: var(--pink-soft); }
+.visual-board.yellow { background: var(--yellow); }
+.visual-board.cyan { background: var(--cyan); }
+.board-title { display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 2px solid currentColor; font-weight: 950; }
+.board-title span { font-size: .74rem; }
+.signal-stack { display: grid; gap: 12px; margin-top: 30px; }
+.signal-card { display: grid; grid-template-columns: 54px 1fr auto; align-items: center; gap: 14px; padding: 14px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); }
+.signal-card i { width: 46px; height: 46px; display: grid; place-items: center; background: var(--signal,var(--pink)); border: 1px solid var(--ink); }
+.signal-card strong { display: block; }
+.signal-card small { color: var(--muted); }
+.signal-card time { font-size: .74rem; font-weight: 900; }
+.chat-demo { display: grid; gap: 14px; padding-top: 28px; }
+.bubble { max-width: 82%; padding: 14px 18px; border: 2px solid var(--ink); background: var(--white); color: var(--ink); font-weight: 700; }
+.bubble.user { margin-left: auto; background: var(--yellow); }
+.bubble.bot { display: grid; grid-template-columns: 38px 1fr; gap: 10px; }
+.bubble.bot img { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--ink); }
+.route-chip { width: max-content; margin: 0 auto; padding: 6px 10px; color: var(--white); background: var(--blue); font-size: .72rem; font-weight: 850; }
+.rank-stage { position: relative; min-height: 530px; background: #ffe9f1; }
+.rank-stage .rank-header { width: 100%; height: 145px; object-fit: cover; border: 2px solid var(--ink); }
+.rank-character { position: absolute; right: 0; bottom: 0; width: 56%; max-height: 420px; object-fit: contain; object-position: bottom right; }
+.rank-list { position: relative; z-index: 2; width: 61%; display: grid; gap: 8px; margin-top: -22px; }
+.rank-row { display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; padding: 10px 12px; border: 2px solid var(--ink); background: rgba(255,255,255,.94); font-weight: 800; }
+.rank-row:first-child { background: var(--yellow); transform: translateX(10px); }
+.rank-row b { color: var(--pink); }
+.scope-switch { display: grid; grid-template-columns: repeat(3,1fr); margin-top: 20px; border: 2px solid var(--ink); }
+.scope-switch button { min-height: 58px; border: 0; border-right: 2px solid var(--ink); background: var(--white); cursor: pointer; font-weight: 900; }
+.scope-switch button:last-child { border-right: 0; }
+.scope-switch button[aria-selected="true"] { background: var(--pink); color: var(--white); }
+.scope-explain { min-height: 88px; margin: 14px 0 0; padding: 14px; border: 2px solid var(--ink); background: var(--ink); color: var(--white); }

@@ -1,0 +1,28 @@
+.modal { width: min(760px,calc(100% - 32px)); max-height: min(82svh,760px); padding: 0; border: 3px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 12px 12px 0 var(--pink); }
+.modal::backdrop { background: rgba(17,17,20,.68); backdrop-filter: blur(5px); }
+.modal-head { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 2px solid var(--ink); background: var(--yellow); }
+.modal-head h2 { margin: 0; font-size: 1.55rem; }
+.modal-close { flex: 0 0 44px; height: 44px; border: 2px solid var(--ink); background: var(--white); cursor: pointer; }
+.modal-body { padding: 26px; overflow: auto; }
+.modal-body p { color: var(--muted); }
+.modal-list { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-top: 24px; }
+.modal-list div { padding: 14px; border: 1px solid var(--ink); background: var(--white); font-weight: 750; }
+.modal-command { margin-top: 22px; padding: 16px; border: 2px solid var(--ink); background: var(--pink-soft); font-weight: 850; }
+.toast { position: fixed; left: 50%; bottom: 30px; z-index: 300; transform: translate(-50%,30px); padding: 11px 16px; background: var(--ink); color: var(--white); opacity: 0; pointer-events: none; transition: opacity .2s ease,transform .2s ease; }
+.toast.show { opacity: 1; transform: translate(-50%,0); }
+.site-footer { background: var(--ink); color: var(--white); }
+.footer-shell { width: min(var(--max),calc(100% - 40px)); margin: 0 auto; padding: 52px 0; display: grid; grid-template-columns: 1fr auto; gap: 30px; align-items: end; }
+.footer-brand { display: flex; align-items: center; gap: 14px; }
+.footer-brand img { width: 58px; height: 58px; border: 2px solid var(--white); border-radius: 50%; }
+.footer-brand strong { display: block; font-size: 1.5rem; }
+.footer-brand small { color: #aaa7b1; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 18px; justify-content: flex-end; font-weight: 800; }
+.footer-meta { grid-column: 1/-1; padding-top: 24px; border-top: 1px solid #45434b; display: flex; justify-content: space-between; color: #aaa7b1; font-size: .8rem; }
+.reveal { opacity: 1; transform: none; }
+.js-ready .reveal.is-visible { animation: reveal-in .65s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes wave { to { height: 100%; } }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes beacon-drift { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(9px) rotate(3deg); } }
+@keyframes route-dash { to { stroke-dashoffset: -120; } }
+@keyframes reveal-in { from { opacity: .55; transform: translateY(14px); } to { opacity: 1; transform: none; } }

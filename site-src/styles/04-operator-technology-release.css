@@ -1,0 +1,27 @@
+.operator-grid, .tech-grid { display: grid; grid-template-columns: repeat(2,1fr); border: 2px solid var(--ink); }
+.operator-item, .tech-item { min-height: 300px; padding: 28px; border-right: 2px solid var(--ink); border-bottom: 2px solid var(--ink); background: var(--white); }
+.operator-item:nth-child(2n), .tech-item:nth-child(2n) { border-right: 0; }
+.operator-item:nth-last-child(-n+2), .tech-item:nth-last-child(-n+2) { border-bottom: 0; }
+.operator-item:nth-child(4n+2) { background: var(--pink-soft); }
+.operator-item:nth-child(4n+3) { background: var(--yellow); }
+.operator-item i, .tech-item i { font-size: 2.2rem; }
+.operator-item h3, .tech-item h3 { margin: 42px 0 8px; font-size: 1.6rem; }
+.operator-item p, .tech-item p { margin: 0; color: var(--muted); }
+.architecture-flow { width: 100%; min-width: 0; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); align-items: stretch; border: 2px solid var(--ink); }
+.flow-node { min-width: 0; min-height: 190px; position: relative; padding: 20px; border-right: 2px solid var(--ink); background: var(--white); overflow-wrap: anywhere; }
+.flow-node:last-child { border-right: 0; }
+.flow-node::after { content: "→"; position: absolute; right: -18px; top: 42%; z-index: 2; width: 34px; height: 34px; display: grid; place-items: center; background: var(--yellow); border: 2px solid var(--ink); border-radius: 50%; font-weight: 950; }
+.flow-node:last-child::after { display: none; }
+.flow-node i { font-size: 1.8rem; }
+.flow-node strong { display: block; margin-top: 46px; }
+.flow-node small { color: var(--muted); }
+.security-lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.security-lane { padding: 26px; border: 2px solid var(--ink); background: var(--white); }
+.security-lane.allowed { border-top: 12px solid var(--green); }
+.security-lane.blocked { border-top: 12px solid var(--danger); }
+.security-lane ul { padding: 0; margin: 20px 0 0; list-style: none; }
+.security-lane li { padding: 10px 0; border-top: 1px solid var(--line); }
+.release-stage { min-height: calc(100svh - var(--header)); display: grid; place-items: center; padding: 50px 0; }
+.release-box { width: min(900px,100%); padding: clamp(30px,7vw,90px); border: 3px solid var(--ink); background: var(--yellow); box-shadow: 12px 12px 0 var(--ink); text-align: center; }
+.release-box i { font-size: 4rem; }
+.release-box h1 { margin: 25px 0 12px; font-size: 6rem; line-height: .95; }

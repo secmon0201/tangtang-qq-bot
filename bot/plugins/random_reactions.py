@@ -8,7 +8,6 @@ from nonebot import logger, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 
 from bot.config import settings
-from bot.services.command_classification import is_activity_command_text
 from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
 from bot.services.qq_platform import qq_platform
 from bot.services.runtime import database, passive_settings
@@ -50,7 +49,6 @@ def is_passive_reaction_event(event: MessageEvent) -> bool:
         and not is_stale_passive_event(event)
         and not event.get_plaintext().lstrip().startswith(settings.command_prefix)
         and not NTE_GAME_COMMAND_RE.match(event.get_plaintext().strip())
-        and not is_activity_command_text(event.get_plaintext())
         and not CODEX_COMMAND_RE.match(event.get_plaintext().strip())
         and not MINI_GAME_COMMAND_RE.match(event.get_plaintext().strip())
         and not RETIRED_DICE_COMMAND_RE.match(event.get_plaintext().strip())
@@ -64,7 +62,9 @@ def is_stale_passive_event(event: GroupMessageEvent, *, now: float | None = None
 
 
 def is_reaction_filtered(event: GroupMessageEvent) -> bool:
-    return db.passive_filter_contains(int(event.user_id))
+    return db.passive_filter_contains(int(event.user_id)) or db.group_filter_contains(
+        int(event.group_id), int(event.user_id)
+    )
 
 
 def repeatable_text(event: GroupMessageEvent) -> str | None:

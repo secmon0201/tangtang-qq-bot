@@ -14,8 +14,7 @@ from bot.application.local_features import (
     request_from_decision,
     run_feature_call,
 )
-from bot.services.runtime import database
-from bot.services.command_classification import is_activity_command_text
+from bot.services.runtime import database, group_domains
 from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
@@ -28,7 +27,6 @@ from bot.services.tangtang_features import (
     TangtangFeatureClassifier,
     classify_local_feature,
     has_feature_hint,
-    mentioned_user_ids,
 )
 
 
@@ -42,8 +40,7 @@ async def _feature_router(
 ) -> tuple[bool, dict[str, Any]]:
     if not has_feature_hint(text):
         return False, {}
-    targets = mentioned_user_ids(event.message, getattr(bot, "self_id", None))
-    decision = classify_local_feature(text, mentioned_user_count=len(targets))
+    decision = classify_local_feature(text)
     if decision is None:
         decision, usage = await feature_classifier.classify(config, text)
     else:
@@ -51,6 +48,17 @@ async def _feature_router(
     if decision is None:
         return False, usage
     request = request_from_decision(decision)
+    feature_key = {
+        "ranking": "speech_ranking",
+        "zhijiang_schedule": "zhijiang_calendar",
+        "today_live": "zhijiang_calendar",
+        "tomorrow_live": "zhijiang_calendar",
+        "week_live": "zhijiang_calendar",
+    }.get(request.action)
+    if feature_key and not group_domains().effective_feature_enabled(
+        int(event.group_id), feature_key
+    ):
+        return True, usage
     if decision.line:
         await tangtang_call.send(decision.line)
     handled = await run_feature_call(tangtang_call, bot, event, request)
@@ -71,6 +79,10 @@ service = TangtangService(loader=loader, feature_router=_feature_router)
 db = database()
 
 
+def runtime_config() -> TangtangConfig:
+    return loader.load().with_group_ids(group_domains().all_group_ids())
+
+
 def _is_stale(event: GroupMessageEvent) -> bool:
     timestamp = int(getattr(event, "time", 0) or 0)
     return timestamp > 0 and time.time() - timestamp > PASSIVE_EVENT_MAX_AGE_SECONDS
@@ -88,8 +100,11 @@ def is_call_event(event: MessageEvent) -> bool:
 
     if not isinstance(event, GroupMessageEvent):
         return False
-    config = loader.load()
-    if not config.enabled or int(event.group_id) not in config.group_ids:
+    config = runtime_config()
+    if (
+        not config.enabled
+        or not group_domains().feature_enabled(int(event.group_id), "mention_chat")
+    ):
         return False
     if _is_stale(event):
         return False
@@ -99,8 +114,6 @@ def is_call_event(event: MessageEvent) -> bool:
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
     if _GAME_CODE_RE.match(text) or NTE_GAME_COMMAND_RE.match(text):
-        return False
-    if is_activity_command_text(event.get_plaintext()):
         return False
     if event.is_tome():
         return True
@@ -115,10 +128,10 @@ def is_proactive_event(event: MessageEvent) -> bool:
         return False
     if automation_is_paused():
         return False
-    config = loader.load()
+    config = runtime_config()
     if not config.enabled or not config.proactive_enabled:
         return False
-    if int(event.group_id) not in config.group_ids:
+    if not group_domains().feature_enabled(int(event.group_id), "proactive_chat"):
         return False
     if _is_stale(event):
         return False
@@ -128,8 +141,6 @@ def is_proactive_event(event: MessageEvent) -> bool:
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
     if _GAME_CODE_RE.match(text) or NTE_GAME_COMMAND_RE.match(text):
-        return False
-    if is_activity_command_text(event.get_plaintext()):
         return False
     if is_call_event(event):
         return False
@@ -147,7 +158,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     if db.passive_filter_contains(int(event.user_id)):
         return
-    config = loader.load()
+    config = runtime_config()
     await service.handle(bot, event, config)
 
 
@@ -162,7 +173,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     if db.passive_filter_contains(int(event.user_id)):
         return
-    config = loader.load()
+    config = runtime_config()
     await service.handle_proactive(bot, event, config)
 
 
@@ -172,8 +183,8 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
 
     if not isinstance(event, GroupMessageEvent):
         return
-    config = loader.load()
-    if not config.enabled or int(event.group_id) not in config.group_ids:
+    config = runtime_config()
+    if not config.enabled or int(event.group_id) not in group_domains().all_group_ids():
         return
     at_labels = await resolve_at_labels(bot, event, use_api=False)
     text = render_message_text(event.message, at_labels)

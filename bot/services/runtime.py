@@ -4,20 +4,39 @@ from functools import lru_cache
 
 from bot.config import A_COAST_GROUP_IDS, settings
 from bot.db import Database
+from bot.services.group_domains import GroupDomainService
 from bot.services.passive_settings import PassiveSettingsStore
 
 
 @lru_cache(maxsize=1)
 def database() -> Database:
     instance = Database(settings.db_path)
-    instance.configure_groups(settings.managed_group_ids)
-    instance.restrict_message_statistics(A_COAST_GROUP_IDS)
+    instance.seed_groups((*settings.managed_group_ids, *A_COAST_GROUP_IDS))
+    return instance
+
+
+@lru_cache(maxsize=1)
+def group_domains() -> GroupDomainService:
+    instance = GroupDomainService(database())
+    instance.bootstrap(
+        legacy_feature_groups={
+            "duplicate": settings.duplicate_group_ids,
+            "mini_games": settings.game_group_ids or settings.managed_group_ids,
+            "nte": settings.game_api_group_ids or settings.managed_group_ids,
+            "today_wife": settings.managed_group_ids,
+            "passive_interaction": settings.random_reaction_group_ids,
+            "hourly": settings.hourly_announcement_group_ids,
+            "bilibili": settings.asoul_bili_group_ids,
+            "zhijiang_calendar": settings.managed_group_ids,
+        }
+    )
     return instance
 
 
 @lru_cache(maxsize=1)
 def passive_settings() -> PassiveSettingsStore:
-    return PassiveSettingsStore(database(), sync_env=True)
+    group_domains()
+    return PassiveSettingsStore(database(), sync_env=False)
 
 
 @lru_cache(maxsize=1)

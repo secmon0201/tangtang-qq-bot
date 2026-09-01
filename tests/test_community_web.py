@@ -42,12 +42,19 @@ def test_ranking_payload_keeps_the_requested_scope_and_fixed_group_order():
     payload = ranking_payload(_Stats(), "week", str(A_COAST_GROUP_IDS[2]))
 
     assert payload["title"] == "莫塔里本周发言榜"
+    assert payload["group_label"] == "莫塔里"
+    assert payload["scope_title"] == "本周发言榜"
+    assert payload["header_kicker"] == "A-COAST COMMUNITY / WEEKLY LINE-UP"
+    assert payload["displayed_count"] == 2
     assert [item["label"] for item in payload["group_options"]] == [
         "A海岸", "修会", "剧团", "莫塔里", "翡萨烈", "墓岛"
     ]
     assert payload["message_total"] == 26
     assert payload["rows"][0]["nickname"] == "测试成员"
     assert payload["chart"]["kind"] == "daily"
+    assert payload["chart"]["title"] == "莫塔里近 7 日发言趋势"
+    assert payload["chart"]["x_axis_label"] == "日期"
+    assert payload["chart"]["y_axis_label"] == "发言数（条）"
     assert len(payload["chart"]["rows"]) == 7
 
 
@@ -83,6 +90,11 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
     assert payload["rows"][0]["avatar"].startswith("data:image/webp;base64,")
     assert payload["rows"][0]["group_name"] == "A海岸1群"
     assert payload["chart"]["title"] == "A海岸五群发言对比"
+    assert payload["chart"]["x_axis_label"] == "A海岸群组（群）"
+    assert payload["chart"]["y_axis_label"] == "发言数（条）"
+    assert [row["label"] for row in payload["chart"]["rows"]] == [
+        "修会", "剧团", "莫塔里", "翡萨烈", "墓岛"
+    ]
     assert len(payload["chart"]["rows"]) == 5
     assert all(row["avatar"].startswith("data:image/webp;base64,") for row in payload["chart"]["rows"])
     capture = page_html("ranking", payload, capture=True)
@@ -94,11 +106,22 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
 
     async def render_and_close():
         try:
-            return await renderer.render_ranking(payload)
+            path = await renderer.render_ranking(payload)
+            point_x = await renderer._page.locator(".chart-point").evaluate_all(
+                "nodes => nodes.map(node => node.getAttribute('cx'))"
+            )
+            label_x = await renderer._page.locator(".chart-x-label").evaluate_all(
+                "nodes => nodes.map(node => node.getAttribute('x'))"
+            )
+            avatar_x = await renderer._page.locator(".chart-avatar").evaluate_all(
+                "nodes => nodes.map(node => node.dataset.centerX)"
+            )
+            return path, point_x, label_x, avatar_x
         finally:
             await renderer.close()
 
-    path = asyncio.run(render_and_close())
+    path, point_x, label_x, avatar_x = asyncio.run(render_and_close())
+    assert point_x == label_x == avatar_x
     with Image.open(path) as image:
         assert image.width == 1080
         assert image.height > 1_100
@@ -110,6 +133,11 @@ def test_help_payload_uses_the_shared_public_command_catalog():
     assert payload["mode"] == "help"
     assert payload["categories"][0]["items"][0]["title"] == "在线帮助"
     assert any(item["title"] == "A 海岸发言统计" for item in payload["categories"])
+    assert all(
+        item["title"] != "个人发言统计"
+        for category in payload["categories"]
+        for item in category["items"]
+    )
 
 
 def test_help_payload_preserves_every_source_item_once_and_groups_local_games():
@@ -169,16 +197,48 @@ def test_ranking_renderer_outputs_png_without_interactive_controls(tmp_path):
 
     async def render_and_close():
         try:
-            return await renderer.render_ranking(payload)
+            path = await renderer.render_ranking(payload)
+            point_x = await renderer._page.locator(".chart-point").evaluate_all(
+                "nodes => nodes.map(node => node.getAttribute('cx'))"
+            )
+            label_x = await renderer._page.locator(".chart-x-label").evaluate_all(
+                "nodes => nodes.map(node => node.getAttribute('x'))"
+            )
+            point_centers = await renderer._page.locator(".chart-point").evaluate_all(
+                "nodes => nodes.map(node => { const point = node.ownerSVGElement.createSVGPoint(); "
+                "point.x = Number(node.getAttribute('cx')); "
+                "return point.matrixTransform(node.getScreenCTM()).x; })"
+            )
+            label_centers = await renderer._page.locator(".chart-x-label").evaluate_all(
+                "nodes => nodes.map(node => { const point = node.ownerSVGElement.createSVGPoint(); "
+                "point.x = Number(node.getAttribute('x')); "
+                "return point.matrixTransform(node.getScreenCTM()).x; })"
+            )
+            return path, point_x, label_x, point_centers, label_centers
         finally:
             await renderer.close()
 
-    path = asyncio.run(render_and_close())
+    path, point_x, label_x, point_centers, label_centers = asyncio.run(render_and_close())
 
     assert path.is_file() and path.stat().st_size > 10_000
+    assert len(point_x) == len(label_x) == 7
+    assert point_x == label_x
+    assert all(
+        abs(point_center - label_center) < 0.1
+        for point_center, label_center in zip(point_centers, label_centers, strict=True)
+    )
     capture = page_html("ranking", payload, capture=True)
     assert '<body class="capture-mode"' in capture
     assert ".capture-mode .interactive-bar{display:none!important}" in capture
+    assert 'class="side-rail"' in capture
+    assert 'class="date-seal"' in capture
+    assert 'class="title-primary"' in capture
+    assert 'class="title-secondary"' in capture
+    assert ".ranking-row.row-first" in capture
+    assert ".ranking-row.row-top" in capture
+    assert ".ranking-row.row-main" in capture
+    assert "日期" in capture
+    assert "发言数（条）" in capture
     with Image.open(path) as image:
         assert image.width == 1080
         assert image.height > 500

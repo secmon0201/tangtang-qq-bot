@@ -1,4 +1,4 @@
-"""Short-lived capability sessions for activity and operator web pages."""
+"""Short-lived capability sessions for operator-only web pages."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from bot.config import ROOT
 
 SESSION_TTL_SECONDS = 15 * 60
 TUNNEL_URL_PATH = ROOT / "data" / "operator_web_tunnel_url.txt"
-KINDS = frozenset({"activity", "operations", "duplicate"})
+KINDS = frozenset({"duplicate"})
 
 
 @dataclass(slots=True)

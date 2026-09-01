@@ -23,11 +23,12 @@ from bot.services.mini_games import BOMB, DICE, GUESS, ROULETTE, GameEvent, Mini
 from bot.services.qq_platform import call_qq_action
 from bot.services.media import local_image_segment
 from bot.services.roles import is_super_admin
-from bot.services.runtime import database, passive_settings
+from bot.services.runtime import database, group_domains, passive_settings
 
 
 db = database()
 feature_scopes = passive_settings()
+domains = group_domains()
 service = MiniGameService(db, cursed_guess_numbers=settings.guess_cursed_numbers)
 renderer = MiniGameReportRenderer(
     settings.report_dir,
@@ -61,15 +62,6 @@ scheduler = AsyncIOScheduler(timezone=ZoneInfo(settings.timezone))
 group_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 clear_requests: dict[tuple[int, int], float] = {}
 CLEAR_CONFIRMATION_SECONDS = 60
-GLOBAL_GAME_COMMANDS = {
-    "#总游戏开",
-    "#游戏总开",
-    "#总游戏关",
-    "#游戏总关",
-    "#总游戏状态",
-    "#游戏总状态",
-}
-
 MENU_COMMANDS = {"#游戏列表", "#小游戏列表"}
 RANKING_COMMANDS = {
     "#转盘榜": (ROULETTE, False),
@@ -92,7 +84,7 @@ RANKING_COMMANDS = {
 
 MINI_GAME_COMMAND_RE = re.compile(
     r"^#\s*(?:丢给(?=\s|@|$)|猜(?:\s*.*)?|装弹\s*成语(?:\s*.*)?|(?:装填|开枪|装弹|骰子|(?:小)?游戏列表|转盘(?:总)?榜|炸弹(?:总)?榜|骰子(?:总)?榜|猜数(?:总)?榜|"
-    r"俄罗斯转盘(?:总)?榜单|定时炸弹(?:总)?榜单|幸运骰局(?:总)?榜单|猜数字(?:总)?榜单|游戏(?:开|关|状态)|游戏禁言(?:开|关|状态)|清游|确认|取消)(?:\s|$))"
+    r"俄罗斯转盘(?:总)?榜单|定时炸弹(?:总)?榜单|幸运骰局(?:总)?榜单|猜数字(?:总)?榜单|清游|确认|取消)(?:\s|$))"
 )
 IDIOM_BOMB_START_RE = re.compile(r"^#\s*装弹\s*成语\s*(?:(专业|娱乐)\s*)?(\d+)?\s*$")
 IDIOM_BOMB_START_PREFIX_RE = re.compile(r"^#\s*装弹\s*成语")
@@ -119,7 +111,6 @@ def _is_mini_game_message(event: MessageEvent) -> bool:
     text = event.get_plaintext().strip()
     return isinstance(event, GroupMessageEvent) and bool(
         MINI_GAME_COMMAND_RE.match(_command(event))
-        or _command(event) in GLOBAL_GAME_COMMANDS
         or IDIOM_BOMB_START_PREFIX_RE.match(_command(event))
         or IDIOM_BOMB_THROW_PREFIX_RE.match(text)
     )
@@ -371,13 +362,17 @@ async def _send_menu(bot: Bot, matcher: Any, group_id: int) -> None:
 
 
 async def _send_ranking(
-    matcher: Any, game_type: str, group_id: int | None, show_group_details: bool = False
+    matcher: Any, game_type: str, group_id: int, *, total: bool
 ) -> None:
+    domain = domains.domain_for_group(group_id)
+    visible_group_ids = (
+        domains.domain_groups(domain.domain_id) if total and domain is not None else None
+    )
     payload = service.ranking(
         game_type,
-        group_id,
-        visible_group_ids=feature_scopes.groups("game") if group_id is None else None,
-        include_group_details=show_group_details,
+        None if total else group_id,
+        visible_group_ids=visible_group_ids,
+        include_group_details=bool(total and domain is not None and domain.mode == "cluster"),
     )
     rows = [
         {"user_id": int(row["user_id"])}
@@ -459,56 +454,6 @@ async def _(bot: Bot, event: GroupMessageEvent):
         command,
     )
 
-    if command in GLOBAL_GAME_COMMANDS:
-        if not is_super_admin(actor_id):
-            await mini_games.finish("🔐🎮 没有全局小游戏开关权限。")
-        if command in {"#总游戏开", "#游戏总开"}:
-            feature_scopes.set_game_globally_enabled(True)
-            await mini_games.finish("🌐🎮 小游戏全局总开关已开启；仍需本群小游戏小开关也开启才会响应。")
-        if command in {"#总游戏关", "#游戏总关"}:
-            feature_scopes.set_game_globally_enabled(False)
-            closed = sum(
-                1
-                for managed_group_id in settings.managed_group_ids
-                if service.cancel_group_session(managed_group_id)
-            )
-            await mini_games.finish(
-                f"🌐🔕 小游戏全局总开关已关闭，已收场 {closed} 个进行中的对局；各群小开关状态未改动。"
-            )
-        state = "已开启" if feature_scopes.is_game_globally_enabled() else "已关闭"
-        await mini_games.finish(f"🌐🎮 小游戏全局总开关{state}。")
-        return
-
-    if command in {"#游戏开", "#游戏关", "#游戏状态"}:
-        if not is_super_admin(actor_id):
-            await mini_games.finish("🔒🎮 没有小游戏开关权限。")
-        if command == "#游戏开":
-            feature_scopes.add_feature_group("game", group_id)
-            asyncio.create_task(_remember_group_name(bot, group_id))
-            await mini_games.finish("🎮✨ 本群小游戏已开启，命运按钮已亮起！")
-            return
-        if command == "#游戏关":
-            service.cancel_group_session(group_id)
-            feature_scopes.remove_feature_group("game", group_id)
-            await mini_games.finish("🔕🎮 本群小游戏已关闭，当前对局已收场。")
-            return
-        state = "已开启" if feature_scopes.is_feature_group_enabled("game", group_id) else "未开启"
-        await mini_games.finish(f"🎮📍 本群小游戏{state}。")
-        return
-
-    if command in {"#游戏禁言开", "#游戏禁言关", "#游戏禁言状态"}:
-        if not is_super_admin(actor_id):
-            await mini_games.finish("🔒🎮 只有超级管理员可以设置小游戏禁言。")
-        if command == "#游戏禁言开":
-            feature_scopes.remove_feature_group("game_mute_disabled", group_id)
-            await mini_games.finish("🔇🎮 小游戏惩罚禁言已开启：仅机器人为群主或管理员时生效。")
-        if command == "#游戏禁言关":
-            feature_scopes.add_feature_group("game_mute_disabled", group_id)
-            await mini_games.finish("🔕🎮 小游戏惩罚禁言已关闭，游戏记录仍会正常保存。")
-        state = "已开启" if feature_scopes.is_game_mute_enabled(group_id) else "未开启"
-        await mini_games.finish(f"🔇📍 本群小游戏惩罚禁言{state}。")
-        return
-
     if command in {"#清游", "#确认", "#取消"}:
         if not is_super_admin(actor_id):
             await mini_games.finish("🔒 只有超级管理员可以管理本群小游戏战绩。")
@@ -539,18 +484,18 @@ async def _(bot: Bot, event: GroupMessageEvent):
 
     if (
         not feature_scopes.is_game_globally_enabled()
-        or not feature_scopes.is_feature_group_enabled("game", group_id)
+        or not domains.feature_enabled(group_id, "mini_games")
     ):
         await mini_games.finish()
         return
 
     if command in RANKING_COMMANDS:
-        game_type, is_global = RANKING_COMMANDS[command]
+        game_type, is_total = RANKING_COMMANDS[command]
         await _send_ranking(
             mini_games,
             game_type,
-            None if is_global else group_id,
-            show_group_details=is_global and is_super_admin(actor_id),
+            group_id,
+            total=is_total,
         )
 
     logger.info("Mini-game command waiting for group lock (group={}, command={!r})", group_id, command)

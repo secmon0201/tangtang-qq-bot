@@ -86,6 +86,12 @@ class QQPlatform:
             raise QQPlatformError(f"invalid group info response for {group_id}")
         return data
 
+    async def group_list(self) -> list[dict[str, Any]]:
+        data = await self._request("get_group_list", no_cache=False)
+        if not isinstance(data, list):
+            raise QQPlatformError("invalid group list response")
+        return [item for item in data if isinstance(item, dict) and item.get("group_id")]
+
     async def member_list(self, group_id: int) -> list[dict[str, Any]]:
         data = await self._request("get_group_member_list", group_id=int(group_id), no_cache=False)
         if not isinstance(data, list):

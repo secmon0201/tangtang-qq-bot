@@ -49,14 +49,18 @@ def test_schedule_payload_is_shared_by_web_and_capture_modes():
     assert "xinyi-hero" not in capture
     assert "hardware-cluster" not in capture
     assert '<span class="xinyi-mark"' in capture
+    assert '.xinyi-mark { display: none; }' in capture
     assert "枝江日历功能由爱驼提供技术支持" in capture
     assert 'root.className = "capture-card schedule-capture"' in capture
     assert "isolation: isolate" in capture
-    assert "linear-gradient(to bottom, #ead7df 0%, #d2d6dc 100%)" in capture
+    assert "background: transparent" in capture
     assert "z-index: 1" in capture
-    assert "background: #fffdfd" in capture
+    assert "background: #f5f7f8" in capture
+    assert "border-bottom: 7px solid var(--z-cyan)" in capture
+    assert "background: var(--z-label)" in capture
     assert 'class="date-month"' in capture
-    assert "schedule-row::after" in capture
+    assert ".schedule-card .schedule-row::after { display: none; }" in capture
+    assert ".schedule-card .masthead::after { display: none; }" in capture
     assert "background: #17181c" not in interactive
     assert "repeating-linear-gradient(135deg, #f9dfe9" in interactive
 
@@ -75,9 +79,19 @@ def test_notification_payload_keeps_each_visual_kind_distinct():
     ]
     notification_html = page_html(dynamic, capture=True)
     assert 'class="notification-surface"' in notification_html
+    assert 'class="notification-rail"' in notification_html
+    assert 'class="notification-glow notification-glow-a"' in notification_html
+    assert 'class="mode-seal"' in notification_html
     assert ".notification-card {" in notification_html
-    assert "repeating-linear-gradient(135deg, #f9dfe9" in notification_html
-    assert "linear-gradient(105deg, #f4f5f6" in notification_html
+    assert ".notification-card .creator::after { display: none; }" in notification_html
+    assert "background: linear-gradient(140deg, #fff8fb, #fff 38%, #f0fbf9 66%, #f7f3ff 100%)" in notification_html
+    assert "filter: blur(78px)" in notification_html
+    assert "backdrop-filter: blur(18px)" in notification_html
+    assert "border-radius: 28px" in notification_html
+    assert ".notification-card.dynamic .notification-kind" in notification_html
+    assert ".notification-card.video .notification-kind" in notification_html
+    assert ".notification-card.live-start .notification-kind" in notification_html
+    assert ".notification-card.live-end .notification-kind" in notification_html
 
 
 def test_notification_media_localization_embeds_rich_emoji_nodes(tmp_path):
@@ -98,6 +112,48 @@ def test_notification_media_localization_embeds_rich_emoji_nodes(tmp_path):
     html = page_html(localized, capture=True)
     assert "function richNodes" in html
     assert 'image(node.url, "inline-emoji")' in html
+
+
+def test_notification_renderer_outputs_all_four_aurora_kinds(tmp_path):
+    async def render_all():
+        renderer = ASoulWebRenderer(tmp_path)
+        try:
+            paths = [
+                await renderer.render_notification(
+                    "动态",
+                    dynamic={"author": "测试 UP", "text": "新的枝江动态"},
+                ),
+                await renderer.render_notification(
+                    "视频",
+                    video={"author": "测试 UP", "text": "新的枝江视频"},
+                ),
+                await renderer.render_notification(
+                    "开播",
+                    live={"phase": "start", "author": "测试 UP", "text": "正在直播"},
+                ),
+                await renderer.render_notification(
+                    "下播",
+                    live={"phase": "end", "author": "测试 UP", "text": "直播结束"},
+                ),
+            ]
+            rail_count = await renderer._page.locator(".notification-rail").count()
+            glow_count = await renderer._page.locator(".notification-glow").count()
+            title = await renderer._page.title()
+            return paths, rail_count, glow_count, title
+        finally:
+            await renderer.close()
+
+    paths, rail_count, glow_count, title = asyncio.run(render_all())
+
+    assert rail_count == 1
+    assert glow_count == 3
+    assert title == "直播已结束 · 枝江 B站推送"
+    for path in paths:
+        assert path.is_file() and path.stat().st_size > 10_000
+        with Image.open(path) as image:
+            assert image.width == 1080
+            assert image.height > 500
+            assert image.getbbox() is not None
 
 
 def test_public_schedule_url_uses_bare_short_links():

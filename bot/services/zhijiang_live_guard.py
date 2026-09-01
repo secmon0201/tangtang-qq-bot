@@ -242,7 +242,6 @@ class ZhijiangLiveGuard:
         if newly_started:
             latest_start = max(entry.starts_at for entry in newly_started)
             paused_until = latest_start + self.pause_duration
-            self.feature_scopes.set_game_globally_enabled(False)
             self.database.set_passive_setting(PAUSED_UNTIL_KEY, paused_until.isoformat())
             for entry in newly_started:
                 seen[entry.event_id] = now
@@ -252,10 +251,6 @@ class ZhijiangLiveGuard:
             self._settings().get(PAUSED_UNTIL_KEY), self.timezone
         )
         if paused_until is not None and paused_until <= now:
-            # Manual opening during a live window remains respected because the
-            # event has already been recorded in seen events and is never closed again.
-            if not self.feature_scopes.is_game_globally_enabled():
-                self.feature_scopes.set_game_globally_enabled(True)
             self.database.set_passive_setting(PAUSED_UNTIL_KEY, "")
         return newly_started
 

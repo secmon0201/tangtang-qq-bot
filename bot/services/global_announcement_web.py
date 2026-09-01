@@ -34,6 +34,15 @@ def announcement_web_preview_bytes(poster_path: Path) -> bytes:
     return encoded.getvalue()
 
 
+@dataclass(frozen=True, slots=True)
+class AnnouncementTarget:
+    key: str
+    label: str
+    kind: str
+    group_ids: tuple[int, ...]
+    parent_key: str = ""
+
+
 @dataclass(slots=True)
 class AnnouncementWebSession:
     token: str
@@ -46,6 +55,8 @@ class AnnouncementWebSession:
     delivered: bool = False
     sending: bool = False
     upload_path: Path | None = None
+    target_options: tuple[AnnouncementTarget, ...] = ()
+    draft_target_group_ids: tuple[int, ...] = ()
 
 
 @dataclass(slots=True)
@@ -53,12 +64,17 @@ class AnnouncementWebSessions:
     _sessions: dict[str, AnnouncementWebSession] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def create(self, actor_id: int) -> AnnouncementWebSession:
+    def create(
+        self,
+        actor_id: int,
+        target_options: tuple[AnnouncementTarget, ...] = (),
+    ) -> AnnouncementWebSession:
         self.cleanup()
         session = AnnouncementWebSession(
             token=secrets.token_urlsafe(32),
             actor_id=int(actor_id),
             expires_at=monotonic() + SESSION_TTL_SECONDS,
+            target_options=tuple(target_options),
         )
         with self._lock:
             self._sessions[session.token] = session
@@ -73,11 +89,34 @@ class AnnouncementWebSessions:
         with self._lock:
             session = self._sessions.get(token)
             if session is None or session.expires_at <= monotonic():
-                raise ValueError("链接已过期，请重新发送 #公告网页 获取新链接。")
+                raise ValueError("链接已过期，请重新发送 #公告面板 获取新链接。")
             if session.delivered or session.sending:
-                raise ValueError("此链接已提交，请重新发送 #公告网页 创建新的公告。")
+                raise ValueError("此链接已提交，请重新发送 #公告面板 创建新的公告。")
             session.sending = True
             return session
+
+    @staticmethod
+    def resolve_targets(
+        session: AnnouncementWebSession, selected_keys: object
+    ) -> tuple[int, ...]:
+        if not isinstance(selected_keys, list) or not selected_keys:
+            raise ValueError("请至少选择一个发送目标。")
+        selected = {str(value) for value in selected_keys}
+        options = {option.key: option for option in session.target_options}
+        if not selected.issubset(options):
+            raise ValueError("发送目标已失效，请重新打开公告面板。")
+        result: list[int] = []
+        seen: set[int] = set()
+        for option in session.target_options:
+            if option.key not in selected:
+                continue
+            for group_id in option.group_ids:
+                if group_id not in seen:
+                    seen.add(group_id)
+                    result.append(group_id)
+        if not result:
+            raise ValueError("所选目标当前不包含可发送的群。")
+        return tuple(result)
 
     def finish_send(self, token: str) -> None:
         with self._lock:
@@ -120,3 +159,13 @@ def announcement_web_base_url() -> str | None:
 
 
 web_sessions = AnnouncementWebSessions()
+
+
+__all__ = [
+    "AnnouncementTarget",
+    "AnnouncementWebSession",
+    "AnnouncementWebSessions",
+    "announcement_web_base_url",
+    "announcement_web_preview_bytes",
+    "web_sessions",
+]

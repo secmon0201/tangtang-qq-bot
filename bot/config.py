@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -15,7 +14,7 @@ RESOURCE_DIR = ROOT / "bot" / "resources"
 load_dotenv(ROOT / ".env")
 
 
-# 发言统计只属于 A海岸；不接受环境变量或群内命令修改此范围。
+# A海岸是内置的首个私有集群；其他群由 SQLite 动态登记。
 A_COAST_GROUP_IDS = (1128870029, 1077416717, 1083457871, 1090284567, 278824712)
 
 
@@ -110,11 +109,8 @@ class Settings:
     duplicate_group_ids: tuple[int, ...]
     game_group_ids: tuple[int, ...]
     game_api_group_ids: tuple[int, ...]
-    activity_group_ids: tuple[int, ...]
     operator_ids: frozenset[int]
     global_announcement_operator_ids: frozenset[int]
-    activity_admin_ids: frozenset[int]
-    activity_admin_blacklist_ids: frozenset[int]
     command_prefix: str
     timezone: str
     rollup_hour: int
@@ -167,8 +163,6 @@ class Settings:
     command_response_delay_max_seconds: float
     onebot_api_min_interval_seconds: float
     duplicate_scan_cooldown_seconds: int
-    activity_ack_emoji_id: str
-    activity_withdraw_ack_emoji_id: str
     mention_ack_emoji_ids: tuple[str, ...]
     random_reaction_enabled: bool
     random_reaction_group_ids: tuple[int, ...]
@@ -185,8 +179,6 @@ class Settings:
     random_triple_repeat_probability: float
     random_triple_repeat_enabled_by_group: dict[int, bool]
     random_triple_repeat_probability_by_group: dict[int, float]
-    activity_maintenance_interval_seconds: int
-    activity_broadcast_max_attempts: int
     feedback_notification_interval_seconds: int
     hourly_announcement_enabled: bool
     hourly_announcement_group_ids: tuple[int, ...]
@@ -194,11 +186,6 @@ class Settings:
     hourly_announcement_end_minute: int
     hourly_announcement_max_attempts: int
     guess_cursed_numbers: tuple[int, ...]
-    activity_enabled: bool
-    activity_url: str | None
-    activity_method: str
-    activity_payload: dict[str, object]
-    activity_timeout: float
     zhijiang_live_guard_enabled: bool
     zhijiang_schedule_url: str
     zhijiang_schedule_refresh_minutes: int
@@ -224,8 +211,6 @@ class Settings:
         if transport not in {"onebot", "qq_openapi"}:
             raise ValueError("BOT_TRANSPORT must be onebot or qq_openapi")
         groups = _csv_ints(os.getenv("MANAGED_GROUP_IDS"))
-        if len(groups) > 10:
-            raise ValueError("MANAGED_GROUP_IDS cannot contain more than 10 groups")
 
         def feature_groups(name: str) -> tuple[int, ...]:
             raw = os.getenv(name)
@@ -238,7 +223,6 @@ class Settings:
         duplicate_groups = feature_groups("DUPLICATE_GROUP_IDS")
         game_groups = feature_groups("GAME_GROUP_IDS")
         game_api_groups = feature_groups("GAME_API_GROUP_IDS")
-        activity_groups = feature_groups("ACTIVITY_GROUP_IDS")
         hourly_raw = os.getenv("HOURLY_ANNOUNCEMENT_GROUP_IDS", "")
         hourly_groups = _csv_ints(hourly_raw)
         invalid_hourly_groups = sorted(set(hourly_groups) - set(groups))
@@ -260,10 +244,6 @@ class Settings:
         operators = frozenset(_csv_ints(os.getenv("BOT_OPERATOR_IDS")))
         global_announcement_operators = frozenset(
             _csv_ints(os.getenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS"))
-        )
-        activity_admins = frozenset(_csv_ints(os.getenv("ACTIVITY_ADMIN_IDS")))
-        activity_admin_blacklist = frozenset(
-            _csv_ints(os.getenv("ACTIVITY_ADMIN_BLACKLIST_IDS"))
         )
         prefix = os.getenv("BOT_COMMAND_PREFIX", "#").strip()
         if prefix != "#":
@@ -331,16 +311,6 @@ class Settings:
                 raise ValueError(f"{name} must be positive")
             return value
 
-        activity_payload_value = os.getenv("QQ_GROUP_ACTIVITY_PAYLOAD", "{}").strip()
-        try:
-            activity_payload = json.loads(activity_payload_value or "{}")
-        except json.JSONDecodeError as exc:
-            raise ValueError("QQ_GROUP_ACTIVITY_PAYLOAD must be valid JSON") from exc
-        if not isinstance(activity_payload, dict):
-            raise ValueError("QQ_GROUP_ACTIVITY_PAYLOAD must be a JSON object")
-        activity_method = os.getenv("QQ_GROUP_ACTIVITY_METHOD", "POST").strip().upper()
-        if activity_method not in {"GET", "POST"}:
-            raise ValueError("QQ_GROUP_ACTIVITY_METHOD must be GET or POST")
         zhijiang_schedule_url = os.getenv(
             "ZHIJIANG_SCHEDULE_URL",
             "https://raw.githubusercontent.com/Evelynall/ASoul-Data/main/base-schedules.json",
@@ -370,12 +340,6 @@ class Settings:
             os.getenv("HOURLY_ANNOUNCEMENT_END", "23:00"),
             "HOURLY_ANNOUNCEMENT_END",
         )
-        activity_ack_emoji_id = os.getenv("ACTIVITY_ACK_EMOJI_ID", "424").strip()
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", activity_ack_emoji_id):
-            raise ValueError("ACTIVITY_ACK_EMOJI_ID must be 1-64 characters")
-        activity_withdraw_ack_emoji_id = os.getenv("ACTIVITY_WITHDRAW_ACK_EMOJI_ID", "32").strip()
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", activity_withdraw_ack_emoji_id):
-            raise ValueError("ACTIVITY_WITHDRAW_ACK_EMOJI_ID must be 1-64 characters")
         mention_ack_emoji_ids = _csv_emoji_ids(
             os.getenv("BOT_MENTION_ACK_EMOJI_IDS", ",".join(DEFAULT_MENTION_ACK_EMOJI_IDS))
         )
@@ -597,11 +561,8 @@ class Settings:
             duplicate_group_ids=duplicate_groups,
             game_group_ids=game_groups,
             game_api_group_ids=game_api_groups,
-            activity_group_ids=activity_groups,
             operator_ids=operators,
             global_announcement_operator_ids=global_announcement_operators,
-            activity_admin_ids=activity_admins,
-            activity_admin_blacklist_ids=activity_admin_blacklist,
             command_prefix=prefix,
             timezone=os.getenv("BOT_TIMEZONE", "Asia/Shanghai"),
             rollup_hour=integer("BOT_ROLLUP_HOUR", 1, 0, 23),
@@ -659,8 +620,6 @@ class Settings:
             command_response_delay_max_seconds=command_response_delay_max_seconds,
             onebot_api_min_interval_seconds=float_value("BOT_ONEBOT_API_MIN_INTERVAL_SECONDS", 0.5),
             duplicate_scan_cooldown_seconds=integer("DUPLICATE_SCAN_COOLDOWN_SECONDS", 300, 30, 3600),
-            activity_ack_emoji_id=activity_ack_emoji_id,
-            activity_withdraw_ack_emoji_id=activity_withdraw_ack_emoji_id,
             mention_ack_emoji_ids=mention_ack_emoji_ids,
             random_reaction_enabled=random_reaction_enabled,
             random_reaction_group_ids=random_reaction_groups,
@@ -679,12 +638,6 @@ class Settings:
             random_triple_repeat_probability=random_triple_repeat_probability,
             random_triple_repeat_enabled_by_group=random_triple_repeat_enabled_by_group,
             random_triple_repeat_probability_by_group=random_triple_repeat_probability_by_group,
-            activity_maintenance_interval_seconds=integer(
-                "ACTIVITY_MAINTENANCE_INTERVAL_SECONDS", 300, 60, 3600
-            ),
-            activity_broadcast_max_attempts=integer(
-                "ACTIVITY_BROADCAST_MAX_ATTEMPTS", 3, 1, 10
-            ),
             feedback_notification_interval_seconds=integer(
                 "FEEDBACK_NOTIFICATION_INTERVAL_SECONDS", 600, 60, 86400
             ),
@@ -696,11 +649,6 @@ class Settings:
                 "HOURLY_ANNOUNCEMENT_MAX_ATTEMPTS", 3, 1, 5
             ),
             guess_cursed_numbers=cursed_guess_numbers,
-            activity_enabled=boolean("QQ_GROUP_ACTIVITY_ENABLED", False),
-            activity_url=os.getenv("QQ_GROUP_ACTIVITY_URL") or None,
-            activity_method=activity_method,
-            activity_payload=activity_payload,
-            activity_timeout=float_value("QQ_GROUP_ACTIVITY_TIMEOUT", 15),
             zhijiang_live_guard_enabled=boolean("ZHIJIANG_LIVE_GUARD_ENABLED", True),
             zhijiang_schedule_url=zhijiang_schedule_url,
             zhijiang_schedule_refresh_minutes=integer(

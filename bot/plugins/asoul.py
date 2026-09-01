@@ -26,7 +26,7 @@ from bot.services.asoul_web_render import (
     schedule_payload,
 )
 from bot.services.roles import is_super_admin
-from bot.services.runtime import database
+from bot.services.runtime import database, group_domains
 
 
 service = ASoulService(database())
@@ -50,7 +50,8 @@ async def _require_admin(matcher: Any, event: MessageEvent) -> None:
 
 
 async def _send_monitor_messages() -> None:
-    if not settings.asoul_bili_enabled or not settings.asoul_bili_effective_group_ids:
+    target_groups = group_domains().enabled_groups("bilibili")
+    if not settings.asoul_bili_enabled or not target_groups:
         return
     bots = get_bots()
     bot = next(iter(bots.values()), None)
@@ -59,7 +60,7 @@ async def _send_monitor_messages() -> None:
     messages = await service.poll_updates()
     if not messages:
         return
-    for group_id in settings.asoul_bili_effective_group_ids:
+    for group_id in sorted(target_groups):
         for message in messages:
             try:
                 payload: Any = message
@@ -135,7 +136,7 @@ async def _start_asoul_monitor() -> None:
     if not settings.asoul_bili_enabled:
         logger.info("A-SOUL Bilibili monitor is disabled")
         return
-    if not settings.asoul_bili_effective_group_ids:
+    if not group_domains().enabled_groups("bilibili"):
         logger.warning("A-SOUL Bilibili monitor enabled without Bilibili push groups")
         return
     scheduler.add_job(

@@ -4,75 +4,28 @@ import asyncio
 from types import SimpleNamespace
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Message
 
 nonebot.init()
 
 import bot.plugins.commands as commands
-from bot.application.local_features import FeatureRequest
+from bot.application.local_features import registered_local_features
 from bot.config import A_COAST_GROUP_IDS
 
 
-def test_personal_stats_query_accepts_self_qq_and_at_targets():
-    assert commands.personal_stats_query(Message(), 42) == (42, "day")
-    assert commands.personal_stats_query(Message("月"), 42) == (42, "month")
-    assert commands.personal_stats_query(Message("903848042 周"), 42) == (903848042, "week")
-    assert commands.personal_stats_query(
-        Message([MessageSegment.at("903848042"), MessageSegment.text(" 总")]), 42
-    ) == (903848042, "total")
-
-
-def test_personal_stats_query_rejects_ambiguous_arguments():
-    assert commands.personal_stats_query(Message("903848042 月 额外"), 42) is None
-    assert commands.personal_stats_query(
-        Message([MessageSegment.at("903848042"), MessageSegment.at("123456789")]), 42
-    ) is None
-
-
-def test_personal_stats_target_path_reaches_image_delivery(monkeypatch):
-    delivered: list[tuple[str, object]] = []
-
-    class StatsService:
-        def enabled_groups(self):
-            return frozenset({1001})
-
-        def personal_group_totals(self, target_user_id: int, scope: str):
-            assert (target_user_id, scope) == (903848042, "total")
-            return [{"group_id": 1001, "group_name": "海岸一群", "message_count": 7}]
-
-    async def no_avatars(rows):
-        return {}
-
-    async def no_group_avatars(rows):
-        return {}
-
-    async def record_delivery(matcher, fallback, render, *, prefix=None):
-        delivered.append((fallback, prefix))
-        render()
-
-    monkeypatch.setattr(commands, "stats_service", StatsService())
-    monkeypatch.setattr(commands, "current_group", lambda event: 1001)
-    monkeypatch.setattr(commands, "cached_avatar_paths", no_avatars)
-    monkeypatch.setattr(commands, "group_avatar_paths", no_group_avatars)
-    monkeypatch.setattr(commands, "finish_with_image_or_text", record_delivery)
-    monkeypatch.setattr(
-        commands.report_renderer,
-        "render_personal_message_stats",
-        lambda *args: None,
-    )
-    event = SimpleNamespace(user_id=42, message=Message([MessageSegment.at("903848042")]))
-
-    asyncio.run(
-        commands._run_local_personal_stats_feature(
-            _Matcher(),
-            SimpleNamespace(self_id=2),
-            event,
-            FeatureRequest("personal_stats", "总", True, "mentioned"),
-        )
-    )
-
-    assert delivered
-    assert "五群合计：7 条" in delivered[0][0]
+def test_personal_message_ranking_is_not_exposed_or_registered():
+    help_text = commands.user_help_text()
+    for command in (
+        "#个人发言统计",
+        "#个人发言榜",
+        "#个人统计",
+        "#我的发言统计",
+        "#我的发言榜",
+        "#我的统计",
+    ):
+        assert command not in help_text
+    assert not hasattr(commands, "personal_message_stats")
+    assert "personal_stats" not in registered_local_features()
 
 
 class _Matcher:

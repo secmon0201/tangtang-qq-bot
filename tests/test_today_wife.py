@@ -349,7 +349,10 @@ def test_history_group_graph_and_story_cards_render_with_dynamic_canvas(tmp_path
     with Image.open(paths[0]) as image:
         # The dynamically selected name is rendered with the report accent,
         # rather than disappearing into the surrounding narrative text.
-        assert any(pixel[:3] == (243, 93, 145) for pixel in image.get_flattened_data())
+        assert any(
+            pixel[:3] == ImageColor.getrgb(renderer.FATE_ACCENT)
+            for pixel in image.get_flattened_data()
+        )
     for path in paths[:3]:
         with Image.open(path) as image:
             bottom_safe_area = image.crop((30, image.height - 52, image.width - 30, image.height - 22))
@@ -766,12 +769,43 @@ def test_today_wife_intro_card_is_widescreen_and_keeps_relation_colors(tmp_path)
 
     with Image.open(path) as image:
         assert image.size == (960, 540)
-        colors = image.convert("RGB").getcolors(maxcolors=image.width * image.height)
+        rgba = image.convert("RGBA")
+        colors = rgba.convert("RGB").getcolors(maxcolors=image.width * image.height)
         assert colors is not None
         color_counts = {color: count for count, color in colors}
         for edge_type in ("mutual", "contested"):
             color = ImageColor.getrgb(renderer.FATE_EDGE_STYLES[edge_type][1])
             assert color_counts.get(color, 0) >= 100
+        for aurora_accent in (
+            renderer.FATE_PINK,
+            renderer.FATE_PURPLE,
+            renderer.FATE_MINT,
+            renderer.FATE_YELLOW,
+        ):
+            assert color_counts.get(ImageColor.getrgb(aurora_accent), 0) >= 40
+        for retired_color in (
+            "#ff5c7c",
+            "#39c6d4",
+            "#c7f36b",
+            "#e7b6c6",
+            "#efcbd6",
+            "#c5c9cc",
+            "#858d94",
+        ):
+            assert color_counts.get(ImageColor.getrgb(retired_color), 0) == 0
+        assert rgba.getpixel((0, 0))[3] == 0
+        assert rgba.getpixel((image.width - 1, image.height - 1))[3] == 0
+        rail_samples = {
+            rgba.getpixel((8, y))[:3]
+            for y in (48, image.height // 2, image.height - 48)
+        }
+        assert len(rail_samples) == 3
+        dark_pixels = sum(
+            1
+            for red, green, blue, alpha in rgba.get_flattened_data()
+            if alpha and max(red, green, blue) < 80
+        )
+        assert dark_pixels / (image.width * image.height) < 0.05
 
 
 def test_same_group_and_day_share_one_episode_but_keep_individual_scenes(tmp_path):
@@ -976,7 +1010,10 @@ def test_narrative_renderer_highlights_every_dynamic_name_and_wraps_long_names(t
     )
 
     assert end_y > 20 + renderer._line_height(font)
-    assert any(pixel[:3] == (243, 93, 145) for pixel in image.get_flattened_data())
+    assert any(
+        pixel[:3] == ImageColor.getrgb(renderer.FATE_ACCENT)
+        for pixel in image.get_flattened_data()
+    )
 
 
 def test_empty_history_and_group_cards_require_randomized_narration(tmp_path):

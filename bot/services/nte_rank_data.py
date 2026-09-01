@@ -14,28 +14,20 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
-from bot.config import A_COAST_GROUP_IDS, ROOT, settings
+from bot.config import ROOT, settings
 
 
-ScopeKind = Literal["a_coast", "bot", "group"]
+ScopeKind = Literal["bot", "group"]
 NTE_BOT_ID = "onebot"
 PAGE_SIZE = 100
 _GRADE_ORDER = {"S": 3, "A": 2, "B": 1}
-NTE_RANK_GROUP_ALIASES = {
-    1128870029: "A海岸-修会",
-    1077416717: "A海岸-剧团",
-    1083457871: "A海岸-莫塔里",
-    1090284567: "A海岸-翡萨烈",
-    278824712: "A海岸-墓岛",
-    1067772451: "测试群",
-    819667289: "喜报群",
-    1102823315: "巨龙群",
-}
 _COMMAND_RE = re.compile(r"^#?\s*nte\s*(?P<body>.+?)\s*$", re.IGNORECASE)
 _PAGE_RE = re.compile(r"^(?P<body>.+?)\s+页(?P<page>[1-9]\d*)$", re.IGNORECASE)
-_STRONGEST_RE = re.compile(r"^(?P<scope>bot|群)?最强排行$", re.IGNORECASE)
+_STRONGEST_RE = re.compile(
+    r"^(?P<leading>bot|群|总)?最强(?P<trailing>bot|群|总)?排行$", re.IGNORECASE
+)
 _ROLE_RE = re.compile(
-    r"^(?P<char>.+?)(?P<scope>bot|群)?(?:评分)?(?:排名|排行榜|排行)$",
+    r"^(?P<char>.+?)(?P<scope>bot|群|总)?(?:评分)?(?:排名|排行榜|排行)$",
     re.IGNORECASE,
 )
 
@@ -103,12 +95,15 @@ def parse_rank_command(text: str) -> RankRequest | None:
         return RankRequest(
             character=None,
             strongest=True,
-            explicit_scope=_scope_token(strongest.group("scope")),
+            explicit_scope=(
+                _scope_token(strongest.group("trailing"))
+                or _scope_token(strongest.group("leading"))
+            ),
             page=page,
         )
 
     leading_scope: Literal["bot", "group"] | None = None
-    for token, scope in (("bot", "bot"), ("群", "group")):
+    for token, scope in (("bot", "bot"), ("总", "bot"), ("群", "group")):
         if body.startswith(token) and len(body) > len(token):
             leading_scope = scope
             body = body[len(token):]
@@ -148,21 +143,19 @@ def _nte_command_body(text: str) -> str | None:
 
 
 def resolve_scope(group_id: int, explicit_scope: str | None) -> ScopeKind:
-    """Resolve the fixed default split from the design document."""
+    """Default to the current group; only an explicit total token is bot-wide."""
 
-    if explicit_scope == "群":
+    if explicit_scope in {"群", "group"}:
         return "group"
     if explicit_scope and explicit_scope.lower() == "bot":
         return "bot"
-    return "a_coast" if int(group_id) in A_COAST_GROUP_IDS else "bot"
+    return "group"
 
 
 def scope_label(scope: ScopeKind, group_id: int) -> str:
     if scope == "group":
         return f"本群榜 · {int(group_id)}"
-    if scope == "a_coast":
-        return "A海岸五群总榜"
-    return "bot全榜"
+    return "机器人总榜"
 
 
 class NTERankDataService:
@@ -378,13 +371,6 @@ class NTERankDataService:
         if scope == "group":
             eligible_uids = set(group_members)
             identity = {uid: group_members[uid] for uid in eligible_uids}
-        elif scope == "a_coast":
-            eligible_uids = {
-                uid
-                for uid, row in latest_members.items()
-                if _as_int(row.get("group_id")) in A_COAST_GROUP_IDS
-            }
-            identity = {uid: latest_members[uid] for uid in eligible_uids}
         else:
             eligible_uids = {str(record["uid"]) for record in raw_records.values()}
             identity = {uid: latest_members[uid] for uid in eligible_uids if uid in latest_members}
@@ -396,7 +382,6 @@ class NTERankDataService:
         records.sort(key=lambda record: self._record_sort_key(record, identity.get(str(record["uid"]))))
         names = self._group_names(connection)
         names.update(self._managed_group_names())
-        names.update(NTE_RANK_GROUP_ALIASES)
         for uid, row in identity.items():
             group_value = _as_int(row.get("group_id"))
             row["group_id"] = group_value
@@ -435,12 +420,14 @@ class NTERankDataService:
             connection.row_factory = sqlite3.Row
             with connection:
                 return {
-                    int(row["group_id"]): str(row["group_name"] or "").strip()
+                    int(row["group_id"]): str(
+                        row["alias"] or row["group_name"] or ""
+                    ).strip()
                     for row in connection.execute(
-                        "SELECT group_id, group_name FROM managed_groups "
-                        "WHERE enabled = 1 AND group_name <> ''"
+                        "SELECT group_id, group_name, alias FROM managed_groups "
+                        "WHERE enabled = 1 AND (alias <> '' OR group_name <> '')"
                     )
-                    if str(row["group_name"] or "").strip()
+                    if str(row["alias"] or row["group_name"] or "").strip()
                 }
         except (OSError, sqlite3.Error):
             return {}
@@ -553,7 +540,6 @@ def default_rank_service() -> NTERankDataService:
 
 __all__ = [
     "NTE_BOT_ID",
-    "NTE_RANK_GROUP_ALIASES",
     "NTERankDataError",
     "NTERankDataService",
     "PAGE_SIZE",

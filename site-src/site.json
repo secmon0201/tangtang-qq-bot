@@ -16,10 +16,6 @@
       "label": "游戏世界"
     },
     {
-      "route": "/community/",
-      "label": "A海岸"
-    },
-    {
       "route": "/operator/",
       "label": "管理运营"
     },
@@ -54,8 +50,8 @@
       "key": "home",
       "route": "/",
       "output": "index.html",
-      "title": "糖糖 · A海岸社区机器人",
-      "description": "糖糖是 A海岸群友身边的 QQ 社区机器人：枝江资讯、自然聊天、社区互动、群聊游戏与共同记忆。",
+      "title": "糖糖 · QQ 群机器人",
+      "description": "糖糖是面向 QQ 群的独立机器人：枝江资讯、自然聊天、群内互动、群聊游戏与长期记忆。",
       "canonical": "https://tangtang.secmon.cn/",
       "theme_color": "#fffdfd",
       "main_id": "main",
@@ -64,7 +60,7 @@
       "dialog": true,
       "toast": true,
       "footer": {
-        "subtitle": "A海岸的信号站与观察员",
+        "subtitle": "安静运行在 QQ 群里的信号站与观察员",
         "links": [
           {
             "route": "/experience/",
@@ -73,10 +69,6 @@
           {
             "route": "/games/",
             "label": "游戏世界"
-          },
-          {
-            "route": "/community/",
-            "label": "A海岸"
           },
           {
             "route": "/operator/",
@@ -114,7 +106,7 @@
       "route": "/experience/",
       "output": "experience/index.html",
       "title": "群友体验 · 糖糖",
-      "description": "糖糖面向普通群友的完整体验：枝江资讯、自然聊天、今日缘分、社区排行、活动与共同记忆。",
+      "description": "糖糖面向普通群友的完整体验：枝江资讯、自然聊天、今日缘分、群内排行与长期记忆。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",
@@ -123,15 +115,11 @@
       "dialog": true,
       "toast": true,
       "footer": {
-        "subtitle": "A海岸的信号站与观察员",
+        "subtitle": "每个 QQ 群都拥有自己的互动与记忆",
         "links": [
           {
             "route": "/games/",
             "label": "游戏世界"
-          },
-          {
-            "route": "/community/",
-            "label": "A海岸"
           },
           {
             "route": "/operator/",
@@ -189,10 +177,6 @@
             "label": "群友体验"
           },
           {
-            "route": "/community/",
-            "label": "A海岸"
-          },
-          {
             "route": "/operator/",
             "label": "管理运营"
           },
@@ -220,66 +204,11 @@
       ]
     },
     {
-      "key": "community",
-      "route": "/community/",
-      "output": "community/index.html",
-      "title": "A海岸 · 糖糖",
-      "description": "A海岸是由五个 QQ 群共同组成的枝江社区：跨群排行、活动、缘分和长期积累的共同记忆。",
-      "canonical": "",
-      "theme_color": "",
-      "main_id": "main",
-      "main_class": "",
-      "motion": true,
-      "dialog": true,
-      "toast": true,
-      "footer": {
-        "subtitle": "A海岸的信号站与观察员",
-        "links": [
-          {
-            "route": "/experience/",
-            "label": "群友体验"
-          },
-          {
-            "route": "/games/",
-            "label": "游戏世界"
-          },
-          {
-            "route": "/operator/",
-            "label": "管理运营"
-          },
-          {
-            "route": "/technology/",
-            "label": "技术底座"
-          }
-        ],
-        "location": "tangtang.secmon.cn/community",
-        "note": "五群合并，不等于没有边界"
-      },
-      "sections": [
-        {
-          "key": "hero",
-          "source": "pages/community/01-hero.html"
-        },
-        {
-          "key": "coast",
-          "source": "pages/community/02-coast.html"
-        },
-        {
-          "key": "memory",
-          "source": "pages/community/03-memory.html"
-        },
-        {
-          "key": "participate",
-          "source": "pages/community/04-participate.html"
-        }
-      ]
-    },
-    {
       "key": "operator",
       "route": "/operator/",
       "output": "operator/index.html",
       "title": "管理运营 · 糖糖",
-      "description": "糖糖面向机器人拥有者和管理员的运营能力：公告、活动、问卷、范围权限、查重、状态自检与 Codex 持续任务。",
+      "description": "糖糖面向机器人拥有者和群管理员的运营能力：群设置、公告面板、查重、状态自检与 Codex 持续任务。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",
@@ -297,10 +226,6 @@
           {
             "route": "/games/",
             "label": "游戏世界"
-          },
-          {
-            "route": "/community/",
-            "label": "A海岸"
           },
           {
             "route": "/technology/",
@@ -356,10 +281,6 @@
           {
             "route": "/games/",
             "label": "游戏世界"
-          },
-          {
-            "route": "/community/",
-            "label": "A海岸"
           },
           {
             "route": "/operator/",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import random
 import re
 from pathlib import Path
@@ -11,14 +12,15 @@ from fastapi import File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
 from nonebot import get_bots, get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
-from nonebot.params import CommandArg
 
 from bot.config import A_COAST_GROUP_IDS, RESOURCE_DIR, ROOT, settings
 from bot.services.media import local_image_segment
 from bot.services.qq_platform import call_qq_action
 from bot.services.reports import ReportRenderer
-from bot.services.roles import is_global_announcement_operator
+from bot.services.roles import is_super_admin
+from bot.services.runtime import database, group_domains
 from bot.services.global_announcement_web import (
+    AnnouncementTarget,
     UPLOAD_DIR,
     announcement_web_preview_bytes,
     announcement_web_base_url,
@@ -44,10 +46,12 @@ renderer = ReportRenderer(
     settings.command_prefix,
 )
 driver = get_driver()
+db = database()
+domains = group_domains()
 
 
 def announcement_targets() -> tuple[int, ...]:
-    """Return the fixed A-Coast groups that are still inside the managed scope."""
+    """Return the legacy fixed targets used only by the local internal endpoint."""
     managed = set(settings.managed_group_ids)
     skipped = [group_id for group_id in A_COAST_GROUP_IDS if group_id not in managed]
     if skipped:
@@ -56,6 +60,57 @@ def announcement_targets() -> tuple[int, ...]:
             ",".join(map(str, skipped)),
         )
     return tuple(group_id for group_id in A_COAST_GROUP_IDS if group_id in managed)
+
+
+def announcement_target_options() -> tuple[AnnouncementTarget, ...]:
+    """Snapshot selectable clusters, member groups and independent groups."""
+
+    grouped: dict[int, list[int]] = {}
+    domain_rows: dict[int, Any] = {}
+    for row in db.managed_groups():
+        group_id = int(row["group_id"])
+        domain = domains.domain_for_group(group_id)
+        if domain is None:
+            continue
+        grouped.setdefault(domain.domain_id, []).append(group_id)
+        domain_rows[domain.domain_id] = domain
+
+    options: list[AnnouncementTarget] = []
+    solo_options: list[AnnouncementTarget] = []
+    for domain_id in sorted(grouped):
+        domain = domain_rows[domain_id]
+        group_ids = tuple(sorted(grouped[domain_id]))
+        if domain.mode == "cluster":
+            parent_key = f"cluster:{domain_id}"
+            options.append(
+                AnnouncementTarget(
+                    key=parent_key,
+                    label=domain.alias or domain.name,
+                    kind="cluster",
+                    group_ids=group_ids,
+                )
+            )
+            options.extend(
+                AnnouncementTarget(
+                    key=f"group:{group_id}",
+                    label=domains.display_name(group_id),
+                    kind="group",
+                    group_ids=(group_id,),
+                    parent_key=parent_key,
+                )
+                for group_id in group_ids
+            )
+        else:
+            group_id = group_ids[0]
+            solo_options.append(
+                AnnouncementTarget(
+                    key=f"group:{group_id}",
+                    label=domains.display_name(group_id),
+                    kind="group",
+                    group_ids=(group_id,),
+                )
+            )
+    return tuple((*options, *solo_options))
 
 
 def sticker_map(sticker_dir: Path = STICKER_DIR) -> dict[str, list[Path]]:
@@ -162,9 +217,10 @@ async def send_global_announcement(
     sticker_name: str | None = None,
     at_all: bool = False,
     extra_text: str = "",
+    target_group_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
-    """Render one announcement poster and deliver it to every A-Coast group."""
-    targets = announcement_targets()
+    """Render one announcement poster and deliver it to the resolved snapshot."""
+    targets = tuple(target_group_ids) if target_group_ids is not None else announcement_targets()
     sticker = resolve_announcement_sticker(member, sticker_name)
     try:
         image_path = renderer.render_global_announcement(text, sticker=sticker)
@@ -226,20 +282,33 @@ def global_announcement_message(
 
 
 async def send_global_image(
-    bot: Any, image_path: Path, at_all: bool = False, extra_text: str = ""
+    bot: Any,
+    image_path: Path,
+    at_all: bool = False,
+    extra_text: str = "",
+    target_group_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
     return await send_global_image_segment(
-        bot, local_image_segment(image_path), at_all=at_all, extra_text=extra_text
+        bot,
+        local_image_segment(image_path),
+        at_all=at_all,
+        extra_text=extra_text,
+        target_group_ids=target_group_ids,
     )
 
 
 async def send_global_image_segment(
-    bot: Any, image: MessageSegment, at_all: bool = False, extra_text: str = ""
+    bot: Any,
+    image: MessageSegment,
+    at_all: bool = False,
+    extra_text: str = "",
+    target_group_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
     message = global_announcement_message(image, at_all=at_all, extra_text=extra_text)
     sent = 0
     failed = 0
-    for group_id in announcement_targets():
+    targets = tuple(target_group_ids) if target_group_ids is not None else announcement_targets()
+    for group_id in targets:
         try:
             await call_qq_action(bot, "send_group_msg", group_id=group_id, message=message)
         except Exception:
@@ -277,7 +346,7 @@ def _web_session(token: str):
     if session is None:
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
-            detail="链接已过期，请重新发送 #公告网页 获取新链接。",
+            detail="链接已过期，请重新发送 #公告面板 获取新链接。",
         )
     return session
 
@@ -330,6 +399,10 @@ def _web_extra_text(value: object) -> str:
     return normalized
 
 
+def _web_targets(session: Any, value: object) -> tuple[int, ...]:
+    return web_sessions.resolve_targets(session, value)
+
+
 def _active_onebot() -> Any | None:
     return next(
         (candidate for candidate in get_bots().values() if hasattr(candidate, "call_api")),
@@ -343,6 +416,7 @@ async def deliver_global_announcement(
     sticker_name: str | None = None,
     at_all: bool = False,
     extra_text: str = "",
+    target_group_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
     """Deliver a validated announcement through the currently connected bot."""
     target = _active_onebot()
@@ -355,16 +429,26 @@ async def deliver_global_announcement(
         sticker_name=sticker_name,
         at_all=at_all,
         extra_text=extra_text,
+        target_group_ids=target_group_ids,
     )
 
 
 async def deliver_global_image(
-    image_path: Path, at_all: bool = False, extra_text: str = ""
+    image_path: Path,
+    at_all: bool = False,
+    extra_text: str = "",
+    target_group_ids: tuple[int, ...] | None = None,
 ) -> tuple[int, int]:
     target = _active_onebot()
     if target is None:
         raise RuntimeError("no active OneBot connection is available")
-    return await send_global_image(target, image_path, at_all=at_all, extra_text=extra_text)
+    return await send_global_image(
+        target,
+        image_path,
+        at_all=at_all,
+        extra_text=extra_text,
+        target_group_ids=target_group_ids,
+    )
 
 
 def _authorized(request: Request) -> bool:
@@ -388,7 +472,16 @@ async def global_announcement_web_state(token: str) -> dict[str, Any]:
     return {
         "members": members,
         "stickers": {member: sorted(sticker_names(member)) for member in members},
-        "targets": len(announcement_targets()),
+        "target_options": [
+            {
+                "key": option.key,
+                "label": option.label,
+                "kind": option.kind,
+                "group_ids": option.group_ids,
+                "parent_key": option.parent_key,
+            }
+            for option in session.target_options
+        ],
         "remaining_seconds": web_sessions.remaining_seconds(session),
     }
 
@@ -407,6 +500,7 @@ async def global_announcement_web_preview(token: str, request: Request) -> Respo
         sticker_choice = str(payload.get("sticker") or "__random__")
         at_all = bool(payload.get("at_all", False))
         extra_text = _web_extra_text(payload.get("extra_text"))
+        target_group_ids = _web_targets(session, payload.get("targets"))
         if not text:
             raise ValueError("公告正文不能为空")
         if len(text) > MAX_GLOBAL_ANNOUNCEMENT_CHARS:
@@ -426,6 +520,7 @@ async def global_announcement_web_preview(token: str, request: Request) -> Respo
     session.draft_text = text
     session.draft_extra_text = extra_text
     session.draft_at_all = at_all
+    session.draft_target_group_ids = target_group_ids
     return _web_preview_response(
         await asyncio.to_thread(announcement_web_preview_bytes, poster)
     )
@@ -441,6 +536,7 @@ async def global_announcement_web_graphic_preview(
     sticker: str = Form("__random__"),
     at_all: str = Form("false"),
     extra_text: str = Form(""),
+    targets: str = Form("[]"),
 ) -> Response:
     session = _web_session(token)
     if session.delivered or session.sending:
@@ -449,6 +545,7 @@ async def global_announcement_web_graphic_preview(
     session.draft_text = ""
     session.draft_extra_text = ""
     session.draft_at_all = False
+    session.draft_target_group_ids = ()
     if session.upload_path is not None:
         session.upload_path.unlink(missing_ok=True)
         session.upload_path = None
@@ -469,6 +566,7 @@ async def global_announcement_web_graphic_preview(
             raise ValueError(f"公告正文不能超过 {MAX_GLOBAL_ANNOUNCEMENT_CHARS} 个字符")
         notify_all = _web_at_all(at_all)
         normalized_extra_text = _web_extra_text(extra_text)
+        target_group_ids = _web_targets(session, json.loads(targets))
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         upload_path = UPLOAD_DIR / f"{token}.graphic{suffix}"
         size = 0
@@ -504,6 +602,7 @@ async def global_announcement_web_graphic_preview(
     session.draft_text = normalized_text
     session.draft_extra_text = normalized_extra_text
     session.draft_at_all = notify_all
+    session.draft_target_group_ids = target_group_ids
     return _web_preview_response(
         await asyncio.to_thread(announcement_web_preview_bytes, poster)
     )
@@ -521,6 +620,7 @@ async def global_announcement_web_send_preview(token: str) -> dict[str, int]:
             session.draft_path,
             at_all=session.draft_at_all,
             extra_text=session.draft_extra_text,
+            target_group_ids=session.draft_target_group_ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -543,6 +643,7 @@ async def global_announcement_web_send_image(
     image: UploadFile = File(...),
     at_all: str = Form("false"),
     extra_text: str = Form(""),
+    targets: str = Form("[]"),
 ) -> dict[str, int]:
     session = _web_session(token)
     suffix = Path(image.filename or "").suffix.lower()
@@ -552,6 +653,7 @@ async def global_announcement_web_send_image(
     try:
         notify_all = _web_at_all(at_all)
         normalized_extra_text = _web_extra_text(extra_text)
+        target_group_ids = _web_targets(session, json.loads(targets))
         web_sessions.begin_send(token)
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         upload_path = UPLOAD_DIR / f"{token}{suffix}"
@@ -564,7 +666,10 @@ async def global_announcement_web_send_image(
                 destination.write(chunk)
         session.upload_path = resolve_global_image(str(upload_path))
         sent, failed = await deliver_global_image(
-            session.upload_path, at_all=notify_all, extra_text=normalized_extra_text
+            session.upload_path,
+            at_all=notify_all,
+            extra_text=normalized_extra_text,
+            target_group_ids=target_group_ids,
         )
     except ValueError as exc:
         web_sessions.fail_send(token)
@@ -675,81 +780,25 @@ async def receive_global_announcement(request: Request) -> dict[str, Any]:
     return {"ok": True, "sent": sent, "failed": failed}
 
 
-global_announcement = on_command("全局通告", priority=5, block=True)
-global_image_announcement = on_command(
-    "全局图片公告", aliases={"图片公告"}, priority=5, block=True
-)
 global_announcement_web = on_command(
-    "公告网页", aliases={"公告面板"}, priority=5, block=True
+    "公告面板", aliases={"公告网页"}, priority=5, block=True
 )
 
 
 @global_announcement_web.handle()
 async def _(event: MessageEvent):
-    if not is_global_announcement_operator(int(event.user_id)):
-        await global_announcement_web.finish("只有超级管理员或公告名单成员可以使用公告网页。")
+    if not is_super_admin(int(event.user_id)):
+        await global_announcement_web.finish("只有超级管理员可以使用公告面板。")
     base_url = announcement_web_base_url()
     if base_url is None:
         await global_announcement_web.finish(
-            "公告网页隧道尚未启动，请联系超级管理员启动公告网页隧道。"
+            "公告面板隧道尚未启动。"
         )
-    session = web_sessions.create(int(event.user_id))
+    target_options = announcement_target_options()
+    if not target_options:
+        await global_announcement_web.finish("当前没有可选的公告目标群。")
+    session = web_sessions.create(int(event.user_id), target_options)
     await global_announcement_web.finish(
         "公告编辑页（链接仅限本次操作，15 分钟内有效）：\n"
         f"{base_url}/notice/{session.token}"
     )
-
-
-@global_image_announcement.handle()
-async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
-    if not is_global_announcement_operator(int(event.user_id)):
-        await global_image_announcement.finish("只有超级管理员或公告名单成员可以使用全局图片公告。")
-    reply_message = event.reply.message if event.reply is not None else None
-    image = extract_global_announcement_image(args, reply_message)
-    if image is None:
-        await global_image_announcement.finish(
-            f"请回复一张图片后发送 {settings.command_prefix}全局图片公告，"
-            "或把指令和图片放在同一条消息中。"
-        )
-    if not announcement_targets():
-        await global_image_announcement.finish(
-            "当前没有可发送的目标群，请检查 MANAGED_GROUP_IDS 配置。"
-        )
-    at_all = image_announcement_mentions_all(args)
-    sent, failed = await send_global_image_segment(bot, image, at_all=at_all)
-    at_all_text = "并@全体成员" if at_all else "（未@全体）"
-    summary = f"全局图片公告已发送至 {sent} 个目标群{at_all_text}。"
-    if failed:
-        summary += f"  {failed} 个群发送失败，请稍后重试。"
-    await global_image_announcement.finish(summary)
-
-
-@global_announcement.handle()
-async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
-    if not is_global_announcement_operator(int(event.user_id)):
-        await global_announcement.finish("只有超级管理员或公告名单成员可以使用全局通告。")
-    text, member, sticker_name, at_all = parse_announcement_args(args.extract_plain_text())
-    if not text:
-        await global_announcement.finish(
-            f"用法：{settings.command_prefix}全局通告 [@全体] [人物] [表情包名] <内容>"
-        )
-    if len(text) > MAX_GLOBAL_ANNOUNCEMENT_CHARS:
-        await global_announcement.finish(
-            f"通告内容不能超过 {MAX_GLOBAL_ANNOUNCEMENT_CHARS} 个字符。"
-        )
-    if not announcement_targets():
-        await global_announcement.finish(
-            "当前没有可发送的目标群，请检查 MANAGED_GROUP_IDS 配置。"
-        )
-    sent, failed = await send_global_announcement(
-        bot,
-        text,
-        member=member,
-        sticker_name=sticker_name,
-        at_all=at_all,
-    )
-    at_all_text = "并@全体成员" if at_all else "（未@全体）"
-    summary = f"全局通告已以图片发送至 {sent} 个目标群{at_all_text}。"
-    if failed:
-        summary += f"  {failed} 个群发送失败，请稍后重试。"
-    await global_announcement.finish(summary)

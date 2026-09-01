@@ -4,7 +4,6 @@ import asyncio
 from types import SimpleNamespace
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 nonebot.init()
 
@@ -51,45 +50,20 @@ def test_explicit_ranking_requests_are_routed_locally_with_persona_feedback():
     assert coast.line == "好呀，糖糖这就看看A海岸本月谁最能聊。"
 
 
-def test_personal_stats_requests_take_precedence_over_group_ranking():
-    mine = classify_local_feature("糖糖给我看本月发言榜")
-    assert mine is not None
-    assert mine.action == "personal_stats"
-    assert mine.scope == "month"
-    assert mine.personal_target == "self"
+def test_personal_references_never_switch_ranking_away_from_the_group():
+    for text, scope in (
+        ("糖糖给我看本月发言榜", "month"),
+        ("糖糖看看我的本周发言排行", "week"),
+        ("糖糖看看某人本周发言统计", "week"),
+        ("糖糖个人发言排行", "day"),
+    ):
+        decision = classify_local_feature(text)
+        assert decision is not None
+        assert decision.action == "group_ranking"
+        assert decision.scope == scope
+        assert decision.a_coast is False
 
-    spoken = classify_local_feature("糖糖看看我这周在五个群说了多少")
-    assert spoken is not None
-    assert spoken.action == "personal_stats"
-    assert spoken.scope == "week"
-    assert spoken.personal_target == "self"
-
-    mentioned = classify_local_feature("糖糖看看本周发言统计", mentioned_user_count=1)
-    assert mentioned is not None
-    assert mentioned.action == "personal_stats"
-    assert mentioned.scope == "week"
-    assert mentioned.personal_target == "mentioned"
-
-    unspecified = classify_local_feature("糖糖看看某人本周发言统计")
-    assert unspecified is not None
-    assert unspecified.action == "personal_stats"
-    assert unspecified.personal_target == "mentioned"
-
-    group = classify_local_feature("糖糖看看本周发言榜")
-    assert group is not None
-    assert group.action == "group_ranking"
-
-
-def test_mentioned_user_ids_exclude_the_bot_and_all_mentions():
-    from bot.services.tangtang_features import mentioned_user_ids
-
-    message = Message([
-        MessageSegment.at("2"),
-        MessageSegment.at("903848042"),
-        MessageSegment.at("all"),
-        MessageSegment.at("903848042"),
-    ])
-    assert mentioned_user_ids(message, bot_user_id=2) == (903848042,)
+    assert classify_local_feature("糖糖看看我这周在五个群说了多少") is None
 
 
 def test_ranking_mentions_without_a_request_still_use_ai_router():
@@ -120,6 +94,10 @@ def test_parse_clear_maybe_chat_and_invalid_outputs():
     assert TangtangFeatureClassifier._parse("不是 JSON") is None
     assert TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"unknown","line":"你好"}'
+    ) is None
+    assert TangtangFeatureClassifier._parse(
+        '{"decision":"clear","action":"personal_stats","scope":"week",'
+        '"a_coast":true,"line":"我来看看。"}'
     ) is None
     assert TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"today_live","line":""}'
@@ -194,22 +172,6 @@ def test_request_from_decision_maps_scope_to_chinese():
     assert request.args == "月"
     assert request.a_coast is True
     assert feature_label(request) == "A海岸发言排行 月"
-
-
-def test_request_from_personal_stats_decision_keeps_target_kind():
-    decision = FeatureDecision(
-        tier="clear",
-        action="personal_stats",
-        scope="week",
-        a_coast=True,
-        line="我来算算。",
-        personal_target="mentioned",
-    )
-
-    request = request_from_decision(decision)
-
-    assert request == FeatureRequest("personal_stats", "周", True, "mentioned")
-    assert feature_label(request) == "个人发言统计 周"
 
 
 def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):

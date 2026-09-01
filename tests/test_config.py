@@ -16,14 +16,14 @@ def disable_real_completion_notification(monkeypatch):
         "ACTIVITY_GROUP_IDS",
         "HOURLY_ANNOUNCEMENT_GROUP_IDS",
         "BOT_RANDOM_REACTION_GROUP_IDS",
+        "ASOUL_BILI_GROUP_IDS",
     ):
         monkeypatch.delenv(key, raising=False)
 
 
-def test_config_rejects_more_than_ten_groups(monkeypatch):
+def test_config_accepts_more_than_ten_seed_groups(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", ",".join(str(value) for value in range(1, 12)))
-    with pytest.raises(ValueError, match="more than 10"):
-        Settings.from_env()
+    assert Settings.from_env().managed_group_ids == tuple(range(1, 12))
 
 
 def test_config_deduplicates_ids_and_keeps_secrets_out_of_settings(monkeypatch, tmp_path):

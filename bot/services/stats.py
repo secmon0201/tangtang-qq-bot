@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 import json
 from pathlib import Path
 from typing import Any
@@ -17,15 +17,24 @@ class StatsService:
         database: Database,
         realtime_enabled: bool = True,
         group_ids: Iterable[int] = A_COAST_GROUP_IDS,
+        group_provider: Callable[[], Iterable[int]] | None = None,
     ) -> None:
         self.database = database
         self.zone = ZoneInfo(settings.timezone)
         self.realtime_enabled = realtime_enabled
         self._group_order = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
         self.group_ids = frozenset(self._group_order)
+        self._group_provider = group_provider
 
     def enabled_groups(self) -> frozenset[int]:
+        if self._group_provider is not None:
+            return frozenset(int(group_id) for group_id in self._group_provider())
         return self.group_ids
+
+    def ordered_groups(self) -> tuple[int, ...]:
+        if self._group_provider is not None:
+            return tuple(dict.fromkeys(int(group_id) for group_id in self._group_provider()))
+        return self._group_order
 
     def local_now(self) -> datetime:
         return datetime.now(self.zone)
@@ -170,6 +179,12 @@ class StatsService:
 
     def ranking_rows(self, scope: str, group_id: int | None = None) -> list[dict[str, Any]]:
         group_ids = self._ranking_group_ids(group_id)
+        return self.ranking_rows_for_groups(scope, group_ids)
+
+    def ranking_rows_for_groups(
+        self, scope: str, group_ids: Iterable[int]
+    ) -> list[dict[str, Any]]:
+        group_ids = tuple(dict.fromkeys(int(value) for value in group_ids))
         if not group_ids:
             return []
         return self.database.message_ranking(
@@ -179,17 +194,14 @@ class StatsService:
 
     def group_totals(self, scope: str) -> list[dict[str, Any]]:
         group_ids = self._ranking_group_ids(None)
+        return self.group_totals_for_groups(scope, group_ids)
+
+    def group_totals_for_groups(
+        self, scope: str, group_ids: Iterable[int]
+    ) -> list[dict[str, Any]]:
+        group_ids = tuple(dict.fromkeys(int(value) for value in group_ids))
         return self.database.group_message_totals(
             group_ids, self.window_start(scope, self.local_now().date())
-        )
-
-    def personal_group_totals(self, user_id: int, scope: str) -> list[dict[str, Any]]:
-        """Aggregate one member across the five fixed A Coast groups."""
-        group_ids = self._ranking_group_ids(None)
-        return self.database.user_group_message_totals(
-            user_id,
-            group_ids,
-            self.window_start(scope, self.local_now().date()),
         )
 
     def recent_group_daily_totals(
@@ -204,7 +216,7 @@ class StatsService:
 
     def _ranking_group_ids(self, group_id: int | None) -> tuple[int, ...]:
         if group_id is None:
-            return self._group_order
+            return self.ordered_groups()
         return (group_id,) if group_id in self.enabled_groups() else ()
 
     @staticmethod

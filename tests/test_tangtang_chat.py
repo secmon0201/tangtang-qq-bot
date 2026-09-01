@@ -559,7 +559,7 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     assert recorded[0]["reply_text"] == "今天的直播给你找出来啦。"
 
 
-def test_personal_ranking_router_sends_local_persona_line_before_feature(monkeypatch):
+def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
@@ -590,12 +590,12 @@ def test_personal_ranking_router_sends_local_persona_line_before_feature(monkeyp
     assert handled is True
     assert usage == {}
     assert sequence == [
-        "line:好呀，糖糖这就算算今天的个人发言。",
-        "feature:personal_stats:日",
+        "line:好呀，糖糖这就看看群里今天谁最能聊。",
+        "feature:ranking:日",
     ]
 
 
-def test_personal_stats_router_uses_the_mentioned_member(monkeypatch):
+def test_mentioned_member_does_not_switch_ranking_away_from_the_group(monkeypatch):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
@@ -606,9 +606,7 @@ def test_personal_stats_router_uses_the_mentioned_member(monkeypatch):
 
     async def fake_run(matcher, bot, event, request):
         del matcher, bot, event
-        sequence.append(
-            f"feature:{request.action}:{request.args}:{request.personal_target}"
-        )
+        sequence.append(f"feature:{request.action}:{request.args}")
         return True
 
     monkeypatch.setattr(plugin, "tangtang_call", FakeMatcher())
@@ -631,8 +629,8 @@ def test_personal_stats_router_uses_the_mentioned_member(monkeypatch):
     assert handled is True
     assert usage == {}
     assert sequence == [
-        "line:好呀，糖糖这就算算本月的个人发言。",
-        "feature:personal_stats:月:mentioned",
+        "line:好呀，糖糖这就看看群里本月谁最能聊。",
+        "feature:ranking:月",
     ]
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -22,8 +23,15 @@ SHORT_LINK_CONFIG_PATH = ROOT / "config" / "public-short-links.json"
 RANKING_SCOPES = ("day", "week", "month", "total")
 SCOPE_LABELS = {"day": "日榜", "week": "周榜", "month": "月榜", "total": "总榜"}
 SCOPE_TITLES = {"day": "今日发言榜", "week": "本周发言榜", "month": "本月发言榜", "total": "累计发言榜"}
+SCOPE_KICKERS = {
+    "day": "AK-BOT FUNCTION",
+    "week": "AK-BOT FUNCTION",
+    "month": "AK-BOT FUNCTION",
+    "total": "AK-BOT FUNCTION",
+}
 GROUP_LABELS = dict(zip(A_COAST_GROUP_IDS, ("修会", "剧团", "莫塔里", "翡萨烈", "墓岛"), strict=True))
-ALL_GROUP_KEY = "a-coast"
+DOMAIN_GROUP_KEY = "domain"
+ALL_GROUP_KEY = DOMAIN_GROUP_KEY
 HELP_GROUP_SPECS = (
     {
         "key": "start",
@@ -42,15 +50,6 @@ HELP_GROUP_SPECS = (
         "tone": "pink",
         "sources": ("直播与日程",),
         "actions": ("live_today", "live_tomorrow", "live_week"),
-    },
-    {
-        "key": "activity",
-        "label": "活动功能",
-        "title": "参加 A海岸活动",
-        "description": "从活动大厅找到活动，再查看详情、名单和结果，报名操作仍在 QQ 群内完成。",
-        "tone": "orange",
-        "sources": ("活动功能",),
-        "actions": (),
     },
     {
         "key": "fate",
@@ -73,28 +72,22 @@ HELP_GROUP_SPECS = (
     {
         "key": "stats",
         "label": "发言统计",
-        "title": "A海岸发言统计",
-        "description": "复制指令查询本群、五群或个人数据，也可以先打开已经确定的 A海岸排行榜网页。",
+        "title": "群发言统计",
+        "description": "普通排行只查询当前群；加入集群的群还可以查看当前集群排行。",
         "tone": "green",
-        "sources": ("A 海岸发言统计",),
-        "actions": ("ranking_day", "ranking_week", "ranking_month", "ranking_total"),
+        "sources": ("发言统计",),
+        "actions": (),
     },
 )
 HELP_ITEM_ACTIONS = {
     ("直播与日程", "直播日程"): ("live_week",),
     ("直播与日程", "每日直播"): ("live_today", "live_tomorrow"),
-    ("A 海岸发言统计", "A 海岸发言排行"): (
-        "ranking_day",
-        "ranking_week",
-        "ranking_month",
-        "ranking_total",
-    ),
 }
 
 
 def public_web_url(kind: str) -> str | None:
     """Return a bare, configured short link for an approved public web surface."""
-    key_name = {"ranking": "qq_ranking", "help": "qq_help"}.get(kind)
+    key_name = {"help": "qq_help"}.get(kind)
     if key_name is None:
         return None
     try:
@@ -106,6 +99,14 @@ def public_web_url(kind: str) -> str | None:
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         return None
     return f"{host}/{code}"
+
+
+def public_domain_ranking_url(token: str) -> str | None:
+    """Build a long-lived bearer link without putting the token in logs or config."""
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", str(token)):
+        return None
+    return f"https://tangtang.secmon.cn/ranking/{token}/"
 
 
 def _help_action_index() -> dict[str, dict[str, str]]:
@@ -156,17 +157,6 @@ def public_help_categories(
             ],
         ),
         (
-            "活动功能",
-            "",
-            [
-                ("活动帮助", f"{prefix}活动帮助", "查看活动的专用使用说明。"),
-                ("活动查看", f"{prefix}活动大厅 / {prefix}活动详情 <活动ID>", "查看可参与活动及指定活动详情。"),
-                ("活动名单", f"{prefix}查看名单 <活动ID>", "查看指定活动的报名名单。"),
-                ("活动获奖名单", f"{prefix}获奖名单 <活动ID> / {prefix}查看获奖名单 <活动ID>", "查看抽奖活动的获奖名单。"),
-                ("活动参与", f"{prefix}报名 <活动ID> / {prefix}取消报名 <活动ID> / {prefix}我的活动", "报名、取消报名或查看自己的活动。"),
-            ],
-        ),
-        (
             "今日老婆",
             "",
             [
@@ -191,20 +181,19 @@ def public_help_categories(
             "",
             [
                 ("群游戏榜单", f"{prefix}转盘榜 / {prefix}炸弹榜 / {prefix}骰子榜 / {prefix}猜数榜", "查看当前群游戏榜单。"),
-                ("总游戏榜单", f"{prefix}转盘总榜 / {prefix}炸弹总榜 / {prefix}骰子总榜 / {prefix}猜数总榜", "查看所有已开启游戏群的榜单。"),
+                ("域游戏榜单", f"{prefix}转盘总榜 / {prefix}炸弹总榜 / {prefix}骰子总榜 / {prefix}猜数总榜", "独群仍只统计本群；集群统计当前集群。"),
             ],
         ),
     ]
     if stats_enabled:
         categories.append(
             (
-                "A 海岸发言统计",
+                "发言统计",
                 "",
                 [
-                    ("当前群发言排行", f"{prefix}发言排行 / {prefix}发言榜 / {prefix}统计 [日/周/月/总]", "查看当前 A 海岸群的发言排行。"),
-                    ("A 海岸发言排行", f"{prefix}A海岸发言排行 / {prefix}A海岸发言榜 / {prefix}A海岸统计 [日/周/月/总]", "合并查看五个 A 海岸群的排行。"),
-                    ("个人发言统计", f"{prefix}个人发言统计 / {prefix}个人发言榜 / {prefix}个人统计 [QQ号|@成员] [日/周/月/总]", "查看一名成员在五个 A 海岸群的合计和分群折线图；不填成员时查看自己。"),
-                    ("发言画像", f"{prefix}发言画像 <QQ号|@成员> / {prefix}画像 <QQ号|@成员>", "生成指定成员的 A 海岸发言画像。"),
+                    ("当前群发言排行", f"{prefix}发言排行 / {prefix}发言榜 / {prefix}统计 [日/周/月/总]", "查看当前群的发言排行。"),
+                    ("当前集群发言排行", f"{prefix}集群发言排行 / {prefix}集群发言榜 / {prefix}集群统计 [日/周/月/总]", "仅集群内群可合并查看当前集群排行。"),
+                    ("发言档案", f"{prefix}发言记录 / {prefix}发言搜索 / {prefix}发言画像 <QQ号|@成员>", "记录与搜索限定当前群；画像按当前域生成。"),
                 ],
             )
         )
@@ -243,13 +232,21 @@ def ranking_payload(
     group_totals: Iterable[Mapping[str, Any]] | None = None,
     group_avatar_paths: Mapping[int, Path] | None = None,
     daily_totals: Iterable[Mapping[str, Any]] | None = None,
+    selected_group_id: int | None = None,
+    group_label_override: str | None = None,
+    group_labels: Mapping[int, str] | None = None,
+    group_options: Iterable[Mapping[str, str]] | None = None,
+    history_since: str | None = None,
 ) -> dict[str, Any]:
     if scope not in RANKING_SCOPES:
         raise ValueError("scope 仅支持 day、week、month、total")
     group_id: int | None
-    if group_key == ALL_GROUP_KEY:
+    if selected_group_id is not None:
+        group_id = int(selected_group_id)
+        group_label = group_label_override or str(group_id)
+    elif group_key in {ALL_GROUP_KEY, DOMAIN_GROUP_KEY}:
         group_id = None
-        group_label = "A海岸"
+        group_label = group_label_override or "A海岸"
     else:
         try:
             group_id = int(group_key)
@@ -257,7 +254,7 @@ def ranking_payload(
             raise ValueError("group 不受支持") from exc
         if group_id not in GROUP_LABELS:
             raise ValueError("group 不受支持")
-        group_label = GROUP_LABELS[group_id]
+        group_label = group_label_override or GROUP_LABELS[group_id]
     ranking_rows = (
         [dict(row) for row in rows]
         if rows is not None
@@ -282,15 +279,21 @@ def ranking_payload(
     row_avatar_paths = avatar_paths or {}
     chart_avatar_paths = group_avatar_paths or {}
     total = sum(int(row.get("message_count") or 0) for row in ranking_rows)
-    stamp = datetime.now(ZoneInfo(settings.timezone)).strftime("%Y-%m-%d %H:%M")
+    generated = datetime.now(ZoneInfo(settings.timezone))
+    stamp = generated.strftime("%Y-%m-%d %H:%M")
     if group_total_rows:
         chart = {
             "kind": "group",
-            "title": "A海岸五群发言对比",
-            "subtitle": f"{SCOPE_LABELS[scope]}统计窗口｜五群发言总数",
+            "title": f"{group_label}群组发言对比",
+            "subtitle": f"{SCOPE_LABELS[scope]}统计窗口｜成员群发言总数",
+            "x_axis_label": "群组",
+            "y_axis_label": "发言数（条）",
             "rows": [
                 {
-                    "label": str(row.get("group_name") or row.get("group_id") or "未命名群"),
+                    "label": (group_labels or GROUP_LABELS).get(
+                        int(row.get("group_id") or 0),
+                        str(row.get("group_name") or row.get("group_id") or "未命名群"),
+                    ),
                     "message_count": int(row.get("message_count") or 0),
                     "avatar": _avatar_data_uri(
                         chart_avatar_paths.get(int(row.get("group_id") or 0)), size=56
@@ -302,11 +305,13 @@ def ranking_payload(
     elif daily_total_rows:
         chart = {
             "kind": "daily",
-            "title": "本群近 7 日发言趋势",
+            "title": f"{group_label}近 7 日发言趋势",
             "subtitle": "固定自然日窗口｜每日发言总数",
+            "x_axis_label": "日期",
+            "y_axis_label": "发言数（条）",
             "rows": [
                 {
-                    "label": str(row.get("day") or "")[-5:],
+                    "label": str(row.get("day") or "")[-5:].replace("-", "."),
                     "message_count": int(row.get("message_count") or 0),
                     "avatar": "",
                 }
@@ -319,11 +324,22 @@ def ranking_payload(
         "mode": "ranking",
         "scope": scope,
         "group": group_key,
+        "group_label": group_label,
+        "scope_title": SCOPE_TITLES[scope],
+        "header_kicker": SCOPE_KICKERS[scope],
         "scope_options": [{"key": key, "label": SCOPE_LABELS[key]} for key in RANKING_SCOPES],
-        "group_options": _group_options(),
+        "group_options": [dict(option) for option in group_options] if group_options is not None else _group_options(),
         "title": f"{group_label}{SCOPE_TITLES[scope]}",
-        "subtitle": "前 100 名｜按发言数降序、QQ 号升序｜记录自 2026-07-28 起",
+        "subtitle": (
+            f"前 100 名｜按发言数降序、QQ 号升序｜历史数据最早自 {history_since}"
+            if history_since
+            else "前 100 名｜按发言数降序、QQ 号升序｜历史数据以糖糖加入本群后记录为准"
+        ),
         "generated_at": stamp,
+        "generated_date": generated.strftime("%Y.%m.%d"),
+        "generated_month": generated.strftime("%m"),
+        "generated_day": generated.strftime("%d"),
+        "displayed_count": len(ranking_rows),
         "message_total": total,
         "rows": [
             {

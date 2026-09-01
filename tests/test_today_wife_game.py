@@ -956,6 +956,13 @@ def test_game_cards_render_for_draw_event_archive_and_conclusion(tmp_path: Path)
             assert image.width >= 800
             assert image.height >= 260
             assert image.getbbox() is not None
+            rgba = image.convert("RGBA")
+            assert rgba.getpixel((0, 0))[3] == 0
+            rail_samples = {
+                rgba.getpixel((8, y))[:3]
+                for y in (48, image.height // 2, image.height - 48)
+            }
+            assert len(rail_samples) == 3
 
 
 def test_personal_history_is_permanent_while_group_detail_expires_to_summaries(tmp_path: Path) -> None:

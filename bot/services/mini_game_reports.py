@@ -5,8 +5,9 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
+from bot.services.image_style import paste_horizontal_gradient
 from bot.services.reports import ReportRenderer
 
 
@@ -109,6 +110,18 @@ class MiniGameReportRenderer(ReportRenderer):
     # 今日老婆 -------------------------------------------------------------
 
     FATE_ASPECT_RATIO = 16 / 9
+    FATE_TEXT = "#3f3e56"
+    FATE_MUTED = "#7e7b91"
+    FATE_ACCENT = "#7568c7"
+    FATE_SOFT = "#edf9f7"
+    FATE_BORDER = "#e6e1ef"
+    FATE_CORAL = "#f26f82"
+    FATE_PINK = "#f26f82"
+    FATE_PURPLE = "#8d67ce"
+    FATE_MINT = "#47c9b5"
+    FATE_YELLOW = "#f2ce63"
+    FATE_PANEL = "#ffffff"
+    FATE_PANEL_ALT = "#fbfaff"
     FATE_EDGE_STYLES = {
         "ordinary": ("普通", "#6f9fd2"),
         "relay": ("接力", "#9a7bc8"),
@@ -122,9 +135,15 @@ class MiniGameReportRenderer(ReportRenderer):
         width, height = 960, 540
         image, draw = self._new_fate_canvas(width, height)
 
-        draw.text((54, 48), "今日老婆", font=self._font(46, True), fill=self.TEXT)
-        draw.rounded_rectangle((54, 112, 224, 148), radius=18, fill=self.KEY_FILL)
-        self._draw_centered(draw, 139, 130, "群内随机缘分", self._font(18, True), self.ACCENT)
+        self._draw_fate_masthead(image, draw, "今日", "老婆", seal="FATE", left=54)
+        paste_horizontal_gradient(
+            image,
+            (54, 112, 224, 148),
+            "#ffe1ea",
+            "#d9f4ef",
+            radius=18,
+        )
+        self._draw_centered(draw, 139, 130, "群内随机缘分", self._font(18, True), self.FATE_ACCENT)
 
         intro_font = self._font(25)
         y = 180
@@ -132,7 +151,7 @@ class MiniGameReportRenderer(ReportRenderer):
             "发送 #今日老婆随机抽取，",
             "让全群共同写出一段关系故事。",
         ):
-            draw.text((54, y), line, font=intro_font, fill=self.TEXT)
+            draw.text((54, y), line, font=intro_font, fill=self.FATE_TEXT)
             y += 43
 
         chip_font = self._font(18, True)
@@ -143,16 +162,16 @@ class MiniGameReportRenderer(ReportRenderer):
                 (chip_x, 378, chip_x + chip_width, 416),
                 radius=19,
                 fill="#ffffff",
-                outline="#edc7d6",
+                outline=self.FATE_BORDER,
                 width=1,
             )
-            self._draw_centered(draw, chip_x + chip_width // 2, 397, label, chip_font, self.ACCENT)
+            self._draw_centered(draw, chip_x + chip_width // 2, 397, label, chip_font, self.FATE_ACCENT)
             chip_x += chip_width + 12
         draw.text(
             (54, 444),
             "每日一抽 · 离婚后可重新抽取一次",
             font=self._font(18),
-            fill=self.MUTED,
+            fill=self.FATE_MUTED,
         )
 
         centers = {
@@ -188,9 +207,9 @@ class MiniGameReportRenderer(ReportRenderer):
         )
 
         avatar_fills = {
-            "小明": "#c7dff2",
-            "小夏": "#f2bfd2",
-            "小青": "#c9e7d5",
+            "小明": "#cdeff2",
+            "小夏": "#e5f4bd",
+            "小青": "#ffd9df",
         }
         for name, (center_x, center_y) in centers.items():
             left = int(center_x - avatar_size / 2)
@@ -203,19 +222,19 @@ class MiniGameReportRenderer(ReportRenderer):
             )
             draw.ellipse(
                 (left - 2, top - 2, left + avatar_size + 2, top + avatar_size + 2),
-                outline="#e7b6c8",
+                outline=self.FATE_BORDER,
                 width=2,
             )
             self._draw_centered(
-                draw, center_x, center_y, name[-1], self._font(28, True), self.TEXT
+                draw, center_x, center_y, name[-1], self._font(28, True), self.FATE_TEXT
             )
             self._draw_centered(
-                draw, center_x, top + avatar_size + 24, name, self._font(19, True), self.TEXT
+                draw, center_x, top + avatar_size + 24, name, self._font(19, True), self.FATE_TEXT
             )
 
-        self._draw_intro_relation_label(draw, 707, 154, "双向奔赴", "#fde5ef", "#d94d80")
+        self._draw_intro_relation_label(draw, 707, 154, "双向奔赴", "#e7f7f8", self.FATE_ACCENT)
         self._draw_intro_relation_label(draw, 786, 380, "缘分撞车", "#fff0dc", "#bd7624")
-        draw.text((694, 488), "随机相遇，也会连成群像故事", font=self._font(17), fill=self.MUTED)
+        draw.text((694, 488), "随机相遇，也会连成群像故事", font=self._font(17), fill=self.FATE_MUTED)
         return self._save(image, "today_wife_intro")
 
     def _draw_intro_relation_label(
@@ -252,8 +271,10 @@ class MiniGameReportRenderer(ReportRenderer):
         line_count = sum(len(self._wrap_text(paragraph, font, body_width)) for paragraph in paragraphs)
         paragraph_gaps = 12 * max(0, len(paragraphs) - 1)
         metadata_height = 104
+        header_height = 74
         height = (
             padding
+            + header_height
             + avatar_size
             + metadata_height
             + line_count * self._line_height(font)
@@ -262,16 +283,18 @@ class MiniGameReportRenderer(ReportRenderer):
             + 24
         )
         image, draw = self._new_fate_canvas(width, height)
+        self._draw_fate_masthead(image, draw, "今日", "老婆", seal="DRAW", left=padding)
         avatar_x = (width - avatar_size) // 2
-        self._draw_avatar_at(image, draw, avatar_x, padding, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
-        y = padding + avatar_size + 28
+        avatar_y = padding + header_height
+        self._draw_fate_avatar_at(image, draw, avatar_x, avatar_y, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
+        y = avatar_y + avatar_size + 28
         episode_title = str(record.get("episode_title") or "今日篇章")
         relationship = str(record.get("relationship_key") or "今日同行者")
-        self._draw_centered(draw, width // 2, y + 13, f"今日篇章 · {episode_title}", self._font(20, True), self.MUTED)
-        self._draw_centered(draw, width // 2, y + 48, relationship, self._font(25, True), self.ACCENT)
+        self._draw_centered(draw, width // 2, y + 13, f"今日篇章 · {episode_title}", self._font(20, True), self.FATE_MUTED)
+        self._draw_centered(draw, width // 2, y + 48, relationship, self._font(25, True), self.FATE_ACCENT)
         tags = tuple(str(tag) for tag in record.get("story_tags", ()) if str(tag))
         if tags:
-            self._draw_centered(draw, width // 2, y + 80, " · ".join(tags), self._font(17, True), "#b36a84")
+            self._draw_centered(draw, width // 2, y + 80, " · ".join(tags), self._font(17, True), self.FATE_CORAL)
         y += metadata_height
         for index, paragraph in enumerate(paragraphs):
             y = self._draw_fate_wrapped(
@@ -313,12 +336,12 @@ class MiniGameReportRenderer(ReportRenderer):
         # terminal error card.
         height = 76 + avatar_size + 122 + line_count * self._line_height(font) + 126 + 94
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "今日缘分｜关系留档", font=self._font(33, True), fill=self.TEXT)
-        draw.text((padding, 92), f"{actor_name} 与 {target_name} · 今日离婚", font=self._font(20, True), fill="#9d6d7d")
+        self._draw_fate_masthead(image, draw, "今日", "关系留档", seal="PAST", left=padding)
+        draw.text((padding, 96), f"{actor_name} 与 {target_name} · 今日离婚", font=self._font(20, True), fill=self.FATE_CORAL)
         avatar_x = (width - avatar_size) // 2
-        self._draw_avatar_at(image, draw, avatar_x, 126, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
+        self._draw_fate_avatar_at(image, draw, avatar_x, 126, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
         frozen = int(relation.get("frozen_affection") if relation.get("frozen_affection") is not None else relation.get("affection") or 0)
-        self._draw_centered(draw, width // 2, 338, f"曾经好感 {frozen}", self._font(20, True), self.ACCENT)
+        self._draw_centered(draw, width // 2, 338, f"曾经好感 {frozen}", self._font(20, True), self.FATE_ACCENT)
         y = 374
         for index, paragraph in enumerate(paragraphs):
             y = self._draw_fate_wrapped(
@@ -340,11 +363,11 @@ class MiniGameReportRenderer(ReportRenderer):
         width = 840
         padding = 52
         row_height = 138
-        title_height = 94
+        title_height = 124
         empty_height = 180
         height = title_height + (len(rows) * (row_height + 14) if rows else empty_height) + padding
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 44), "我的缘分", font=self._font(35, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "我的", "缘分", seal="MEMORY", left=padding)
         if not rows:
             if not empty_message.strip():
                 raise ValueError("empty today-wife history requires a randomized message")
@@ -355,27 +378,31 @@ class MiniGameReportRenderer(ReportRenderer):
                 empty_message,
                 self._font(23),
                 width - padding * 2,
-                self.MUTED,
+                self.FATE_MUTED,
                 max_lines=4,
             )
             return self._save(image, "today_wife_history")
         y = title_height
         for row in rows:
-            draw.rounded_rectangle((padding, y, width - padding, y + row_height), radius=14, fill="#ffffff", outline=self.TABLE_LINE, width=1)
+            status = "已离婚" if str(row.get("status")) == "divorced" else "结缘"
+            self._paste_fate_panel_gradient(
+                image,
+                (padding, y, width - padding, y + row_height),
+                tone="#eef9f7" if status == "结缘" else "#f3f0f7",
+            )
             target_id = int(row.get("target_id") or 0)
             target_name = str(row.get("target_nickname") or "这位群友")
-            self._draw_avatar_at(image, draw, padding + 18, y + 29, 76, avatar_paths.get(target_id), target_name)
+            self._draw_fate_avatar_at(image, draw, padding + 18, y + 29, 76, avatar_paths.get(target_id), target_name)
             day = str(row.get("day") or "")
-            status = "已离婚" if str(row.get("status")) == "divorced" else "结缘"
-            draw.text((padding + 116, y + 15), target_name, font=self._font(25, True), fill=self.ACCENT)
+            draw.text((padding + 116, y + 15), target_name, font=self._font(25, True), fill=self.FATE_ACCENT)
             relationship = str(row.get("relationship_key") or "今日同行者")
-            draw.text((padding + 116, y + 50), relationship, font=self._font(18), fill=self.ACCENT)
+            draw.text((padding + 116, y + 50), relationship, font=self._font(18), fill=self.FATE_ACCENT)
             tags = tuple(str(tag) for tag in row.get("story_tags", ()) if str(tag))
             note = " · ".join(tags) if tags else str(row.get("episode_title") or "随机相遇")
-            draw.text((padding + 116, y + 78), self._ellipsize(note, self._font(17), 430), font=self._font(17), fill=self.MUTED)
-            draw.text((padding + 116, y + 105), day, font=self._font(17), fill=self.MUTED)
-            badge_fill = "#f7e9ee" if status == "已离婚" else self.KEY_FILL
-            badge_text = "#9d6d7d" if status == "已离婚" else self.ACCENT
+            draw.text((padding + 116, y + 78), self._ellipsize(note, self._font(17), 430), font=self._font(17), fill=self.FATE_MUTED)
+            draw.text((padding + 116, y + 105), day, font=self._font(17), fill=self.FATE_MUTED)
+            badge_fill = "#f1eef6" if status == "已离婚" else "#e1f6f2"
+            badge_text = self.FATE_MUTED if status == "已离婚" else self.FATE_ACCENT
             font = self._font(19, True)
             badge_width = self._text_width(status, font) + 32
             left = width - padding - badge_width - 20
@@ -397,7 +424,7 @@ class MiniGameReportRenderer(ReportRenderer):
         available_actions: Any | None = None,
     ) -> Path:
         """The draw reveal doubles as an entry ticket to the shared story."""
-        width, padding, avatar_size = 840, 52, 164
+        width, padding, avatar_size = 840, 52, 126
         target_name = str(record.get("target_nickname") or "这位群友")
         actor_name = str(record.get("actor_nickname") or "你")
         reveal = draw_reveal if isinstance(draw_reveal, Mapping) else {}
@@ -414,7 +441,9 @@ class MiniGameReportRenderer(ReportRenderer):
             self._fate_text_height(item, body_font, body_width)
             for item in paragraphs
         ) + 10 * max(0, len(paragraphs) - 1)
-        story_start = 128 + avatar_size + 40 + 32 + 30
+        hero_top = 128
+        hero_height = 188
+        story_start = hero_top + hero_height + 28
         story_draw_height = body_height + 10 * len(paragraphs)
         relation_y = story_start + story_draw_height + 4
         relation_height = self._relation_note_height(relation, width - padding * 2)
@@ -429,29 +458,39 @@ class MiniGameReportRenderer(ReportRenderer):
                     break
         height = toolbar_y + self._game_toolbar_height(5, toolbar_actions) + 32
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "今日缘分档案", font=self._font(34, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "今日", "缘分档案", seal="DRAW", left=padding)
         self._draw_game_act(draw, padding, 93, day_state, width - padding * 2)
-        pair_gap = 72
-        actor_x = width // 2 - avatar_size - pair_gap // 2
-        target_x = width // 2 + pair_gap // 2
-        self._draw_avatar_at(image, draw, actor_x, 128, avatar_size, avatar_paths.get(int(record.get("actor_id") or 0)), actor_name)
-        self._draw_avatar_at(image, draw, target_x, 128, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
-        arrow_y = 128 + avatar_size // 2
-        draw.line((actor_x + avatar_size + 14, arrow_y, target_x - 14, arrow_y), fill="#e980aa", width=4)
-        draw.polygon(((target_x - 10, arrow_y), (target_x - 23, arrow_y - 8), (target_x - 23, arrow_y + 8)), fill="#e980aa")
-        y = 128 + avatar_size + 12
-        self._draw_centered(draw, width // 2, y, f"{actor_name} → {target_name}", self._font(27, True), self.ACCENT)
-        y += 32
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, hero_top, width - padding, hero_top + hero_height),
+            tone="#e8ddf7",
+            radius=22,
+        )
+        actor_x = width - padding - avatar_size * 2 + 18
+        target_x = width - padding - avatar_size
+        avatar_y = hero_top + (hero_height - avatar_size) // 2
+        connection_y = avatar_y + avatar_size // 2
+        draw.line(
+            (actor_x + avatar_size - 8, connection_y, target_x + 8, connection_y),
+            fill=self.FATE_ACCENT,
+            width=5,
+        )
+        self._draw_fate_avatar_at(image, draw, actor_x, avatar_y, avatar_size, avatar_paths.get(int(record.get("actor_id") or 0)), actor_name)
+        self._draw_fate_avatar_at(image, draw, target_x, avatar_y, avatar_size, avatar_paths.get(int(record.get("target_id") or 0)), target_name)
+        copy_x = padding + 24
+        copy_width = actor_x - copy_x - 26
+        draw.text((copy_x, hero_top + 24), "今日缘分", font=self._font(17, True), fill=self.FATE_MUTED)
+        pair_text = self._ellipsize(f"{actor_name} → {target_name}", self._font(27, True), copy_width)
+        draw.text((copy_x, hero_top + 53), pair_text, font=self._font(27, True), fill=self.FATE_ACCENT)
         relationship_label = str(reveal.get("relationship_label") or record.get("relationship_key") or "今日同行者")
         if str(record.get("draw_source") or "random") == "directed":
             relationship_label = f"{relationship_label} · 指定缘分"
-        self._draw_centered(draw, width // 2, y, relationship_label, self._font(20, True), "#b36a84")
-        y += 32
+        draw.text((copy_x, hero_top + 96), self._ellipsize(relationship_label, self._font(20, True), copy_width), font=self._font(20, True), fill=self.FATE_CORAL)
         affection = int(relation.get("affection") or 0)
-        self._draw_centered(draw, width // 2, y, f"今日好感 {affection} · 从这一刻开始", self._font(18), self.MUTED)
-        y += 30
+        draw.text((copy_x, hero_top + 133), f"今日好感 {affection} · 从这一刻开始", font=self._font(18), fill=self.FATE_MUTED)
+        y = story_start
         for paragraph in paragraphs:
-            y = self._draw_fate_wrapped(draw, padding, y, paragraph, body_font, body_width, (target_name,), text_color=self.TEXT)
+            y = self._draw_fate_wrapped(draw, padding, y, paragraph, body_font, body_width, (target_name,), text_color=self.FATE_TEXT)
             y += 10
         y += 4
         relation_height = self._draw_relation_note(draw, padding, y, width - padding, relation, "关系状态")
@@ -507,26 +546,43 @@ class MiniGameReportRenderer(ReportRenderer):
         toolbar_height = self._game_toolbar_height(event.get("actor_remaining"), toolbar_actions)
         height = 144 + story_height + 24 + effect_height + 30 + toolbar_height + 34
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), str(event.get("title") or "今日互动"), font=self._font(35, True), fill=self.TEXT)
+        self._draw_fate_masthead(
+            image,
+            draw,
+            "今日",
+            str(event.get("title") or "互动"),
+            seal="SCENE",
+            left=padding,
+        )
         state = event.get("day_state") if isinstance(event.get("day_state"), Mapping) else {}
         self._draw_game_act(draw, padding, 98, state, width - padding * 2)
         y = 144
-        draw.rounded_rectangle((padding, y, width - padding, y + story_height), radius=14, fill="#ffffff", outline="#f0d7e1", width=1)
-        draw.text((padding + 22, y + 18), "本次剧情", font=self._font(18, True), fill=self.ACCENT)
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, y, width - padding, y + story_height),
+            tone="#eee7f8",
+            radius=22,
+        )
+        draw.text((padding + 22, y + 18), "本次剧情", font=self._font(18, True), fill=self.FATE_ACCENT)
         text_y = y + 55
         for index, (label, paragraph) in enumerate(story_items):
             if label:
-                text_y = self._draw_wrapped(draw, padding + 22, text_y, label, label_font, body_width, self.ACCENT)
+                text_y = self._draw_wrapped(draw, padding + 22, text_y, label, label_font, body_width, self.FATE_ACCENT)
                 text_y += 6
-            text_y = self._draw_fate_wrapped(draw, padding + 22, text_y, paragraph, body_font, body_width, event_names, text_color=self.TEXT)
+            text_y = self._draw_fate_wrapped(draw, padding + 22, text_y, paragraph, body_font, body_width, event_names, text_color=self.FATE_TEXT)
             if index < len(story_items) - 1:
                 text_y += 18
         y += story_height + 24
-        draw.text((padding, y), "关系影响", font=self._font(20, True), fill=self.ACCENT)
+        draw.text((padding, y), "关系影响", font=self._font(20, True), fill=self.FATE_ACCENT)
         y += 34
-        draw.rounded_rectangle((padding, y, width - padding, y + effect_height), radius=14, fill="#fffdfd", outline="#f0d7e1", width=1)
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, y, width - padding, y + effect_height),
+            tone="#e5f6f2",
+            radius=22,
+        )
         if not effects:
-            draw.text((padding + 22, y + 32), "这次相遇留下了同场印记，暂未改变任何主缘分。", font=self._font(19), fill=self.MUTED)
+            draw.text((padding + 22, y + 32), "这次相遇留下了同场印记，暂未改变任何主缘分。", font=self._font(19), fill=self.FATE_MUTED)
         for index, effect in enumerate(effects):
             row = index // columns
             column = index % columns
@@ -585,16 +641,21 @@ class MiniGameReportRenderer(ReportRenderer):
         toolbar_height = self._game_toolbar_height(prompt.get("actor_remaining"), toolbar_actions)
         height = 144 + card_height + 30 + toolbar_height + 34
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "今日互动｜选择下一步", font=self._font(34, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "今日", "互动选择", seal="CHOICE", left=padding)
         self._draw_game_act(draw, padding, 96, state, width - padding * 2)
         y = 144
-        draw.rounded_rectangle((padding, y, width - padding, y + card_height), radius=14, fill="#ffffff", outline="#f0d7e1", width=1)
-        draw.text((padding + 22, y + 18), "此刻可以做什么", font=self._font(18, True), fill=self.ACCENT)
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, y, width - padding, y + card_height),
+            tone="#e8ddf7",
+            radius=22,
+        )
+        draw.text((padding + 22, y + 18), "此刻可以做什么", font=self._font(18, True), fill=self.FATE_ACCENT)
         text_y = y + 55
         for index, (label, paragraph) in enumerate(story_items):
-            text_y = self._draw_wrapped(draw, padding + 22, text_y, label, label_font, body_width, self.ACCENT)
+            text_y = self._draw_wrapped(draw, padding + 22, text_y, label, label_font, body_width, self.FATE_ACCENT)
             text_y += 6
-            text_y = self._draw_wrapped(draw, padding + 22, text_y, paragraph, body_font, body_width, self.TEXT)
+            text_y = self._draw_wrapped(draw, padding + 22, text_y, paragraph, body_font, body_width, self.FATE_TEXT)
             if index < len(story_items) - 1:
                 text_y += 18
         self._draw_game_toolbar(
@@ -625,31 +686,31 @@ class MiniGameReportRenderer(ReportRenderer):
         toolbar_height = self._game_toolbar_height(archive.get("remaining"), toolbar_actions)
         height = 166 + own_height + incoming_height + events_height + toolbar_height + 44
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "我的缘分", font=self._font(35, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "我的", "缘分", seal="ARCHIVE", left=padding)
         state = archive.get("day_state") if isinstance(archive.get("day_state"), Mapping) else {}
         self._draw_game_act(draw, padding, 94, state, width - padding * 2)
         y = 132
-        draw.text((padding, y), "今日主线", font=self._font(21, True), fill=self.ACCENT)
+        draw.text((padding, y), "今日主线", font=self._font(21, True), fill=self.FATE_ACCENT)
         y += 34
         if not own:
-            draw.text((padding, y + 18), "今天还没有属于你的缘分档案。", font=self._font(22), fill=self.MUTED)
+            draw.text((padding, y + 18), "今天还没有属于你的缘分档案。", font=self._font(22), fill=self.FATE_MUTED)
             y += 82
         for row in own:
             relation = row.get("relation") if isinstance(row.get("relation"), Mapping) else {}
             self._draw_archive_relation(draw, image, padding, y, width - padding, row, relation, avatar_paths)
             y += 122
         if incoming:
-            draw.text((padding, y + 4), f"有人把你写进故事 · {len(incoming)} 段", font=self._font(21, True), fill=self.ACCENT)
+            draw.text((padding, y + 4), f"有人把你写进故事 · {len(incoming)} 段", font=self._font(21, True), fill=self.FATE_ACCENT)
             y += 34
             for row in incoming[:3]:
                 relation = row.get("relation") if isinstance(row.get("relation"), Mapping) else {}
                 self._draw_incoming_relation(draw, padding, y, width - padding, row, relation)
                 y += 94
         if events:
-            draw.text((padding, y + 4), "今天留下的镜头", font=self._font(21, True), fill=self.ACCENT)
+            draw.text((padding, y + 4), "今天留下的镜头", font=self._font(21, True), fill=self.FATE_ACCENT)
             y += 34
             for event in events[:4]:
-                draw.text((padding + 8, y), self._ellipsize(str(event.get("title") or "今日互动"), self._font(18, True), width - padding * 2 - 16), font=self._font(18, True), fill=self.TEXT)
+                draw.text((padding + 8, y), self._ellipsize(str(event.get("title") or "今日互动"), self._font(18, True), width - padding * 2 - 16), font=self._font(18, True), fill=self.FATE_TEXT)
                 y += 24
         self._draw_game_toolbar(
             draw,
@@ -668,23 +729,27 @@ class MiniGameReportRenderer(ReportRenderer):
         width, padding, row_height = 880, 52, 114
         height = 162 + max(1, len(rows)) * (row_height + 12) + 46
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "我的缘分｜完整留档", font=self._font(33, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "个人", "永久留档", seal="MEMORY", left=padding)
         page_text = f"第 {int(history.get('page') or 1)}/{int(history.get('pages') or 1)} 页 · 共 {int(history.get('total') or 0)} 段"
-        draw.text((padding, 94), page_text, font=self._font(18), fill=self.MUTED)
+        draw.text((padding, 94), page_text, font=self._font(18), fill=self.FATE_MUTED)
         y = 132
         if not rows:
-            draw.text((padding, y + 24), "还没有可以留档的缘分。", font=self._font(22), fill=self.MUTED)
+            draw.text((padding, y + 24), "还没有可以留档的缘分。", font=self._font(22), fill=self.FATE_MUTED)
         for row in rows:
             relation = row.get("relation") if isinstance(row.get("relation"), Mapping) else {}
             target = str(row.get("target_nickname") or "这位群友")
-            draw.rounded_rectangle((padding, y, width - padding, y + row_height), radius=12, fill="#ffffff", outline="#efd8e2", width=1)
-            self._draw_avatar_at(image, draw, padding + 16, y + 16, 76, avatar_paths.get(int(row.get("target_id") or 0)), target)
-            draw.text((padding + 110, y + 16), f"{str(row.get('day') or '')} · {target}", font=self._font(21, True), fill=self.TEXT)
+            self._paste_fate_panel_gradient(
+                image,
+                (padding, y, width - padding, y + row_height),
+                tone="#eef9f7" if relation.get("frozen_affection") is None else "#f3f0f7",
+            )
+            self._draw_fate_avatar_at(image, draw, padding + 16, y + 16, 76, avatar_paths.get(int(row.get("target_id") or 0)), target)
+            draw.text((padding + 110, y + 16), f"{str(row.get('day') or '')} · {target}", font=self._font(21, True), fill=self.FATE_TEXT)
             state = "已离婚 · 曾经好感" if relation.get("frozen_affection") is not None else "结缘时好感"
             score = int(relation.get("frozen_affection") if relation.get("frozen_affection") is not None else relation.get("affection") or 0)
-            draw.text((padding + 110, y + 48), f"{state} {score}", font=self._font(17, True), fill=self.ACCENT)
+            draw.text((padding + 110, y + 48), f"{state} {score}", font=self._font(17, True), fill=self.FATE_ACCENT)
             note = " · ".join(str(mark) for mark in relation.get("marks", ())[:3]) or str(row.get("relationship_key") or "今日同行者")
-            draw.text((padding + 110, y + 76), self._ellipsize(note, self._font(16), width - padding * 2 - 132), font=self._font(16), fill=self.MUTED)
+            draw.text((padding + 110, y + 76), self._ellipsize(note, self._font(16), width - padding * 2 - 132), font=self._font(16), fill=self.FATE_MUTED)
             y += row_height + 12
         return self._save(image, "today_wife_history_archive")
 
@@ -693,20 +758,24 @@ class MiniGameReportRenderer(ReportRenderer):
         width, padding, row_height = 880, 52, 82
         height = 164 + max(1, len(summaries)) * (row_height + 10) + 40
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "群缘分｜往日篇章", font=self._font(33, True), fill=self.TEXT)
+        self._draw_fate_masthead(image, draw, "群缘分", "往日摘要", seal="REPLAY", left=padding)
         retention = int(archive.get("detail_retention_days") or 7)
-        draw.text((padding, 94), f"最近 {retention} 天可查看完整群像；更早日期保留公开摘要。", font=self._font(18), fill=self.MUTED)
+        draw.text((padding, 94), f"最近 {retention} 天可查看完整群像；更早日期保留公开摘要。", font=self._font(18), fill=self.FATE_MUTED)
         y = 132
         if not summaries:
-            draw.text((padding, y + 22), "这个群还没有落幕的缘分篇章。", font=self._font(22), fill=self.MUTED)
+            draw.text((padding, y + 22), "这个群还没有落幕的缘分篇章。", font=self._font(22), fill=self.FATE_MUTED)
         for item in summaries:
-            draw.rounded_rectangle((padding, y, width - padding, y + row_height), radius=10, fill="#ffffff", outline="#efd8e2", width=1)
-            draw.text((padding + 18, y + 14), f"{str(item.get('day') or '')} · 《{str(item.get('title') or '留档摘要')}》", font=self._font(19, True), fill=self.TEXT)
+            self._paste_fate_panel_gradient(
+                image,
+                (padding, y, width - padding, y + row_height),
+                tone="#eee7f8" if item.get("full_detail") else "#edf8f6",
+            )
+            draw.text((padding + 18, y + 14), f"{str(item.get('day') or '')} · 《{str(item.get('title') or '留档摘要')}》", font=self._font(19, True), fill=self.FATE_TEXT)
             detail = "完整群像可查看" if item.get("full_detail") else "公开摘要"
-            detail_color = self.ACCENT if item.get("full_detail") else self.MUTED
+            detail_color = self.FATE_ACCENT if item.get("full_detail") else self.FATE_MUTED
             draw.text((width - padding - self._text_width(detail, self._font(16, True)) - 18, y + 18), detail, font=self._font(16, True), fill=detail_color)
             stats = f"{int(item.get('relations') or 0)} 段缘分 · {int(item.get('interactions') or 0)} 次互动 · {int(item.get('divorces') or 0)} 次离婚"
-            draw.text((padding + 18, y + 47), stats, font=self._font(16), fill=self.MUTED)
+            draw.text((padding + 18, y + 47), stats, font=self._font(16), fill=self.FATE_MUTED)
             y += row_height + 10
         return self._save(image, "today_wife_group_archive")
 
@@ -724,12 +793,17 @@ class MiniGameReportRenderer(ReportRenderer):
         stats_height = self._text_block_height(stat_text, self._font(17), width - padding * 2 - 32)
         height = 178 + max(76, ending_height + 38) + sum(row_heights) + 18 * max(0, len(row_heights) - 1) + stats_height + 104
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((padding, 46), "第三轮 · 今日终章", font=self._font(36, True), fill=self.TEXT)
-        draw.text((padding, 97), f"《{str(conclusion.get('title') or '今日篇章')}》", font=self._font(25, True), fill=self.ACCENT)
+        self._draw_fate_masthead(image, draw, "今日", "终章", seal="FINALE", left=padding)
+        draw.text((padding, 97), f"《{str(conclusion.get('title') or '今日篇章')}》", font=self._font(25, True), fill=self.FATE_ACCENT)
         y = 140
         intro_height = max(76, ending_height + 38)
-        draw.rounded_rectangle((padding, y, width - padding, y + intro_height), radius=14, fill="#ffffff", outline="#f0d7e1", width=1)
-        self._draw_wrapped(draw, padding + 22, y + 18, str(conclusion.get("ending") or "今天的故事在这里合上。"), ending_font, width - padding * 2 - 44, self.TEXT)
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, y, width - padding, y + intro_height),
+            tone="#eee7f8",
+            radius=22,
+        )
+        self._draw_wrapped(draw, padding + 22, y + 18, str(conclusion.get("ending") or "今天的故事在这里合上。"), ending_font, width - padding * 2 - 44, self.FATE_TEXT)
         y += intro_height + 22
         for row, row_height in enumerate(row_heights):
             for column in range(2):
@@ -739,12 +813,16 @@ class MiniGameReportRenderer(ReportRenderer):
                 left = padding + column * (card_width + column_gap)
                 self._draw_conclusion_section(draw, left, y, card_width, row_height, sections[index])
             y += row_height + 18
-        draw.rounded_rectangle((padding, y, width - padding, y + stats_height + 34), radius=12, fill="#fff7fa", outline="#edc7d6", width=1)
-        self._draw_wrapped(draw, padding + 16, y + 15, stat_text, self._font(17), width - padding * 2 - 32, self.MUTED)
+        self._paste_fate_panel_gradient(
+            image,
+            (padding, y, width - padding, y + stats_height + 34),
+            tone="#e5f6f2",
+        )
+        self._draw_wrapped(draw, padding + 16, y + 15, stat_text, self._font(17), width - padding * 2 - 32, self.FATE_MUTED)
         return self._save(image, "today_wife_conclusion")
 
     def render_today_wife_collective_round(self, payload: Mapping[str, Any]) -> Path:
-        """Render one long 05A recap with representative events first."""
+        """Render one long editorial recap with representative events first."""
 
         width, padding = 1180, 58
         events = tuple(item for item in payload.get("events", ()) if isinstance(item, Mapping))
@@ -771,23 +849,30 @@ class MiniGameReportRenderer(ReportRenderer):
         )
         image, draw = self._new_fate_canvas(width, height)
         round_no = int(payload.get("round_no") or 1)
-        draw.text((padding, 46), str(payload.get("title") or "今日集体互动"), font=self._font(36, True), fill=self.TEXT)
+        self._draw_fate_masthead(
+            image,
+            draw,
+            "今日",
+            str(payload.get("title") or "集体互动"),
+            seal=f"ROUND {round_no}",
+            left=padding,
+        )
         state = payload.get("day_state") if isinstance(payload.get("day_state"), Mapping) else {}
         self._draw_game_act(draw, padding, 98, state, card_width)
         draw.text(
             (padding, 126),
             f"第 {round_no} 轮 · {int(payload.get('participant_count') or 0)} 位参与者完成自动演算",
             font=self._font(18, True),
-            fill=self.MUTED,
+            fill=self.FATE_MUTED,
         )
         y = 164
-        draw.text((padding, y), "代表镜头", font=self._font(22, True), fill=self.ACCENT)
+        draw.text((padding, y), "代表镜头", font=self._font(22, True), fill=self.FATE_ACCENT)
         y += 42
         core_event_id = int(payload.get("core_event_id") or 0)
         for index, (event, event_height) in enumerate(zip(events, event_heights, strict=True)):
             if index == representative_count and len(events) > representative_count:
                 y += 2
-                draw.text((padding, y), "其余互动", font=self._font(22, True), fill=self.ACCENT)
+                draw.text((padding, y), "其余互动", font=self._font(22, True), fill=self.FATE_ACCENT)
                 y += 42
             self._draw_collective_event(
                 draw,
@@ -801,14 +886,13 @@ class MiniGameReportRenderer(ReportRenderer):
             y += event_height + 16
         if ending:
             y += 6
-            draw.rounded_rectangle(
+            self._paste_fate_panel_gradient(
+                image,
                 (padding, y, width - padding, y + ending_height),
-                radius=8,
-                fill="#ffffff",
-                outline="#d8a9ba",
-                width=2,
+                tone="#eee7f8",
+                radius=22,
             )
-            draw.text((padding + 22, y + 16), "收官", font=self._font(19, True), fill=self.ACCENT)
+            draw.text((padding + 22, y + 16), "收官", font=self._font(19, True), fill=self.FATE_ACCENT)
             self._draw_wrapped(
                 draw,
                 padding + 22,
@@ -816,7 +900,7 @@ class MiniGameReportRenderer(ReportRenderer):
                 ending,
                 self._font(22),
                 card_width - 44,
-                self.TEXT,
+                self.FATE_TEXT,
             )
             y += ending_height + 22
         self._draw_game_toolbar(draw, padding, height - toolbar_height - 24, width - padding, None)
@@ -849,20 +933,23 @@ class MiniGameReportRenderer(ReportRenderer):
     ) -> None:
         draw.rounded_rectangle(
             (left, top, left + width, top + height),
-            radius=8,
-            fill="#ffffff",
-            outline="#d58ea8" if core else "#ead3dc",
-            width=3 if core else 1,
+            radius=20,
+            fill=self.FATE_PANEL if core else self.FATE_PANEL_ALT,
+        )
+        draw.rounded_rectangle(
+            (left, top + 18, left + 7, top + height - 18),
+            radius=3,
+            fill=self.FATE_PINK if core else self.FATE_MINT,
         )
         label = "核心事件" if core else str(event.get("role") or "互动事件")
-        draw.text((left + 22, top + 16), label, font=self._font(17, True), fill=self.ACCENT)
+        draw.text((left + 22, top + 16), label, font=self._font(17, True), fill=self.FATE_ACCENT)
         actor = str(event.get("actor_nickname") or "一位群友")
         title = str(event.get("title") or "关系发生了新的变化")
-        y = self._draw_wrapped(draw, left + 22, top + 45, f"{actor} · {title}", self._font(23, True), width - 44, self.TEXT)
-        y = self._draw_wrapped(draw, left + 22, y + 10, str(event.get("narrative") or ""), self._font(21), width - 44, self.MUTED)
+        y = self._draw_wrapped(draw, left + 22, top + 45, f"{actor} · {title}", self._font(23, True), width - 44, self.FATE_TEXT)
+        y = self._draw_wrapped(draw, left + 22, y + 10, str(event.get("narrative") or ""), self._font(21), width - 44, self.FATE_MUTED)
         for effect in (item for item in event.get("effects", ()) if isinstance(item, Mapping)):
             delta = int(effect.get("delta") or 0)
-            color = self.ACCENT if delta >= 0 else "#ae6674"
+            color = self.FATE_ACCENT if delta >= 0 else "#b45f70"
             value = f"{effect.get('left')} → {effect.get('right')}  {delta:+d} · {effect.get('mark') or '关系发生变化'}"
             y = self._draw_wrapped(draw, left + 22, y + 7, value, self._font(17, True), width - 44, color)
 
@@ -870,7 +957,7 @@ class MiniGameReportRenderer(ReportRenderer):
         title = str(state.get("theme_title") or "今日篇章")
         act = str(state.get("act_title") or "第一幕｜故事刚刚开始")
         value = self._ellipsize(f"《{title}》 · {act}", self._font(18, True), width)
-        draw.text((x, y), value, font=self._font(18, True), fill=self.ACCENT)
+        draw.text((x, y), value, font=self._font(18, True), fill=self.FATE_ACCENT)
 
     def _relation_note_height(self, relation: Mapping[str, Any], width: int) -> int:
         arc = relation.get("narrative") if isinstance(relation.get("narrative"), Mapping) else {}
@@ -882,15 +969,16 @@ class MiniGameReportRenderer(ReportRenderer):
 
     def _draw_relation_note(self, draw: ImageDraw.ImageDraw, left: int, y: int, right: int, relation: Mapping[str, Any], label: str) -> int:
         height = self._relation_note_height(relation, right - left)
-        draw.rounded_rectangle((left, y, right, y + height), radius=12, fill="#ffffff", outline="#efd8e2", width=1)
-        draw.text((left + 18, y + 13), label, font=self._font(17, True), fill=self.MUTED)
+        draw.rounded_rectangle((left, y, right, y + height), radius=18, fill=self.FATE_PANEL)
+        draw.rounded_rectangle((left, y + 14, left + 6, y + height - 14), radius=3, fill=self.FATE_MINT)
+        draw.text((left + 18, y + 13), label, font=self._font(17, True), fill=self.FATE_MUTED)
         marks = " · ".join(str(item) for item in relation.get("marks", ())[:3]) or "尚未留下共同印记"
-        draw.text((left + 18, y + 40), self._ellipsize(marks, self._font(19), right - left - 36), font=self._font(19), fill=self.TEXT)
+        draw.text((left + 18, y + 40), self._ellipsize(marks, self._font(19), right - left - 36), font=self._font(19), fill=self.FATE_TEXT)
         arc = relation.get("narrative") if isinstance(relation.get("narrative"), Mapping) else {}
         hook = arc.get("hook") if isinstance(arc.get("hook"), Mapping) else {}
         hook_text = str(hook.get("summary") or "").strip()
         if hook_text:
-            self._draw_wrapped(draw, left + 18, y + 68, f"当前线索：{hook_text}", self._font(17), right - left - 36, self.MUTED)
+            self._draw_wrapped(draw, left + 18, y + 68, f"当前线索：{hook_text}", self._font(17), right - left - 36, self.FATE_MUTED)
         return height
 
     @staticmethod
@@ -926,12 +1014,12 @@ class MiniGameReportRenderer(ReportRenderer):
         effect: Mapping[str, Any],
     ) -> None:
         delta = int(effect.get("delta") or 0)
-        score_color = self.ACCENT if delta > 0 else "#8593a3" if delta == 0 else "#bd6d7a"
-        draw.rounded_rectangle((left, top, left + width, top + height), radius=12, fill="#ffffff", outline="#f3dce5", width=1)
+        score_color = self.FATE_ACCENT if delta > 0 else "#8593a3" if delta == 0 else "#bd6d7a"
+        draw.rounded_rectangle((left, top, left + width, top + height), radius=16, fill=self.FATE_PANEL_ALT)
         relation = f"{str(effect.get('left') or '这位群友')} → {str(effect.get('right') or '这位群友')}"
         relation_width = width - 128
-        relation_bottom = self._draw_wrapped(draw, left + 16, top + 16, relation, self._font(21, True), relation_width, self.TEXT)
-        self._draw_wrapped(draw, left + 16, relation_bottom + 6, str(effect.get("mark") or "留下印记"), self._font(17), width - 32, self.MUTED)
+        relation_bottom = self._draw_wrapped(draw, left + 16, top + 16, relation, self._font(21, True), relation_width, self.FATE_TEXT)
+        self._draw_wrapped(draw, left + 16, relation_bottom + 6, str(effect.get("mark") or "留下印记"), self._font(17), width - 32, self.FATE_MUTED)
         score = f"{delta:+d}" if delta else "+0"
         self._draw_centered(draw, left + width - 48, top + height // 2, score, self._font(27, True), score_color)
 
@@ -960,26 +1048,27 @@ class MiniGameReportRenderer(ReportRenderer):
         section: Mapping[str, Any],
     ) -> None:
         body_width = width - 40
-        draw.rounded_rectangle((left, top, left + width, top + height), radius=14, fill="#ffffff", outline="#f0d7e1", width=1)
-        draw.text((left + 20, top + 16), str(section.get("kind") or "今日镜头"), font=self._font(19, True), fill=self.ACCENT)
+        draw.rounded_rectangle((left, top, left + width, top + height), radius=20, fill=self.FATE_PANEL)
+        draw.rounded_rectangle((left, top + 16, left + 6, top + height - 16), radius=3, fill=self.FATE_PURPLE)
+        draw.text((left + 20, top + 16), str(section.get("kind") or "今日镜头"), font=self._font(19, True), fill=self.FATE_ACCENT)
         y = top + 49
         if section.get("left"):
             relation = f"{section.get('left')} → {section.get('right')}"
-            y = self._draw_wrapped(draw, left + 20, y, relation, self._font(23, True), body_width, self.TEXT)
+            y = self._draw_wrapped(draw, left + 20, y, relation, self._font(23, True), body_width, self.FATE_TEXT)
             score = f"好感 {int(section.get('minimum') or 0):+d} → {int(section.get('affection') or 0):+d}"
-            y = self._draw_wrapped(draw, left + 20, y + 8, score, self._font(18), body_width, self.MUTED)
+            y = self._draw_wrapped(draw, left + 20, y + 8, score, self._font(18), body_width, self.FATE_MUTED)
             story = str(section.get("story") or "")
             if story:
-                y = self._draw_wrapped(draw, left + 20, y + 10, story, self._font(18), body_width, self.MUTED)
+                y = self._draw_wrapped(draw, left + 20, y + 10, story, self._font(18), body_width, self.FATE_MUTED)
             marks = " · ".join(str(item) for item in section.get("marks", ())[:3])
             if marks:
-                self._draw_wrapped(draw, left + 20, y + 8, marks, self._font(16), body_width, "#b36a84")
+                self._draw_wrapped(draw, left + 20, y + 8, marks, self._font(16), body_width, self.FATE_CORAL)
             return
-        y = self._draw_wrapped(draw, left + 20, y, str(section.get("actor") or "一位群友"), self._font(22, True), body_width, self.TEXT)
-        y = self._draw_wrapped(draw, left + 20, y + 10, str(section.get("story") or ""), self._font(18), body_width, self.MUTED)
+        y = self._draw_wrapped(draw, left + 20, y, str(section.get("actor") or "一位群友"), self._font(22, True), body_width, self.FATE_TEXT)
+        y = self._draw_wrapped(draw, left + 20, y + 10, str(section.get("story") or ""), self._font(18), body_width, self.FATE_MUTED)
         for effect in (item for item in section.get("effects", ()) if isinstance(item, Mapping)):
             delta = int(effect.get("delta") or 0)
-            color = self.ACCENT if delta >= 0 else "#bd6d7a"
+            color = self.FATE_ACCENT if delta >= 0 else "#bd6d7a"
             effect_text = f"{effect.get('left')} → {effect.get('right')}  {delta:+d}"
             y = self._draw_wrapped(draw, left + 20, y + 7, effect_text, self._font(16, True), body_width, color)
 
@@ -1009,39 +1098,53 @@ class MiniGameReportRenderer(ReportRenderer):
         labels = self._game_toolbar_actions(available_actions)
         columns = self._game_toolbar_columns(labels)
         height = self._game_toolbar_height(interaction_remaining, labels)
-        draw.rounded_rectangle((left, y, right, y + height), radius=6, fill="#d9dde1", outline="#aeb4ba", width=2)
-        draw.line((left + 10, y + 8, right - 10, y + 8), fill="#f6f7f8", width=2)
-        for rivet_x in (left + 15, right - 15):
-            draw.ellipse((rivet_x - 4, y + 28, rivet_x + 4, y + 36), fill="#92999f", outline="#f4f5f6", width=1)
+        draw.rounded_rectangle((left, y, right, y + height), radius=20, fill="#ffffff")
         chip_top = y + 13
-        chip_width = (right - left - 52 - 8 * (columns - 1)) // columns
+        chip_width = (right - left - 36 - 8 * (columns - 1)) // columns
         for index, label in enumerate(labels):
             row, column = divmod(index, columns)
-            chip_left = left + 26 + column * (chip_width + 8)
+            chip_left = left + 18 + column * (chip_width + 8)
             chip_y = chip_top + row * 44
-            draw.rounded_rectangle((chip_left, chip_y, chip_left + chip_width, chip_y + 38), radius=5, fill="#f8f8f7", outline="#b9bec3", width=1)
+            fills = ("#ffe1ea", "#eee7f8", "#def5f1")
+            text_colors = (self.FATE_CORAL, self.FATE_PURPLE, "#308c80")
+            draw.rounded_rectangle(
+                (chip_left, chip_y, chip_left + chip_width, chip_y + 38),
+                radius=19,
+                fill=fills[index % len(fills)],
+            )
             font = self._font(16, True)
             display_label = self._ellipsize(label, font, chip_width - 18)
-            self._draw_centered(draw, chip_left + chip_width // 2, chip_y + 19, display_label, font, "#8e4f67")
+            self._draw_centered(
+                draw,
+                chip_left + chip_width // 2,
+                chip_y + 19,
+                display_label,
+                font,
+                text_colors[index % len(text_colors)],
+            )
 
     def _draw_archive_relation(self, draw: ImageDraw.ImageDraw, image: Image.Image, left: int, y: int, right: int, row: Mapping[str, Any], relation: Mapping[str, Any], avatar_paths: Mapping[int, Path]) -> None:
-        draw.rounded_rectangle((left, y, right, y + 108), radius=12, fill="#ffffff", outline="#efd8e2", width=1)
+        self._paste_fate_panel_gradient(
+            image,
+            (left, y, right, y + 108),
+            tone="#eef9f7" if relation.get("frozen_affection") is None else "#f3f0f7",
+        )
         target_id = int(row.get("target_id") or 0)
         target = str(row.get("target_nickname") or "这位群友")
-        self._draw_avatar_at(image, draw, left + 16, y + 16, 72, avatar_paths.get(target_id), target)
-        draw.text((left + 104, y + 16), f"今日老婆：{target}", font=self._font(22, True), fill=self.TEXT)
+        self._draw_fate_avatar_at(image, draw, left + 16, y + 16, 72, avatar_paths.get(target_id), target)
+        draw.text((left + 104, y + 16), f"今日老婆：{target}", font=self._font(22, True), fill=self.FATE_TEXT)
         status = "已离婚 · 曾经好感" if relation.get("frozen_affection") is not None else "今日好感"
         score = int(relation.get("frozen_affection") if relation.get("frozen_affection") is not None else relation.get("affection") or 0)
-        draw.text((left + 104, y + 49), f"{status} {score}", font=self._font(18, True), fill=self.ACCENT)
+        draw.text((left + 104, y + 49), f"{status} {score}", font=self._font(18, True), fill=self.FATE_ACCENT)
         marks = " · ".join(str(item) for item in relation.get("marks", ())[:3]) or "尚未留下共同印记"
-        draw.text((left + 104, y + 77), self._ellipsize(marks, self._font(16), right - left - 122), font=self._font(16), fill=self.MUTED)
+        draw.text((left + 104, y + 77), self._ellipsize(marks, self._font(16), right - left - 122), font=self._font(16), fill=self.FATE_MUTED)
 
     def _draw_incoming_relation(self, draw: ImageDraw.ImageDraw, left: int, y: int, right: int, row: Mapping[str, Any], relation: Mapping[str, Any]) -> None:
-        draw.rounded_rectangle((left, y, right, y + 78), radius=10, fill="#ffffff", outline="#efd8e2", width=1)
+        draw.rounded_rectangle((left, y, right, y + 78), radius=18, fill=self.FATE_PANEL_ALT)
         name = str(row.get("actor_nickname") or "这位群友")
         state = "你已回应" if int(relation.get("response_count") or 0) else "等待回应"
-        draw.text((left + 18, y + 14), f"{name} → 你", font=self._font(20, True), fill=self.TEXT)
-        draw.text((left + 18, y + 43), f"{state} · 当前好感 {int(relation.get('affection') or 0)}", font=self._font(17), fill=self.ACCENT)
+        draw.text((left + 18, y + 14), f"{name} → 你", font=self._font(20, True), fill=self.FATE_TEXT)
+        draw.text((left + 18, y + 43), f"{state} · 当前好感 {int(relation.get('affection') or 0)}", font=self._font(17), fill=self.FATE_ACCENT)
 
     @staticmethod
     def _event_names(effects: tuple[Mapping[str, Any], ...], actor: str) -> tuple[str, ...]:
@@ -1073,9 +1176,9 @@ class MiniGameReportRenderer(ReportRenderer):
             edges.append((actor_id, target_id))
         if not nodes:
             image, draw = self._new_fate_canvas(960, 540)
-            draw.text((52, 48), "今日群缘分", font=self._font(35, True), fill=self.TEXT)
-            draw.text((52, 96), f"{day} · 今日篇章《{episode['title']}》", font=self._font(20), fill=self.ACCENT)
-            self._draw_wrapped(draw, 52, 148, spotlight, self._font(23), 856, self.MUTED, max_lines=4)
+            self._draw_fate_masthead(image, draw, "今日", "群缘分", seal="GROUP")
+            draw.text((52, 96), f"{day} · 今日篇章《{episode['title']}》", font=self._font(20), fill=self.FATE_ACCENT)
+            self._draw_wrapped(draw, 52, 148, spotlight, self._font(23), 856, self.FATE_MUTED, max_lines=4)
             return self._save(image, "today_wife_group")
 
         node_ids = tuple(sorted(nodes))
@@ -1090,9 +1193,9 @@ class MiniGameReportRenderer(ReportRenderer):
         top = max(228, legend_y + 52)
         positions, component_boxes, width, height = self._fit_fate_aspect(positions, component_boxes, width, top + graph_height + 64)
         image, draw = self._new_fate_canvas(width, height)
-        draw.text((52, 40), "今日群缘分", font=self._font(34, True), fill=self.TEXT)
-        draw.text((52, 82), f"{day} · 今日篇章《{episode['title']}》", font=self._font(19, True), fill=self.ACCENT)
-        self._draw_fate_wrapped(draw, 52, 120, spotlight, spotlight_font, max(300, width - 104), tuple(nodes.values()), text_color=self.MUTED)
+        self._draw_fate_masthead(image, draw, "今日", "群缘分", seal="GROUP")
+        draw.text((52, 92), f"{day} · 今日篇章《{episode['title']}》", font=self._font(19, True), fill=self.FATE_ACCENT)
+        self._draw_fate_wrapped(draw, 52, 120, spotlight, spotlight_font, max(300, width - 104), tuple(nodes.values()), text_color=self.FATE_MUTED)
         self._draw_fate_legend(draw, 52, legend_y, visible_edge_types + (("divorced",) if has_divorced_edge else ()))
         edge_set = set(edges)
         mutual_nodes = {node for left, right in edge_set if (right, left) in edge_set for node in (left, right)}
@@ -1211,13 +1314,13 @@ class MiniGameReportRenderer(ReportRenderer):
             left, avatar_top, name = int(center_x - avatar_size / 2), int(center_y + top - avatar_size / 2), nodes[user_id]
             if user_id in mutual_nodes:
                 draw.ellipse((left - 5, avatar_top - 5, left + avatar_size + 5, avatar_top + avatar_size + 5), outline="#e85c91", width=4)
-            self._draw_avatar_at(image, draw, left, avatar_top, avatar_size, avatar_paths.get(user_id), name)
+            self._draw_fate_avatar_at(image, draw, left, avatar_top, avatar_size, avatar_paths.get(user_id), name)
             if incoming.get(user_id, 0) >= 2:
                 badge = f"×{incoming[user_id]}"
                 draw.rounded_rectangle((left + avatar_size - 27, avatar_top - 8, left + avatar_size + 20, avatar_top + 24), radius=15, fill="#e85c91")
                 self._draw_centered(draw, left + avatar_size - 4, avatar_top + 8, badge, self._font(15, True), "#ffffff")
             label = self._ellipsize(name, self._font(18, True), avatar_size + 40)
-            self._draw_centered(draw, int(center_x), avatar_top + avatar_size + 20, label, self._font(18, True), self.TEXT)
+            self._draw_centered(draw, int(center_x), avatar_top + avatar_size + 20, label, self._font(18, True), self.FATE_TEXT)
 
         # Layer 3: affection labels, positioned after all node bounds are known.
         node_boxes = self._fate_node_boxes(positions, nodes, avatar_size, top)
@@ -1229,26 +1332,245 @@ class MiniGameReportRenderer(ReportRenderer):
             font = self._font(13, True)
             label_box = detail["label_box"]
             left, label_top, right, bottom = label_box
-            draw.rounded_rectangle(label_box, radius=12, fill="#f1f3f5" if detail["divorced"] else "#fff7fa", outline="#c4c9cf" if detail["divorced"] else "#edc7d6", width=1)
-            self._draw_centered(draw, (left + right) // 2, (label_top + bottom) // 2, text, font, "#7f8993" if detail["divorced"] else "#b36a84")
+            draw.rounded_rectangle(
+                label_box,
+                radius=12,
+                fill="#f3f1f6" if detail["divorced"] else "#ffffff",
+                outline="#c4c9cf" if detail["divorced"] else str(detail["color"]),
+                width=1,
+            )
+            self._draw_centered(draw, (left + right) // 2, (label_top + bottom) // 2, text, font, "#7f8993" if detail["divorced"] else self.FATE_ACCENT)
         return self._save(image, "today_wife_group")
 
+    @staticmethod
+    def _fate_gradient_image(
+        width: int,
+        height: int,
+        stops: tuple[tuple[float, str], ...],
+        *,
+        vertical: bool = False,
+    ) -> Image.Image:
+        length = max(2, height if vertical else width)
+        strip_size = (1, length) if vertical else (length, 1)
+        strip = Image.new("RGB", strip_size)
+        pixels = strip.load()
+        ordered = tuple(sorted(stops, key=lambda item: item[0]))
+        segment = 0
+        for index in range(length):
+            position = index / (length - 1)
+            while segment + 1 < len(ordered) - 1 and position > ordered[segment + 1][0]:
+                segment += 1
+            start_at, start_color = ordered[segment]
+            end_at, end_color = ordered[min(segment + 1, len(ordered) - 1)]
+            span = max(0.0001, end_at - start_at)
+            ratio = min(1.0, max(0.0, (position - start_at) / span))
+            start_rgb = ImageColor.getrgb(start_color)
+            end_rgb = ImageColor.getrgb(end_color)
+            color = tuple(
+                round(left + (right - left) * ratio)
+                for left, right in zip(start_rgb, end_rgb, strict=True)
+            )
+            if vertical:
+                pixels[0, index] = color
+            else:
+                pixels[index, 0] = color
+        return strip.resize((width, height), Image.Resampling.BILINEAR)
+
     def _new_fate_canvas(self, width: int, height: int) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-        image = Image.new("RGB", (width, height), "#eceff1")
+        image = self._fate_gradient_image(
+            width,
+            height,
+            (
+                (0.0, "#fff8fb"),
+                (0.38, "#ffffff"),
+                (0.68, "#f0fbf9"),
+                (1.0, "#f7f3ff"),
+            ),
+        )
+        vertical_tint = self._fate_gradient_image(
+            width,
+            height,
+            ((0.0, "#ffffff"), (1.0, "#f7f5fc")),
+            vertical=True,
+        )
+        image = Image.blend(image, vertical_tint, 0.22)
+
+        glow_scale = 0.25
+        glow_width = max(1, round(width * glow_scale))
+        glow_height = max(1, round(height * glow_scale))
+        glow = Image.new("RGBA", (glow_width, glow_height), (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow)
+
+        def ellipse(box: tuple[float, float, float, float], color: str, alpha: int) -> None:
+            scaled = tuple(round(value * glow_scale) for value in box)
+            glow_draw.ellipse(scaled, fill=(*ImageColor.getrgb(color), alpha))
+
+        ellipse((width * 0.42, 24, width * 1.08, min(height * 0.34, 360)), self.FATE_PINK, 72)
+        ellipse((-width * 0.15, height * 0.35, width * 0.55, height * 0.66), self.FATE_MINT, 55)
+        ellipse((width * 0.52, height * 0.64, width * 1.16, height * 1.05), self.FATE_PURPLE, 50)
+        ellipse((width * 0.12, height * 0.72, width * 0.48, height * 1.02), self.FATE_YELLOW, 34)
+        glow = glow.filter(ImageFilter.GaussianBlur(max(18, round(min(glow_width, glow_height) * 0.12))))
+        glow = glow.resize((width, height), Image.Resampling.BICUBIC)
+        image = Image.alpha_composite(image.convert("RGBA"), glow).convert("RGB")
+
+        rail_width = max(18, min(26, width // 44))
+        rail = self._fate_gradient_image(
+            rail_width,
+            height,
+            (
+                (0.0, self.FATE_PURPLE),
+                (0.34, self.FATE_PINK),
+                (0.67, self.FATE_YELLOW),
+                (1.0, self.FATE_MINT),
+            ),
+            vertical=True,
+        )
+        image.paste(rail, (0, 0))
         draw = ImageDraw.Draw(image)
-        draw.rectangle((0, 0, width, 112), fill="#e7b6c6")
-        for x in range(-112, width + 112, 34):
-            draw.line((x, 0, x + 112, 112), fill="#efcbd6", width=13)
-        draw.rectangle((0, 112, width, height), fill="#f7f5f6")
-        draw.rounded_rectangle((18, 18, width - 18, height - 18), radius=8, outline="#ffffff", width=3)
-        draw.rounded_rectangle((25, 25, width - 25, height - 25), radius=6, outline="#c9cdd0", width=1)
-        draw.rounded_rectangle((28, 12, 116, 34), radius=4, fill="#c5c9cc", outline="#f3f4f5", width=2)
-        for rivet_x in (38, 106):
-            draw.ellipse((rivet_x - 4, 19, rivet_x + 4, 27), fill="#858d94", outline="#f8f8f8", width=1)
-        mark_x = width - 92
-        draw.text((mark_x, 33), "X X", font=self._font(17, True), fill="#875166")
-        draw.arc((mark_x + 4, 53, mark_x + 48, 77), 12, 168, fill="#875166", width=3)
+        self._draw_fate_rail_label(image, height, rail_width)
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((width - 72, 20, width - 60, 32), fill=self.FATE_PINK)
+        draw.ellipse((width - 52, 20, width - 40, 32), fill=self.FATE_YELLOW)
+        draw.ellipse((width - 32, 20, width - 20, 32), fill=self.FATE_MINT)
         return image, draw
+
+    def _draw_fate_rail_label(self, image: Image.Image, height: int, rail_width: int) -> None:
+        label_width = max(1, height - 72)
+        label = Image.new("RGBA", (label_width, rail_width), (0, 0, 0, 0))
+        label_draw = ImageDraw.Draw(label)
+        font = self._fate_latin_font(max(8, min(11, rail_width - 10)), bold=True)
+        text = "AK-BOT FUNCTION"
+        text_width = self._text_width(text, font)
+        label_draw.text(
+            (max(0, (label_width - text_width) // 2), max(0, (rail_width - self._line_height(font)) // 2 - 1)),
+            text,
+            font=font,
+            fill=(255, 255, 255, 226),
+        )
+        rotated = label.rotate(90, expand=True, resample=Image.Resampling.BICUBIC)
+        image.paste(rotated, (0, 36), rotated)
+
+    def _fate_latin_font(self, size: int, *, bold: bool = False, italic: bool = False) -> ImageFont.ImageFont:
+        candidates: list[Path] = []
+        if bold and italic:
+            candidates.append(Path(r"C:\Windows\Fonts\segoeuiz.ttf"))
+        elif italic:
+            candidates.append(Path(r"C:\Windows\Fonts\segoeuii.ttf"))
+        elif bold:
+            candidates.append(Path(r"C:\Windows\Fonts\segoeuib.ttf"))
+        candidates.append(Path(r"C:\Windows\Fonts\segoeui.ttf"))
+        for candidate in candidates:
+            if not candidate.is_file():
+                continue
+            try:
+                return ImageFont.truetype(str(candidate), size=size)
+            except OSError:
+                continue
+        return self._font(size, bold)
+
+    def _draw_fate_masthead(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        primary: str,
+        secondary: str,
+        *,
+        seal: str,
+        left: int = 52,
+        right: int = 52,
+    ) -> None:
+        draw.text(
+            (left, 24),
+            "AK-BOT FUNCTION",
+            font=self._fate_latin_font(11, bold=True),
+            fill=self.FATE_MUTED,
+        )
+        primary_font = self._font(39, True)
+        primary_box = primary_font.getbbox(primary or "缘")
+        primary_width = primary_box[2] - primary_box[0]
+        primary_height = primary_box[3] - primary_box[1]
+        primary_mask = Image.new("L", (primary_width + 4, primary_height + 4), 0)
+        ImageDraw.Draw(primary_mask).text(
+            (2 - primary_box[0], 2 - primary_box[1]),
+            primary,
+            font=primary_font,
+            fill=255,
+        )
+        primary_gradient = self._fate_gradient_image(
+            primary_mask.width,
+            primary_mask.height,
+            ((0.0, self.FATE_PINK), (0.62, self.FATE_PURPLE), (1.0, self.FATE_MINT)),
+        )
+        image.paste(primary_gradient, (left, 48), primary_mask)
+
+        divider_x = left + primary_width + 18
+        draw.rounded_rectangle((divider_x, 56, divider_x + 4, 88), radius=2, fill=self.FATE_MINT)
+        secondary_font = self._font(25, True)
+        seal_font = self._fate_latin_font(42, bold=True, italic=True)
+        seal_text = str(seal or "FATE").upper()
+        seal_width = self._text_width(seal_text, seal_font)
+        seal_x = image.width - right - seal_width
+        available = max(80, seal_x - divider_x - 18)
+        display_secondary = self._ellipsize(secondary, secondary_font, available)
+        draw.text((divider_x + 15, 58), display_secondary, font=secondary_font, fill=self.FATE_TEXT)
+        draw.text((seal_x, 37), seal_text, font=seal_font, fill="#ded8eb")
+
+    def _paste_fate_panel_gradient(
+        self,
+        image: Image.Image,
+        box: tuple[int, int, int, int],
+        *,
+        tone: str | None = None,
+        radius: int = 18,
+    ) -> None:
+        paste_horizontal_gradient(
+            image,
+            box,
+            "#ffffff",
+            tone or "#def4ef",
+            radius=radius,
+        )
+
+    def _draw_fate_avatar_at(
+        self,
+        image: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        left: int,
+        top: int,
+        size: int,
+        avatar_path: Path | None,
+        label: str,
+    ) -> None:
+        ring_box = (left - 4, top - 4, left + size + 3, top + size + 3)
+        for start, end, color in (
+            (-90, 0, self.FATE_YELLOW),
+            (0, 90, self.FATE_PINK),
+            (90, 180, self.FATE_PURPLE),
+            (180, 270, self.FATE_MINT),
+        ):
+            draw.arc(ring_box, start=start, end=end, fill=color, width=max(3, size // 32))
+        if avatar_path is not None and avatar_path.is_file():
+            self._draw_avatar_at(image, draw, left, top, size, avatar_path, label)
+            draw.ellipse(
+                (left, top, left + size - 1, top + size - 1),
+                outline="#ffffff",
+                width=max(2, size // 42),
+            )
+            return
+        draw.ellipse(
+            (left, top, left + size - 1, top + size - 1),
+            fill=self.FATE_SOFT,
+            outline=self.FATE_ACCENT,
+            width=2,
+        )
+        self._draw_centered(
+            draw,
+            left + size // 2,
+            top + size // 2,
+            label[-2:] or "?",
+            self._font(max(14, size // 3), True),
+            self.FATE_ACCENT,
+        )
 
     def _draw_fate_wrapped(
         self,
@@ -1268,10 +1590,10 @@ class MiniGameReportRenderer(ReportRenderer):
         while cursor < len(value):
             name = next((candidate for candidate in names if value.startswith(candidate, cursor)), None)
             if name is not None:
-                tokens.extend((character, self.ACCENT) for character in name)
+                tokens.extend((character, self.FATE_ACCENT) for character in name)
                 cursor += len(name)
             else:
-                tokens.append((value[cursor], text_color or self.TEXT))
+                tokens.append((value[cursor], text_color or self.FATE_TEXT))
                 cursor += 1
         line: list[tuple[str, str]] = []
         line_width = 0
@@ -1935,7 +2257,7 @@ class MiniGameReportRenderer(ReportRenderer):
                     [(cursor_x + 32, y + 10), (cursor_x + 24, y + 5), (cursor_x + 24, y + 15)],
                     fill=color,
                 )
-            draw.text((cursor_x + 40, y), label, font=font, fill=self.MUTED)
+            draw.text((cursor_x + 40, y), label, font=font, fill=self.FATE_MUTED)
             cursor_x += 40 + self._text_width(label, font) + 28
 
     @staticmethod

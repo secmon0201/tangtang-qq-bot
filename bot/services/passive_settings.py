@@ -30,11 +30,18 @@ FEATURE_SCOPE_KEYS = {
     "game": "game_group_ids",
     "game_api": GAME_API_GROUP_IDS_KEY,
     "today_wife": "today_wife_group_ids",
-    "activity": "activity_group_ids",
     "passive": PASSIVE_GROUP_IDS_KEY,
     "hourly": HOURLY_ANNOUNCEMENT_GROUP_IDS_KEY,
     "game_mute": GAME_MUTE_GROUP_IDS_KEY,
     "game_mute_disabled": GAME_MUTE_DISABLED_GROUP_IDS_KEY,
+}
+FEATURE_DOMAIN_KEYS = {
+    "duplicate": "duplicate",
+    "game": "mini_games",
+    "game_api": "nte",
+    "today_wife": "today_wife",
+    "passive": "passive_interaction",
+    "hourly": "hourly",
 }
 
 
@@ -157,7 +164,6 @@ class PassiveSettingsStore:
             "game": settings.game_group_ids or settings.managed_group_ids,
             "game_api": settings.game_api_group_ids or settings.managed_group_ids,
             "today_wife": settings.managed_group_ids,
-            "activity": settings.activity_group_ids,
             "passive": settings.random_reaction_group_ids,
             "hourly": settings.hourly_announcement_group_ids,
             "game_mute": (),
@@ -175,6 +181,10 @@ class PassiveSettingsStore:
         return self.groups("passive")
 
     def groups(self, feature: str) -> frozenset[int]:
+        if feature in FEATURE_DOMAIN_KEYS:
+            selected = self.database.enabled_feature_groups(FEATURE_DOMAIN_KEYS[feature])
+            if selected or self.database.managed_groups():
+                return selected
         return self._groups[feature]
 
     def is_feature_group_enabled(self, feature: str, group_id: int) -> bool:
@@ -210,8 +220,8 @@ class PassiveSettingsStore:
 
     def for_group(self, group_id: int) -> PassiveSettings:
         group_id = int(group_id)
-        if group_id not in self.group_ids:
-            raise ValueError("group is outside the passive scope")
+        if not self.database.is_managed_group(group_id):
+            raise ValueError("group is outside the managed scope")
         if group_id not in self._settings_by_group:
             self._settings_by_group[group_id] = self._load_group_settings(group_id)
         return self._settings_by_group[group_id]
@@ -226,8 +236,21 @@ class PassiveSettingsStore:
         if feature not in FEATURE_SCOPE_KEYS:
             raise ValueError("unsupported feature scope")
         group_id = int(group_id)
-        if group_id not in settings.managed_group_ids:
-            raise ValueError("group is outside the managed scope")
+        if not self.database.is_managed_group(group_id):
+            if group_id not in settings.managed_group_ids:
+                raise ValueError("group is outside the managed scope")
+            self.database.ensure_group(group_id)
+            for legacy_feature, canonical_feature in FEATURE_DOMAIN_KEYS.items():
+                self.database.set_group_feature(
+                    group_id,
+                    canonical_feature,
+                    group_id in self._groups[legacy_feature],
+                )
+        if feature in FEATURE_DOMAIN_KEYS:
+            self.database.set_group_feature(group_id, FEATURE_DOMAIN_KEYS[feature], True)
+            if feature == "passive":
+                self._settings_by_group.setdefault(group_id, self._load_group_settings(group_id))
+            return self.groups(feature)
         self._groups[feature] = frozenset((*self.groups(feature), group_id))
         self._persist_groups(feature)
         if feature == "passive":
@@ -240,6 +263,11 @@ class PassiveSettingsStore:
     def remove_feature_group(self, feature: str, group_id: int) -> frozenset[int]:
         if feature not in FEATURE_SCOPE_KEYS:
             raise ValueError("unsupported feature scope")
+        if feature in FEATURE_DOMAIN_KEYS:
+            self.database.set_group_feature(
+                int(group_id), FEATURE_DOMAIN_KEYS[feature], False
+            )
+            return self.groups(feature)
         self._groups[feature] = frozenset(
             item for item in self.groups(feature) if item != int(group_id)
         )

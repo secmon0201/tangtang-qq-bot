@@ -48,7 +48,7 @@ async def avatars(output_dir: Path) -> dict[int, Path]:
     cache_dir = output_dir / "avatar_cache"
     service = AvatarService(cache_dir, "https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640")
     paths = await service.prefetch([{"user_id": BOT_ID}])
-    colors = ("#f2a1bc", "#b7d9f2", "#c4e7c8", "#f5d0a9", "#d9c3ee", "#f4e39b")
+    colors = ("#bfe8ec", "#d9efaa", "#ffd2d9", "#cbdcf3", "#d8c9ed", "#f4e39b")
     for index, member in enumerate(MEMBERS):
         user_id = int(member["user_id"])
         if user_id in paths:

@@ -19,6 +19,9 @@ def test_user_help_text_contains_only_copyable_public_commands():
     assert "#强取 @群友" in text
     assert "#我的老婆" in text
     assert "#解缘" in text
+    assert "#个人发言统计" not in text
+    assert "#个人发言榜" not in text
+    assert "#我的发言榜" not in text
     assert "枝江百科" not in text
     assert "A魂百科" not in text
     assert "[-a]" not in text
@@ -45,6 +48,7 @@ def test_user_help_merges_equivalent_commands_and_game_rankings():
     ranking_entries = dict((title, command) for title, command, _ in categories["小游戏榜单"])
     game_entries = dict((title, command) for title, command, _ in categories["小游戏"])
     today_wife_entries = dict((title, command) for title, command, _ in categories["今日老婆"])
+    stats_entries = dict((title, command) for title, command, _ in categories["A 海岸发言统计"])
 
     assert live_entries["直播日程"] == "#枝江直播 / #直播日程 / #本周直播"
     assert ranking_entries["群游戏榜单"] == "#转盘榜 / #炸弹榜 / #骰子榜 / #猜数榜"
@@ -52,6 +56,7 @@ def test_user_help_merges_equivalent_commands_and_game_rankings():
     assert "缘分档案" not in game_entries
     assert today_wife_entries["今日缘分"] == "#今日老婆 / #今日缘分 / #强取 @群友"
     assert today_wife_entries["缘分档案"] == "#我的缘分 / #群缘分 / #群缘分 历史 / #离婚"
+    assert "个人发言统计" not in stats_entries
 
 
 def test_user_help_hides_asoul_third_party_help_and_attributes_live_schedule():

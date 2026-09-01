@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path
@@ -172,14 +171,13 @@ def validate_codex_worker(values: dict[str, str], env_path: Path) -> None:
 
 
 def validate_asoul_bili(values: dict[str, str], managed_set: set[str]) -> None:
-    groups = parse_ids(values.get("ASOUL_BILI_GROUP_IDS", ""), "ASOUL_BILI_GROUP_IDS", maximum=10)
+    groups = parse_ids(values.get("ASOUL_BILI_GROUP_IDS", ""), "ASOUL_BILI_GROUP_IDS")
     invalid = sorted(set(groups) - managed_set)
     if invalid:
         raise ValueError(f"ASOUL_BILI_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: {invalid}")
     a_coast_groups = parse_ids(
         values.get("ASOUL_BILI_A_COAST_GROUP_IDS", "1128870029,1077416717,1083457871,1090284567,278824712"),
         "ASOUL_BILI_A_COAST_GROUP_IDS",
-        maximum=10,
     )
     push_a_coast = parse_bool(values.get("ASOUL_BILI_PUSH_A_COAST", "true"), "ASOUL_BILI_PUSH_A_COAST")
     if push_a_coast:
@@ -224,7 +222,7 @@ def validate(path: Path) -> tuple[int, int]:
     if qq_platform_transport == "lagrange" and not values.get("LAGRANGE_DIR", "Lagrange.OneBot").strip():
         raise ValueError("LAGRANGE_DIR cannot be empty when QQ_PLATFORM_TRANSPORT=lagrange")
 
-    groups = parse_ids(values.get("MANAGED_GROUP_IDS", ""), "MANAGED_GROUP_IDS", maximum=10)
+    groups = parse_ids(values.get("MANAGED_GROUP_IDS", ""), "MANAGED_GROUP_IDS")
     managed_set = set(groups)
     if values.get("BOT_COMMAND_PREFIX", "#").strip() != "#":
         raise ValueError("BOT_COMMAND_PREFIX must be #")
@@ -255,11 +253,10 @@ def validate(path: Path) -> tuple[int, int]:
         "DUPLICATE_GROUP_IDS",
         "GAME_GROUP_IDS",
         "GAME_API_GROUP_IDS",
-        "ACTIVITY_GROUP_IDS",
         "HOURLY_ANNOUNCEMENT_GROUP_IDS",
     ):
         default_groups = "" if feature_name == "HOURLY_ANNOUNCEMENT_GROUP_IDS" else ",".join(groups)
-        feature_groups = parse_ids(values.get(feature_name, default_groups), feature_name, maximum=10)
+        feature_groups = parse_ids(values.get(feature_name, default_groups), feature_name)
         invalid = sorted(set(feature_groups) - managed_set)
         if invalid:
             raise ValueError(f"{feature_name} contains groups outside MANAGED_GROUP_IDS: {invalid}")
@@ -268,7 +265,6 @@ def validate(path: Path) -> tuple[int, int]:
         values.get("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", ""),
         "GLOBAL_ANNOUNCEMENT_OPERATOR_IDS",
     )
-    parse_ids(values.get("ACTIVITY_ADMIN_IDS", ""), "ACTIVITY_ADMIN_IDS")
     parse_ids(values.get("NAPCAT_QQ_ID", ""), "NAPCAT_QQ_ID", maximum=1)
     parse_bool(values.get("A_COAST_PROFILE_ENABLED", "true"), "A_COAST_PROFILE_ENABLED")
     parse_bool(values.get("GAME_API_ENABLED", "true"), "GAME_API_ENABLED")
@@ -296,15 +292,6 @@ def validate(path: Path) -> tuple[int, int]:
         raise ValueError("HOURLY_ANNOUNCEMENT_MAX_ATTEMPTS must be an integer between 1 and 5") from exc
     if not 1 <= hourly_attempts <= 5:
         raise ValueError("HOURLY_ANNOUNCEMENT_MAX_ATTEMPTS must be between 1 and 5")
-    activity_method = values.get("QQ_GROUP_ACTIVITY_METHOD", "POST").upper()
-    if activity_method not in {"GET", "POST"}:
-        raise ValueError("QQ_GROUP_ACTIVITY_METHOD must be GET or POST")
-    try:
-        activity_payload = json.loads(values.get("QQ_GROUP_ACTIVITY_PAYLOAD", "{}") or "{}")
-    except json.JSONDecodeError as exc:
-        raise ValueError("QQ_GROUP_ACTIVITY_PAYLOAD must be valid JSON") from exc
-    if not isinstance(activity_payload, dict):
-        raise ValueError("QQ_GROUP_ACTIVITY_PAYLOAD must be a JSON object")
     if not operators:
         raise ValueError("BOT_OPERATOR_IDS must contain at least one operator")
     if parse_bool(

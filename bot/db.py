@@ -12,14 +12,57 @@ from typing import Any, Iterable, Mapping
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_domains (
+    domain_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_key TEXT NOT NULL UNIQUE,
+    mode TEXT NOT NULL CHECK (mode IN ('solo', 'cluster')),
+    name TEXT NOT NULL,
+    alias TEXT NOT NULL DEFAULT '',
+    public_token TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS managed_groups (
     group_id INTEGER PRIMARY KEY,
     group_name TEXT NOT NULL DEFAULT '',
+    alias TEXT NOT NULL DEFAULT '',
+    public_key TEXT NOT NULL DEFAULT '',
+    domain_id INTEGER,
+    joined_at TEXT,
+    disabled_at TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
     stats_enabled INTEGER NOT NULL DEFAULT 0,
     stats_role TEXT NOT NULL DEFAULT '',
     last_member_sync_at TEXT,
     updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_features (
+    group_id INTEGER NOT NULL,
+    feature_key TEXT NOT NULL,
+    configured_enabled INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, feature_key),
+    FOREIGN KEY (group_id) REFERENCES managed_groups(group_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS group_features_enabled_idx
+    ON group_features(feature_key, configured_enabled, group_id);
+
+CREATE TABLE IF NOT EXISTS group_filters (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id),
+    FOREIGN KEY (group_id) REFERENCES managed_groups(group_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS group_members (
@@ -129,6 +172,20 @@ CREATE TABLE IF NOT EXISTS a_coast_daily_ranking_deliveries (
     created_at TEXT NOT NULL,
     sent_at TEXT,
     PRIMARY KEY (day, group_id),
+    FOREIGN KEY (group_id) REFERENCES managed_groups(group_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ranking_deliveries (
+    day TEXT NOT NULL,
+    group_id INTEGER NOT NULL,
+    delivery_type TEXT NOT NULL,
+    domain_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    PRIMARY KEY (day, group_id, delivery_type),
     FOREIGN KEY (group_id) REFERENCES managed_groups(group_id) ON DELETE CASCADE
 );
 
@@ -725,6 +782,7 @@ class Database:
             self._migrate_today_wife_records(connection)
             self._migrate_today_wife_game_tables(connection)
             self._migrate_mini_game_tables(connection)
+            self._migrate_group_domain_columns(connection)
             # Keep activity IDs visually distinct from incidental database IDs.
             # Existing activities retain their IDs; only future inserts start at 500.
             minimum_sequence = ACTIVITY_ID_START - 1
@@ -741,6 +799,40 @@ class Database:
                     "UPDATE sqlite_sequence SET seq=? WHERE name='activities'",
                     (minimum_sequence,),
                 )
+
+    @staticmethod
+    def _migrate_group_domain_columns(connection: sqlite3.Connection) -> None:
+        """Apply the additive v1 group-domain schema in one SQLite transaction."""
+
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(managed_groups)")
+        }
+        additions = {
+            "group_name": "TEXT NOT NULL DEFAULT ''",
+            "alias": "TEXT NOT NULL DEFAULT ''",
+            "public_key": "TEXT NOT NULL DEFAULT ''",
+            "domain_id": "INTEGER",
+            "joined_at": "TEXT",
+            "disabled_at": "TEXT",
+            "enabled": "INTEGER NOT NULL DEFAULT 1",
+            "stats_enabled": "INTEGER NOT NULL DEFAULT 0",
+            "stats_role": "TEXT NOT NULL DEFAULT ''",
+            "last_member_sync_at": "TEXT",
+            "updated_at": "TEXT NOT NULL DEFAULT ''",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                connection.execute(
+                    f"ALTER TABLE managed_groups ADD COLUMN {name} {declaration}"
+                )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS managed_groups_domain_idx "
+            "ON managed_groups(domain_id, enabled)"
+        )
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES (1,?)",
+            (utc_now(),),
+        )
 
     @staticmethod
     def _migrate_today_wife_records(connection: sqlite3.Connection) -> None:
@@ -922,18 +1014,171 @@ class Database:
                     f"ALTER TABLE mini_game_stats ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
                 )
 
-    def configure_groups(self, group_ids: Iterable[int]) -> None:
+    def seed_groups(self, group_ids: Iterable[int]) -> None:
+        """Import configured groups without disabling groups already known to SQLite."""
+
         now = utc_now()
-        ids = tuple(group_ids)
+        ids = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
         with self.connect() as connection:
-            connection.execute("UPDATE managed_groups SET enabled=0, updated_at=?", (now,))
             for group_id in ids:
                 connection.execute(
                     """INSERT INTO managed_groups(group_id, enabled, updated_at)
                        VALUES (?, 1, ?)
-                       ON CONFLICT(group_id) DO UPDATE SET enabled=1, updated_at=excluded.updated_at""",
+                       ON CONFLICT(group_id) DO UPDATE SET
+                           enabled=1,
+                           disabled_at=NULL""",
                     (group_id, now),
                 )
+
+    def configure_groups(self, group_ids: Iterable[int]) -> None:
+        """Backward-compatible alias for the former destructive startup seeding."""
+
+        self.seed_groups(group_ids)
+
+    def ensure_group(
+        self,
+        group_id: int,
+        *,
+        group_name: str = "",
+        joined_at: str | None = None,
+    ) -> bool:
+        """Register or reactivate one group while preserving its prior settings."""
+
+        group_id = int(group_id)
+        now = utc_now()
+        with self.connect() as connection:
+            existed = connection.execute(
+                "SELECT 1 FROM managed_groups WHERE group_id=?", (group_id,)
+            ).fetchone()
+            connection.execute(
+                """INSERT INTO managed_groups
+                       (group_id,group_name,joined_at,enabled,disabled_at,updated_at)
+                   VALUES (?,?,?,?,NULL,?)
+                   ON CONFLICT(group_id) DO UPDATE SET
+                       group_name=CASE WHEN excluded.group_name<>'' THEN excluded.group_name
+                                       ELSE managed_groups.group_name END,
+                       joined_at=COALESCE(managed_groups.joined_at,excluded.joined_at),
+                       enabled=1,
+                       disabled_at=NULL,
+                       updated_at=excluded.updated_at""",
+                (group_id, str(group_name)[:80], joined_at, 1, now),
+            )
+        return existed is None
+
+    def disable_group(self, group_id: int) -> None:
+        now = utc_now()
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE managed_groups
+                   SET enabled=0,disabled_at=?,updated_at=? WHERE group_id=?""",
+                (now, now, int(group_id)),
+            )
+
+    def all_managed_groups(self) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return list(connection.execute("SELECT * FROM managed_groups ORDER BY group_id"))
+
+    def managed_group(
+        self, group_id: int, *, include_disabled: bool = False
+    ) -> sqlite3.Row | None:
+        clause = "" if include_disabled else " AND enabled=1"
+        with self.connect() as connection:
+            return connection.execute(
+                f"SELECT * FROM managed_groups WHERE group_id=?{clause}",
+                (int(group_id),),
+            ).fetchone()
+
+    def set_group_alias(self, group_id: int, alias: str) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE managed_groups SET alias=?,updated_at=? WHERE group_id=?",
+                (str(alias)[:40], utc_now(), int(group_id)),
+            )
+
+    def set_group_joined_at(
+        self, group_id: int, joined_at: str, *, overwrite: bool = False
+    ) -> None:
+        assignment = "joined_at=?" if overwrite else "joined_at=COALESCE(joined_at,?)"
+        with self.connect() as connection:
+            connection.execute(
+                f"UPDATE managed_groups SET {assignment},updated_at=? WHERE group_id=?",
+                (str(joined_at), utc_now(), int(group_id)),
+            )
+
+    def group_features(self, group_id: int) -> dict[str, bool]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT feature_key,configured_enabled FROM group_features WHERE group_id=?",
+                (int(group_id),),
+            )
+        return {
+            str(row["feature_key"]): bool(row["configured_enabled"]) for row in rows
+        }
+
+    def set_group_feature(self, group_id: int, feature_key: str, enabled: bool) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT INTO group_features
+                       (group_id,feature_key,configured_enabled,updated_at)
+                   VALUES (?,?,?,?)
+                   ON CONFLICT(group_id,feature_key) DO UPDATE SET
+                       configured_enabled=excluded.configured_enabled,
+                       updated_at=excluded.updated_at""",
+                (int(group_id), str(feature_key), int(bool(enabled)), utc_now()),
+            )
+
+    def feature_enabled(self, group_id: int, feature_key: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """SELECT f.configured_enabled
+                   FROM group_features AS f
+                   JOIN managed_groups AS g ON g.group_id=f.group_id
+                   WHERE f.group_id=? AND f.feature_key=? AND g.enabled=1""",
+                (int(group_id), str(feature_key)),
+            ).fetchone()
+        return bool(row and row["configured_enabled"])
+
+    def enabled_feature_groups(self, feature_key: str) -> frozenset[int]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """SELECT f.group_id
+                   FROM group_features AS f
+                   JOIN managed_groups AS g ON g.group_id=f.group_id
+                   WHERE f.feature_key=? AND f.configured_enabled=1 AND g.enabled=1""",
+                (str(feature_key),),
+            )
+        return frozenset(int(row["group_id"]) for row in rows)
+
+    def group_filter_contains(self, group_id: int, user_id: int) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM group_filters WHERE group_id=? AND user_id=?",
+                (int(group_id), int(user_id)),
+            ).fetchone()
+        return row is not None
+
+    def add_group_filter(self, group_id: int, user_id: int, created_by: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO group_filters
+                       (group_id,user_id,created_by,created_at) VALUES (?,?,?,?)""",
+                (int(group_id), int(user_id), int(created_by), utc_now()),
+            )
+
+    def remove_group_filter(self, group_id: int, user_id: int) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM group_filters WHERE group_id=? AND user_id=?",
+                (int(group_id), int(user_id)),
+            )
+
+    def group_filter_members(self, group_id: int) -> tuple[int, ...]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT user_id FROM group_filters WHERE group_id=? ORDER BY user_id",
+                (int(group_id),),
+            )
+        return tuple(int(row["user_id"]) for row in rows)
 
     def restrict_message_statistics(self, group_ids: Iterable[int]) -> None:
         """Remove legacy message aggregates outside the fixed statistics scope."""
@@ -1496,6 +1741,93 @@ class Database:
                 )
             )
 
+    def ensure_ranking_delivery(
+        self, day: date, group_id: int, delivery_type: str, domain_id: int
+    ) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO ranking_deliveries
+                   (day,group_id,delivery_type,domain_id,created_at)
+                   VALUES (?,?,?,?,?)""",
+                (
+                    day.isoformat(),
+                    int(group_id),
+                    str(delivery_type),
+                    int(domain_id),
+                    utc_now(),
+                ),
+            )
+        return cursor.rowcount == 1
+
+    def pending_ranking_deliveries(
+        self, day: date, delivery_type: str
+    ) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return list(
+                connection.execute(
+                    """SELECT * FROM ranking_deliveries
+                       WHERE day=? AND delivery_type=? AND status='pending'
+                       ORDER BY group_id""",
+                    (day.isoformat(), str(delivery_type)),
+                )
+            )
+
+    def mark_ranking_delivery_sent(
+        self, day: date, group_id: int, delivery_type: str
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE ranking_deliveries
+                   SET status='sent',sent_at=?,last_error=''
+                   WHERE day=? AND group_id=? AND delivery_type=? AND status='pending'""",
+                (utc_now(), day.isoformat(), int(group_id), str(delivery_type)),
+            )
+
+    def mark_ranking_delivery_uncertain(
+        self, day: date, group_id: int, delivery_type: str, error: str
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE ranking_deliveries
+                   SET attempts=attempts+1,status='uncertain',sent_at=?,last_error=?
+                   WHERE day=? AND group_id=? AND delivery_type=? AND status='pending'""",
+                (
+                    utc_now(),
+                    str(error)[:1000],
+                    day.isoformat(),
+                    int(group_id),
+                    str(delivery_type),
+                ),
+            )
+
+    def mark_ranking_delivery_error(
+        self, day: date, group_id: int, delivery_type: str, error: str
+    ) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """UPDATE ranking_deliveries
+                   SET attempts=attempts+1,last_error=?
+                   WHERE day=? AND group_id=? AND delivery_type=? AND status='pending'""",
+                (
+                    str(error)[:1000],
+                    day.isoformat(),
+                    int(group_id),
+                    str(delivery_type),
+                ),
+            )
+
+    def ranking_deliveries(
+        self, day: date, delivery_type: str
+    ) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            return list(
+                connection.execute(
+                    """SELECT * FROM ranking_deliveries
+                       WHERE day=? AND delivery_type=? ORDER BY group_id""",
+                    (day.isoformat(), str(delivery_type)),
+                )
+            )
+
     def a_coast_profile_state(self, user_id: int, scope_key: str) -> str:
         with self.connect() as connection:
             row = connection.execute(
@@ -1974,53 +2306,6 @@ class Database:
         return [
             {"group_id": group_id, "group_name": names.get(group_id) or str(group_id), "message_count": counts.get(group_id, 0)}
             for group_id in selected
-        ]
-
-    def user_group_message_totals(
-        self, user_id: int, group_ids: Iterable[int], start_day: date | None
-    ) -> list[dict[str, Any]]:
-        """Return a user's non-zero per-group totals in the requested window.
-
-        Results are ordered by contribution, with the configured group order as
-        the stable tiebreaker. This keeps the personal trend useful without
-        showing groups in which the member did not speak during the window.
-        """
-        selected = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
-        if not selected:
-            return []
-        placeholders = ",".join("?" for _ in selected)
-        clauses = [f"group_id IN ({placeholders})", "user_id=?"]
-        parameters: list[Any] = [*selected, int(user_id)]
-        if start_day is not None:
-            clauses.append("day>=?")
-            parameters.append(start_day.isoformat())
-        with self.connect() as connection:
-            names = {
-                int(row["group_id"]): str(row["group_name"] or "")
-                for row in connection.execute(
-                    f"SELECT group_id,group_name FROM managed_groups WHERE group_id IN ({placeholders})",
-                    selected,
-                )
-            }
-            counts = {
-                int(row["group_id"]): int(row["message_count"] or 0)
-                for row in connection.execute(
-                    f"SELECT group_id,SUM(message_count) AS message_count FROM daily_counts "
-                    f"WHERE {' AND '.join(clauses)} GROUP BY group_id",
-                    parameters,
-                )
-            }
-        group_order = {group_id: index for index, group_id in enumerate(selected)}
-        return [
-            {
-                "group_id": group_id,
-                "group_name": names.get(group_id) or str(group_id),
-                "message_count": count,
-            }
-            for group_id, count in sorted(
-                counts.items(), key=lambda item: (-item[1], group_order[item[0]])
-            )
-            if count > 0
         ]
 
     def group_daily_message_totals(

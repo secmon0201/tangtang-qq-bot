@@ -5,10 +5,7 @@ from bot.plugins.scope import (
     is_bot_mentioned,
     is_disabled_game_command,
     is_feature_group,
-    is_activity_command,
     is_managed_group,
-    is_participation_command,
-    is_unmentioned_activity_command,
 )
 from bot.config import settings
 from bot.services.roles import UserRole
@@ -146,46 +143,6 @@ def test_scope_requires_an_explicit_bot_mention():
 
     assert is_bot_mentioned(Event(True))
     assert not is_bot_mentioned(Event(False))
-
-
-def test_participation_commands_keep_the_fixed_reaction():
-    class Event:
-        def __init__(self, text: str):
-            self.text = text
-
-        def get_plaintext(self):
-            return self.text
-
-    assert is_participation_command(Event("报名 500"))
-    assert is_participation_command(Event("报名500"))
-    assert is_participation_command(Event("报名：500"))
-    assert is_participation_command(Event("取消报名#500"))
-    assert is_participation_command(Event("取消报名 500"))
-    assert not is_participation_command(Event("报名名单 500"))
-    assert not is_participation_command(Event("活动详情 500"))
-
-
-def test_activity_commands_allow_compact_forms_only_by_prefix():
-    class Event:
-        def __init__(self, text: str):
-            self.text = text
-
-        def get_plaintext(self):
-            return self.text
-
-    assert is_activity_command(Event("报名517"))
-    assert is_activity_command(Event("活动详情：517"))
-    assert is_activity_command(Event("修改活动 517 | 新标题"))
-    assert not is_activity_command(Event("我要报名517"))
-    assert not is_activity_command(Event("活动大厅很好看"))
-
-
-def test_private_activity_commands_are_allowed_without_a_mention():
-    class PrivateEvent:
-        def get_plaintext(self):
-            return "报名 517"
-
-    assert is_unmentioned_activity_command(PrivateEvent(), ())
 
 
 def test_live_guard_reminder_mentions_a_normal_user_and_the_current_stream(monkeypatch):

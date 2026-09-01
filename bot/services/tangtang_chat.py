@@ -4,9 +4,9 @@ import json
 import random
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -370,7 +370,7 @@ class TangtangConfig:
         if mode not in {"d", "c"}:
             raise ValueError("TANGTANG_MODE must be d or c")
         keyword = _raw(values, "TANGTANG_CALL_KEYWORD", "糖糖")
-        group_order = _ordered_ids(values, "TANGTANG_GROUP_IDS", maximum=10)
+        group_order = _ordered_ids(values, "TANGTANG_GROUP_IDS")
         group_ids = frozenset(group_order)
         group_context_messages = _int(
             values, "TANGTANG_GROUP_CONTEXT_MESSAGES", GROUP_CONTEXT_MESSAGES, 1, 100
@@ -416,7 +416,7 @@ class TangtangConfig:
             "TANGTANG_CALL_IGNORE_PROBABILITY", ignore_probability, 0.0, 1.0
         )
         required_call_reply_group_ids = frozenset(
-            _ordered_ids(values, "TANGTANG_REQUIRED_CALL_REPLY_GROUP_IDS", maximum=10)
+            _ordered_ids(values, "TANGTANG_REQUIRED_CALL_REPLY_GROUP_IDS")
         )
 
         proactive_probability_by_group = group_float(
@@ -541,6 +541,44 @@ class TangtangConfig:
             )
         except KeyError as exc:
             raise ValueError("group is outside the Tangtang scope") from exc
+
+    def with_group_ids(self, group_ids: Iterable[int]) -> "TangtangConfig":
+        """Expand legacy .env seed values to every SQLite-managed QQ group."""
+
+        order = tuple(dict.fromkeys(int(group_id) for group_id in group_ids))
+        return replace(
+            self,
+            group_ids=frozenset(order),
+            group_order=order,
+            call_ignore_probability_by_group={
+                group_id: self.call_ignore_probability_by_group.get(
+                    group_id, self.ignore_probability
+                )
+                for group_id in order
+            },
+            required_call_reply_group_ids=frozenset(
+                group_id for group_id in order if group_id in self.required_call_reply_group_ids
+            ),
+            proactive_enabled=True,
+            proactive_probability_by_group={
+                group_id: self.proactive_probability_by_group.get(
+                    group_id, self.proactive_probability
+                )
+                for group_id in order
+            },
+            proactive_cooldown_seconds_by_group={
+                group_id: self.proactive_cooldown_seconds_by_group.get(
+                    group_id, self.proactive_cooldown_seconds
+                )
+                for group_id in order
+            },
+            proactive_message_interval_by_group={
+                group_id: self.proactive_message_interval_by_group.get(
+                    group_id, self.proactive_message_interval
+                )
+                for group_id in order
+            },
+        )
 
     def call_ignore_probability_for(self, group_id: int) -> float:
         try:

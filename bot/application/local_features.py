@@ -17,7 +17,6 @@ class FeatureRequest:
     action: str
     args: str = ""
     a_coast: bool = False
-    personal_target: str = ""
 
 
 FeatureHandler = Callable[[Any, Bot, Any, FeatureRequest], Awaitable[None]]
@@ -47,18 +46,11 @@ def register_local_feature(*actions: str) -> Callable[[FeatureHandler], FeatureH
 
 
 def request_from_decision(decision: FeatureDecision) -> FeatureRequest:
-    if decision.action in {"group_ranking", "a_coast_ranking"}:
+    if decision.action in {"group_ranking", "cluster_ranking"}:
         return FeatureRequest(
             action="ranking",
             args=_SCOPE_LABELS.get(decision.scope, decision.scope),
-            a_coast=decision.a_coast or decision.action == "a_coast_ranking",
-        )
-    if decision.action == "personal_stats":
-        return FeatureRequest(
-            action="personal_stats",
-            args=_SCOPE_LABELS.get(decision.scope, decision.scope),
-            a_coast=True,
-            personal_target=decision.personal_target,
+            a_coast=decision.a_coast or decision.action == "cluster_ranking",
         )
     return FeatureRequest(action=decision.action, args="", a_coast=False)
 
@@ -69,13 +61,10 @@ def feature_label(request: FeatureRequest) -> str:
         "today_live": "今日直播",
         "tomorrow_live": "明日直播",
         "week_live": "本周直播",
-        "activity_hall": "活动大厅",
     }
     if request.action == "ranking":
-        name = "A海岸发言排行" if request.a_coast else "发言排行"
+        name = "集群发言排行" if request.a_coast else "发言排行"
         return f"{name} {_SCOPE_LABELS.get(request.args, request.args)}"
-    if request.action == "personal_stats":
-        return f"个人发言统计 {_SCOPE_LABELS.get(request.args, request.args)}"
     return labels.get(request.action, "本地功能")
 
 

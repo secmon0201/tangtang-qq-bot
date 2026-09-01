@@ -8,19 +8,19 @@ from nonebot import logger, on_command
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageEvent
 from nonebot.params import CommandArg
 
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.application.command_helpers import text_arg
 from bot.services.a_coast_archive import ACoastArchiveService, bounded_evidence
 from bot.services.a_coast_archive_render import ACoastArchiveImageRenderer
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
-from bot.services.roles import is_super_admin
-from bot.services.runtime import database
+from bot.services.runtime import database, group_domains
 from bot.services.tangtang_lines import profile_already_running, profile_started
 from bot.services.tangtang_profile import ProfileRunGate, TangtangProfileService
 
 
 db = database()
+domains = group_domains()
 service = ACoastArchiveService(db)
 archive_renderer = ACoastArchiveImageRenderer(
     settings.report_dir, settings.report_font_path, timezone_name=settings.timezone
@@ -51,7 +51,7 @@ PROFILE_EVIDENCE_SYSTEM_PROMPT += (
     "表达节奏、活跃时间与复读只作辅助线索。"
 )
 
-TANGTANG_PROFILE_SYSTEM_PROMPT = """你是糖糖，A 海岸里会认真翻聊天记录的嘉心糖观察员。你喜欢嘉然、乃琳、贝拉、心宜、思诺，爱看枝江娱乐企划相关内容，也会玩《鸣潮》。你的第一人称只用“糖糖”。你不是任何已有角色的扮演或复刻。
+TANGTANG_PROFILE_SYSTEM_PROMPT = """你是糖糖，会认真翻群聊记录的嘉心糖观察员。你喜欢嘉然、乃琳、贝拉、心宜、思诺，爱看枝江娱乐企划相关内容，也会玩《鸣潮》。你的第一人称只用“糖糖”。你不是任何已有角色的扮演或复刻。
 
 【证据边界】
 只基于给出的本地统计、既有画像和发言证据判断。先区分稳定高频特征、偶发线索与证据不足；不猜测现实身份、健康、政治、宗教、性取向或其他敏感属性，不编造群内事件，不逐条复述原文。你写的是聊天里的样子，不是现实人格诊断。
@@ -71,10 +71,6 @@ TANGTANG_PROFILE_SYSTEM_PROMPT = """你是糖糖，A 海岸里会认真翻聊天
 中间写 1 至 3 段重点观察，以话题、兴趣和有依据的点评为主；每段只讲一个重点。表达、互动、复读、时间只能作为必要旁证，最多一两句。
 最后一段必须以“糖糖总评：”开头，用 1 至 2 句、最多 3 句回扣开篇并收束全文；不得在最后总评后继续新增内容。
 """
-
-
-def private_super_admin(event: MessageEvent) -> bool:
-    return not isinstance(event, GroupMessageEvent) and is_super_admin(int(event.user_id))
 
 
 def parse_user_id(value: str) -> int | None:
@@ -106,9 +102,29 @@ def profile_target_from_args(args: Message) -> int | None:
 
 
 def can_request_profile(event: MessageEvent) -> bool:
-    if isinstance(event, GroupMessageEvent):
-        return int(event.group_id) in A_COAST_GROUP_IDS
-    return is_super_admin(int(event.user_id))
+    return isinstance(event, GroupMessageEvent) and domains.domain_for_group(
+        int(event.group_id)
+    ) is not None
+
+
+def archive_scope(event: MessageEvent) -> tuple[int, ...]:
+    if not isinstance(event, GroupMessageEvent):
+        return ()
+    return (int(event.group_id),)
+
+
+def profile_scope(event: MessageEvent) -> tuple[tuple[int, ...], str]:
+    if not isinstance(event, GroupMessageEvent):
+        return (), ""
+    domain = domains.domain_for_group(int(event.group_id))
+    if domain is None:
+        return (), ""
+    scope = domains.domain_groups(domain.domain_id)
+    if domain.domain_key == "cluster:a-coast":
+        return scope, "a_coast"
+    if domain.mode == "solo":
+        return scope, f"group:{int(event.group_id)}"
+    return scope, domain.domain_key
 
 
 def group_label(group_id: int, group_name: str) -> str:
@@ -137,12 +153,13 @@ async def finish_message_rows(
     user_id: int,
     rows: list[Any],
     page: int,
+    scope: tuple[int, ...],
     keyword: str = "",
 ) -> None:
     """Return archive list results as an image, retaining text as an outage fallback."""
     try:
         avatar_paths = await archive_avatar_service.prefetch([dict(row) for row in rows])
-        total_pages = service.total_pages(user_id, A_COAST_GROUP_IDS, keyword)
+        total_pages = service.total_pages(user_id, scope, keyword)
         card = archive_renderer.render(user_id, rows, page, keyword, avatar_paths, total_pages)
     except Exception:
         logger.exception("A海岸发言档案图片渲染失败")
@@ -154,14 +171,16 @@ async def finish_profile_image(
     matcher: Any,
     user_id: int,
     profile_text: str,
+    scope: tuple[int, ...],
+    scope_key: str,
     *,
     include_ai_profile: bool,
 ) -> None:
     """Render the persistent A Coast profile as an adaptive long image."""
     try:
-        rows = service.all_records(user_id, A_COAST_GROUP_IDS)
+        rows = service.all_records(user_id, scope)
         user = db.user_profiles((user_id,)).get(int(user_id), {})
-        nickname = str(user.get("nickname") or "") or "A海岸用户"
+        nickname = str(user.get("nickname") or "") or "群成员"
         avatar_url = str(user.get("avatar_url") or "")
         avatar_paths = await archive_avatar_service.prefetch(
             [{"user_id": user_id, "avatar_url": avatar_url}]
@@ -169,7 +188,7 @@ async def finish_profile_image(
         card = archive_renderer.render_profile(
             user_id,
             nickname,
-            db.a_coast_profile_updated_at(user_id, "a_coast"),
+            db.a_coast_profile_updated_at(user_id, scope_key),
             profile_text,
             rows,
             avatar_paths.get(user_id),
@@ -224,17 +243,14 @@ def profile_chunks(rows: list[Any], maximum_chars: int = 12000) -> list[str]:
     return chunks
 
 
-def profile_scope_key(scope: tuple[int, ...]) -> str:
-    return "a_coast" if tuple(scope) == A_COAST_GROUP_IDS else f"group:{scope[0]}"
-
-
-async def incremental_ai_profile_text(user_id: int, scope: tuple[int, ...]) -> str:
+async def incremental_ai_profile_text(
+    user_id: int, scope: tuple[int, ...], scope_key: str
+) -> str:
     config = profile_service.config()
     if not config.enabled:
         return "AI 画像服务未启用。"
-    scope_key = profile_scope_key(scope)
     previous = db.a_coast_profile_state(user_id, scope_key)
-    if scope_key == "a_coast":
+    if len(scope) > 1 and not previous:
         group_states = db.a_coast_group_profile_states(user_id, scope)
         inherited = "\n".join(str(row["profile_text"] or "") for row in group_states)
         if inherited:
@@ -392,16 +408,6 @@ async def incremental_ai_profile_text(user_id: int, scope: tuple[int, ...]) -> s
     return profile
 
 
-async def reject_non_private_or_non_admin(matcher: Any, event: MessageEvent) -> bool:
-    if isinstance(event, GroupMessageEvent):
-        await matcher.finish("发言档案仅限超级管理员私聊使用。")
-        return True
-    if not is_super_admin(int(event.user_id)):
-        await matcher.finish("只有超级管理员可以使用发言档案。")
-        return True
-    return False
-
-
 archive_records = on_command("发言记录", priority=5, block=True)
 archive_search = on_command("发言搜索", priority=5, block=True)
 archive_profile = on_command("发言画像", aliases={"画像"}, priority=5, block=True)
@@ -409,8 +415,9 @@ archive_profile = on_command("发言画像", aliases={"画像"}, priority=5, blo
 
 @archive_records.handle()
 async def _(event: MessageEvent, args=CommandArg()):
-    if await reject_non_private_or_non_admin(archive_records, event):
-        return
+    scope = archive_scope(event)
+    if not scope:
+        await archive_records.finish("发言记录只能在目标 QQ 群内查询。")
     tokens = text_arg(args).split()
     if len(tokens) not in {1, 2}:
         await archive_records.finish("用法：#发言记录 QQ号 [页码]")
@@ -419,14 +426,19 @@ async def _(event: MessageEvent, args=CommandArg()):
     if user_id is None or page < 1:
         await archive_records.finish("QQ号或页码无效。")
     await finish_message_rows(
-        archive_records, user_id, service.records(user_id, A_COAST_GROUP_IDS, page=page), page
+        archive_records,
+        user_id,
+        service.records(user_id, scope, page=page),
+        page,
+        scope,
     )
 
 
 @archive_search.handle()
 async def _(event: MessageEvent, args=CommandArg()):
-    if await reject_non_private_or_non_admin(archive_search, event):
-        return
+    scope = archive_scope(event)
+    if not scope:
+        await archive_search.finish("发言搜索只能在目标 QQ 群内查询。")
     tokens = text_arg(args).split()
     if len(tokens) < 2:
         await archive_search.finish("用法：#发言搜索 QQ号 关键词 [页码]")
@@ -440,8 +452,9 @@ async def _(event: MessageEvent, args=CommandArg()):
     await finish_message_rows(
         archive_search,
         user_id,
-        service.records(user_id, A_COAST_GROUP_IDS, keyword=keyword, page=page),
+        service.records(user_id, scope, keyword=keyword, page=page),
         page,
+        scope,
         keyword,
     )
 
@@ -450,15 +463,14 @@ async def _(event: MessageEvent, args=CommandArg()):
 async def _(event: MessageEvent, args=CommandArg()):
     if not settings.a_coast_profile_enabled:
         await archive_profile.finish("画像功能已临时关闭，可稍后由管理员重新开启。")
-    if not can_request_profile(event):
-        await archive_profile.finish("画像仅限 A海岸群内调用；私聊仅超级管理员可用。")
-    if not isinstance(event, GroupMessageEvent) and any(segment.type == "at" for segment in args):
-        await archive_profile.finish("私聊画像请使用 QQ号。")
+    scope, scope_key = profile_scope(event)
+    if not can_request_profile(event) or not scope or not scope_key:
+        await archive_profile.finish("发言画像只能在目标 QQ 群内查询。")
     user_id = profile_target_from_args(args)
     if user_id is None:
         await archive_profile.finish("用法：#发言画像 QQ号 或 #发言画像 @用户")
 
-    message_count = service.message_count(user_id, A_COAST_GROUP_IDS)
+    message_count = service.message_count(user_id, scope)
     if message_count == 0:
         await archive_profile.finish("该用户暂无已存档发言。")
     if not has_enough_profile_messages(message_count):
@@ -467,14 +479,16 @@ async def _(event: MessageEvent, args=CommandArg()):
             "请至少发言超过 100 条，再进行画像绘制。"
         )
 
-    previous = db.a_coast_profile_state(user_id, "a_coast")
-    pending = service.unconsumed(user_id, A_COAST_GROUP_IDS)
+    previous = db.a_coast_profile_state(user_id, scope_key)
+    pending = service.unconsumed(user_id, scope)
     profile_config = profile_service.config()
     if previous and not pending:
         await finish_profile_image(
             archive_profile,
             user_id,
             previous,
+            scope,
+            scope_key,
             include_ai_profile=profile_config.enabled,
         )
         return
@@ -505,7 +519,7 @@ async def _(event: MessageEvent, args=CommandArg()):
     )
     try:
         await archive_profile.send(profile_started())
-        result = await incremental_ai_profile_text(user_id, A_COAST_GROUP_IDS)
+        result = await incremental_ai_profile_text(user_id, scope, scope_key)
     except Exception as exc:
         logger.warning("A海岸画像处理失败 user_id={}: {}", user_id, exc)
         await archive_profile.finish(f"画像分析失败：{type(exc).__name__}。本次原文未被标记为已使用。")
@@ -522,5 +536,7 @@ async def _(event: MessageEvent, args=CommandArg()):
         archive_profile,
         user_id,
         result,
+        scope,
+        scope_key,
         include_ai_profile=profile_config.enabled,
     )

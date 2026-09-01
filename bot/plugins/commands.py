@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import re
 from math import ceil
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
+from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse
 from nonebot import get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
@@ -25,15 +26,13 @@ from bot.application.admin_ui import (
 )
 from bot.application.local_features import FeatureRequest, register_local_feature
 from bot.application.command_helpers import (
-    bounded_integer,
     current_group,
     is_operator,
-    percent_value,
     text_arg,
     user_id,
     valid_qq_id,
 )
-from bot.config import settings
+from bot.config import A_COAST_GROUP_IDS, settings
 from bot.services.duplicate import (
     DUPLICATE_MODE,
     DUPLICATE_MODE_ALL,
@@ -52,17 +51,18 @@ from bot.services.operator_web import (
     operator_web_url,
 )
 from bot.services.community_web import (
-    ALL_GROUP_KEY,
+    DOMAIN_GROUP_KEY,
     CommunityWebRenderer,
     help_payload,
     page_html as community_page_html,
     public_help_categories,
+    public_domain_ranking_url,
     public_web_url,
     ranking_payload,
 )
 from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
-from bot.services.runtime import database, passive_settings
+from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.stats import StatsService
 from bot.services.whitelist_menu import (
     build_whitelist_menu_text,
@@ -76,6 +76,7 @@ duplicate_service = DuplicateService(db)
 stats_service = StatsService(
     db,
     realtime_enabled=settings.stats_realtime_enabled,
+    group_provider=group_domains().all_group_ids,
 )
 avatar_service = AvatarService(
     settings.avatar_cache_dir,
@@ -182,10 +183,6 @@ def user_help_text() -> str:
         f"{prefix}帮助", f"{prefix}帮助文字",
         f"{prefix}枝江直播 [状态]", f"{prefix}直播日程 [状态]",
         f"{prefix}今日直播", f"{prefix}明日直播", f"{prefix}本周直播",
-        f"{prefix}活动帮助", f"{prefix}活动大厅", f"{prefix}活动详情 <活动ID>",
-        f"{prefix}查看名单 <活动ID>", f"{prefix}获奖名单 <活动ID>",
-        f"{prefix}查看获奖名单 <活动ID>", f"{prefix}报名 <活动ID>",
-        f"{prefix}取消报名 <活动ID>", f"{prefix}我的活动",
         f"{prefix}游戏列表", f"{prefix}小游戏列表", f"{prefix}装填", f"{prefix}开枪",
         f"{prefix}装弹", f"{prefix}丢给 @成员", f"{prefix}装弹成语 [专业/娱乐] [60-600]",
         f"四字词 {prefix}丢给 @成员", f"{prefix}骰子", f"{prefix}猜数", f"{prefix}猜 <0-999>",
@@ -199,10 +196,8 @@ def user_help_text() -> str:
     if settings.stats_realtime_enabled:
         commands.extend((
             f"{prefix}发言排行 [日/周/月/总]", f"{prefix}发言榜 [日/周/月/总]", f"{prefix}统计 [日/周/月/总]",
-            f"{prefix}A海岸发言排行 [日/周/月/总]", f"{prefix}A海岸发言榜 [日/周/月/总]", f"{prefix}A海岸统计 [日/周/月/总]",
-            f"{prefix}a海岸发言排行 [日/周/月/总]", f"{prefix}a海岸发言榜 [日/周/月/总]", f"{prefix}a海岸统计 [日/周/月/总]",
-            f"{prefix}个人发言统计 [QQ号|@成员] [日/周/月/总]", f"{prefix}个人发言榜 [QQ号|@成员] [日/周/月/总]", f"{prefix}个人统计 [QQ号|@成员] [日/周/月/总]",
-            f"{prefix}我的发言统计 [日/周/月/总]", f"{prefix}我的发言榜 [日/周/月/总]", f"{prefix}我的统计 [日/周/月/总]",
+            f"{prefix}集群发言排行 [日/周/月/总]", f"{prefix}集群发言榜 [日/周/月/总]", f"{prefix}集群统计 [日/周/月/总]",
+            f"{prefix}发言记录 <QQ号|@成员> [页码]", f"{prefix}发言搜索 <QQ号|@成员> <关键词> [页码]",
             f"{prefix}发言画像 <QQ号|@成员>", f"{prefix}画像 <QQ号|@成员>",
         ))
     return "\n".join(commands)
@@ -236,14 +231,25 @@ async def _():
     await send_user_help_image(user_help)
 
 
-@driver.server_app.get("/community/help/", response_class=HTMLResponse)
+@driver.server_app.get("/help/", response_class=HTMLResponse)
 async def community_help_page() -> HTMLResponse:
     return HTMLResponse(community_page_html("help"))
 
 
-@driver.server_app.get("/community/help/api")
+@driver.server_app.get("/help/api")
 async def community_help_api() -> dict[str, Any]:
     return help_payload()
+
+
+@driver.server_app.api_route(
+    "/community", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+)
+@driver.server_app.api_route(
+    "/community/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+)
+async def retired_community_route(path: str = "") -> None:
+    del path
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
 user_help_text_command = on_command("帮助文字", priority=5, block=True)
@@ -306,38 +312,69 @@ async def build_community_ranking_payload(
     group_key: str,
     *,
     rows: list[dict[str, Any]] | None = None,
+    domain=None,
+    selected_group_id: int | None = None,
 ) -> dict[str, Any]:
-    """Restore the ranking's avatar and comparison-series contract for web and QQ."""
+    """Build one current-group or current-cluster ranking card."""
     if scope not in {value[0] for value in RANKING_SCOPES.values()}:
         raise ValueError("scope 仅支持 day、week、month、total")
-    if group_key == ALL_GROUP_KEY:
-        group_id = None
-    else:
-        try:
-            group_id = int(group_key)
-        except ValueError as exc:
-            raise ValueError("group 不受支持") from exc
-        if group_id not in stats_service.enabled_groups():
-            raise ValueError("group 不受支持")
+    domain = domain or group_domains().domain_for_group(int(selected_group_id or 0))
+    if domain is None:
+        domain = group_domains().domain_for_group(A_COAST_GROUP_IDS[0])
+    if domain is None:
+        raise ValueError("群域不可用")
+    domain_group_ids = group_domains().domain_groups(domain.domain_id)
+    group_id = int(selected_group_id) if selected_group_id is not None else None
+    ranking_group_ids = (group_id,) if group_id is not None else domain_group_ids
 
     ranking_rows = (
-        rows if rows is not None else user_report_rows(stats_service.ranking_rows(scope, group_id))
+        rows
+        if rows is not None
+        else user_report_rows(stats_service.ranking_rows_for_groups(scope, ranking_group_ids))
     )
     avatar_paths = await cached_avatar_paths(ranking_rows)
-    group_totals = stats_service.group_totals(scope) if group_id is None else []
+    group_totals = (
+        stats_service.group_totals_for_groups(scope, domain_group_ids)
+        if group_id is None and domain.mode == "cluster"
+        else []
+    )
     group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
     daily_totals = (
         stats_service.recent_group_daily_totals(group_id) if group_id is not None else []
     )
+    labels = {
+        member_group_id: group_domains().display_name(member_group_id)
+        for member_group_id in domain_group_ids
+    }
+    options = [{"key": DOMAIN_GROUP_KEY, "label": domain.alias or domain.name}]
+    if domain.mode == "cluster":
+        options.extend(
+            {
+                "key": group_domains().public_group_key(member_group_id) or "",
+                "label": labels[member_group_id],
+            }
+            for member_group_id in domain_group_ids
+        )
     return ranking_payload(
         stats_service,
         scope,
-        group_key,
+        DOMAIN_GROUP_KEY if group_id is None else group_key,
         rows=ranking_rows,
         avatar_paths=avatar_paths,
         group_totals=group_totals,
         group_avatar_paths=group_avatars,
         daily_totals=daily_totals,
+        selected_group_id=group_id,
+        group_label_override=(
+            labels[group_id] if group_id is not None else (domain.alias or domain.name)
+        ),
+        group_labels=labels,
+        group_options=options,
+        history_since=(
+            group_domains().joined_date(group_id)
+            if group_id is not None
+            else group_domains().domain_joined_date(domain.domain_id)
+        ),
     )
 
 
@@ -584,7 +621,6 @@ async def handle_duplicate_command(
     await send_duplicate_pages(bot, event, matcher, page_messages, page_paths)
 
 
-operator_web = on_command("运营网页", aliases={"运营面板"}, priority=5, block=True)
 duplicate_web = on_command("查重网页", aliases={"查重面板", "白名单网页"}, priority=5, block=True)
 
 
@@ -599,11 +635,6 @@ async def _open_operator_web(matcher: object, event: MessageEvent, kind: str, la
         f"{label}（链接仅限本次操作，15 分钟内有效）：\n"
         + operator_web_url(base_url, kind, session.token)
     )  # type: ignore[attr-defined]
-
-
-@operator_web.handle()
-async def _(event: MessageEvent):
-    await _open_operator_web(operator_web, event, "operations", "运营配置页")
 
 
 @duplicate_web.handle()
@@ -668,317 +699,10 @@ async def _(bot: Bot, event: MessageEvent, args=CommandArg()):
     await handle_duplicate_command(duplicate, bot, event, args, DUPLICATE_MODE_SOURCE, "查重2")
 
 
-async def require_passive_settings_operator(matcher: object, event: MessageEvent) -> None:
-    if not is_operator(event):
-        await matcher.finish("没有维护被动互动参数的权限。")  # type: ignore[attr-defined]
-
-
-def passive_status_text(group_id: int) -> str:
-    current = passive.for_group(group_id)
-    return (
-        f"随机表情：{current.reaction_probability * 100:g}% 命中，"
-        f"每群冷却 {current.reaction_cooldown_seconds} 秒。\n"
-        f"随机复读：{current.repeat_probability * 100:g}% 命中，"
-        f"冷却 {current.repeat_cooldown_seconds // 60} 分钟，"
-        f"消息间隔 {current.repeat_message_interval} 条。\n"
-        f"三连复读：{'已开启' if current.triple_repeat_enabled else '已关闭'}，"
-        f"命中概率 {current.triple_repeat_probability * 100:g}%，"
-        "连续三条相同文本后按概率额外复读一次，不占用随机复读冷却。\n"
-        "建议最少：表情冷却 10 秒；复读冷却 15 分钟、消息间隔 50 条。"
-    )
-
-
-def all_passive_status_text() -> str:
-    rows = [passive_status_text(group_id) for group_id in sorted(passive.group_ids)]
-    return "\n\n".join(rows) if rows else "当前没有被动互动群。"
-
-
 def group_scope_detail(group_id: int) -> str:
-    features = (
-        ("duplicate", "查重"),
-        ("game", "游戏"),
-        ("game_api", "游戏接口"),
-        ("activity", "活动"),
-        ("passive", "被动互动"),
-        ("hourly", "整点报时"),
-    )
     return "｜".join(
-        f"{label}：{'开' if group_id in passive.groups(feature) else '关'}"
-        for feature, label in features
-    )
-
-
-async def finish_passive_group_feedback(
-    matcher: object,
-    title: str,
-    subtitle: str,
-    group_ids: Iterable[int],
-) -> None:
-    ids = tuple(group_ids)
-    rows = await group_card_rows(
-        ids,
-        {group_id: passive_status_text(group_id) for group_id in ids},
-        {group_id: "被动互动" for group_id in ids},
-    )
-    await finish_group_overview(matcher, title, subtitle, rows)
-
-
-def passive_target_group(tokens: list[str]) -> int | None:
-    if not tokens:
-        return None
-    group_id = valid_qq_id(tokens[0])
-    return group_id if group_id in passive.group_ids else None
-
-
-reaction_probability = on_command("表情命中率", priority=5, block=True)
-
-
-@reaction_probability.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(reaction_probability, event)
-    tokens = text_arg(args).split()
-    group_id = passive_target_group(tokens)
-    value = percent_value(tokens[1], 0.5) if len(tokens) == 2 else None
-    if group_id is None or value is None:
-        await reaction_probability.finish("用法：#表情命中率 QQ群号 0-50%")
-    passive.set_reaction_probability(group_id, value)
-    db.audit(user_id(event), "reaction_probability_update", current_group(event), detail=f"group={group_id};value={value}")
-    await finish_passive_group_feedback(reaction_probability, "随机表情已更新", f"仅群 {group_id} 命中率已更新", (group_id,))
-
-
-reaction_cooldown = on_command("表情冷却", priority=5, block=True)
-
-
-@reaction_cooldown.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(reaction_cooldown, event)
-    tokens = text_arg(args).split()
-    group_id = passive_target_group(tokens)
-    value = bounded_integer(tokens[1], 0, 3600) if len(tokens) == 2 else None
-    if group_id is None or value is None:
-        await reaction_cooldown.finish("用法：#表情冷却 QQ群号 0-3600（秒；建议最少 10 秒）")
-    passive.set_reaction_cooldown_seconds(group_id, value)
-    db.audit(user_id(event), "reaction_cooldown_update", current_group(event), detail=f"group={group_id};value={value}")
-    await finish_passive_group_feedback(reaction_cooldown, "随机表情已更新", f"仅群 {group_id} 冷却已更新", (group_id,))
-
-
-repeat_probability = on_command("复读命中率", priority=5, block=True)
-
-
-@repeat_probability.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(repeat_probability, event)
-    tokens = text_arg(args).split()
-    group_id = passive_target_group(tokens)
-    value = percent_value(tokens[1], 0.1) if len(tokens) == 2 else None
-    if group_id is None or value is None:
-        await repeat_probability.finish("用法：#复读命中率 QQ群号 0-10%")
-    passive.set_repeat_probability(group_id, value)
-    db.audit(user_id(event), "repeat_probability_update", current_group(event), detail=f"group={group_id};value={value}")
-    await finish_passive_group_feedback(repeat_probability, "随机复读已更新", f"仅群 {group_id} 命中率已更新", (group_id,))
-
-
-repeat_cooldown = on_command("复读冷却", priority=5, block=True)
-
-
-@repeat_cooldown.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(repeat_cooldown, event)
-    tokens = text_arg(args).split()
-    group_id = passive_target_group(tokens)
-    minutes = bounded_integer(tokens[1], 0, 1440) if len(tokens) == 2 else None
-    if group_id is None or minutes is None:
-        await repeat_cooldown.finish("用法：#复读冷却 QQ群号 0-1440（分钟；建议最少 15 分钟）")
-    passive.set_repeat_cooldown_seconds(group_id, minutes * 60)
-    db.audit(user_id(event), "repeat_cooldown_update", current_group(event), detail=f"group={group_id};value={minutes * 60}")
-    await finish_passive_group_feedback(repeat_cooldown, "随机复读已更新", f"仅群 {group_id} 冷却已更新", (group_id,))
-
-
-repeat_interval = on_command("复读间隔", priority=5, block=True)
-
-
-@repeat_interval.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(repeat_interval, event)
-    tokens = text_arg(args).split()
-    group_id = passive_target_group(tokens)
-    value = bounded_integer(tokens[1], 0, 10000) if len(tokens) == 2 else None
-    if group_id is None or value is None:
-        await repeat_interval.finish("用法：#复读间隔 QQ群号 0-10000（条消息；建议最少 50 条）")
-    passive.set_repeat_message_interval(group_id, value)
-    db.audit(user_id(event), "repeat_interval_update", current_group(event), detail=f"group={group_id};value={value}")
-    await finish_passive_group_feedback(repeat_interval, "随机复读已更新", f"仅群 {group_id} 消息间隔已更新", (group_id,))
-
-
-triple_repeat = on_command("三连复读", priority=5, block=True)
-
-
-@triple_repeat.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(triple_repeat, event)
-    tokens = text_arg(args).split()
-    if not tokens or tokens[0] in {"列表", "list"}:
-        rows = await group_card_rows(
-            passive.group_ids,
-            {
-                group_id: (
-                    f"三连复读：{'已开启' if config.triple_repeat_enabled else '已关闭'}，"
-                    f"命中概率 {config.triple_repeat_probability * 100:g}%"
-                )
-                for group_id, config in passive.group_settings()
-            },
-            {group_id: "三连复读" for group_id in passive.group_ids},
-        )
-        await finish_group_overview(triple_repeat, "三连复读", "各被动互动群的独立开关和命中概率", rows)
-    group_id = passive_target_group(tokens)
-    action = tokens[1].lower() if len(tokens) == 2 else ""
-    if group_id is None:
-        await triple_repeat.finish("用法：#三连复读 QQ群号 开启|关闭|状态|概率 0-100%")
-    if len(tokens) == 3 and action in {"概率", "probability"}:
-        value = percent_value(tokens[2], 1.0)
-        if value is None:
-            await triple_repeat.finish("用法：#三连复读 QQ群号 概率 0-100%")
-        passive.set_triple_repeat_probability(group_id, value)
-        db.audit(
-            user_id(event),
-            "triple_repeat_probability_update",
-            current_group(event),
-            detail=f"group={group_id};value={value}",
-        )
-        await finish_passive_group_feedback(
-            triple_repeat,
-            "三连复读已更新",
-            f"群 {group_id} 命中概率已更新为 {value * 100:g}%",
-            (group_id,),
-        )
-        return
-    if action not in {"开启", "关闭", "状态", "on", "off", "status"}:
-        await triple_repeat.finish("用法：#三连复读 QQ群号 开启|关闭|状态|概率 0-100%")
-    if action in {"状态", "status"}:
-        await finish_passive_group_feedback(
-            triple_repeat,
-            "三连复读",
-            (
-                f"群 {group_id}"
-                f"{'已开启' if passive.for_group(group_id).triple_repeat_enabled else '已关闭'}，"
-                f"命中概率 {passive.for_group(group_id).triple_repeat_probability * 100:g}%"
-            ),
-            (group_id,),
-        )
-        return
-    enabled = action in {"开启", "on"}
-    passive.set_triple_repeat_enabled(group_id, enabled)
-    db.audit(user_id(event), "triple_repeat_update", current_group(event), detail=f"group={group_id};value={str(enabled).lower()}")
-    await finish_passive_group_feedback(triple_repeat, "三连复读已更新", f"群 {group_id}{'已开启' if enabled else '已关闭'}", (group_id,))
-
-
-passive_status = on_command("被动互动状态", priority=5, block=True)
-
-
-@passive_status.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(passive_status, event)
-    tokens = text_arg(args).split()
-    if len(tokens) > 1 or (tokens and (group_id := passive_target_group(tokens)) is None):
-        await passive_status.finish("用法：#被动互动状态 [QQ群号]")
-    group_ids = (group_id,) if tokens else passive.group_ids
-    await finish_passive_group_feedback(passive_status, "被动互动状态", "当前生效的按群持久化配置", group_ids)
-
-
-passive_group = on_command("被动互动群", priority=5, block=True)
-
-
-@passive_group.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(passive_group, event)
-    tokens = text_arg(args).split()
-    if not tokens or tokens[0] in {"列表", "list"}:
-        groups = sorted(passive.group_ids)
-        rows = await group_card_rows(
-            groups,
-            {group_id: passive_status_text(group_id) for group_id in groups},
-            {group_id: "被动互动" for group_id in groups},
-        )
-        await finish_group_overview(passive_group, "被动互动群", f"共 {len(groups)} 个群", rows)
-    if len(tokens) != 2 or (group_id := valid_qq_id(tokens[1])) is None:
-        await passive_group.finish("用法：#被动互动群 添加|移除|列表 QQ群号")
-    action = tokens[0].lower()
-    if action in {"添加", "add"}:
-        try:
-            passive.add_group(group_id)
-        except ValueError:
-            await passive_group.finish("该群未在机器人管理范围内，不能加入被动互动群。")
-        db.audit(user_id(event), "passive_group_add", current_group(event), detail=str(group_id))
-        await finish_passive_group_feedback(passive_group, "被动互动群已更新", f"已加入群 {group_id}", (group_id,))
-    if action in {"移除", "删除", "remove", "delete"}:
-        passive.remove_group(group_id)
-        db.audit(user_id(event), "passive_group_remove", current_group(event), detail=str(group_id))
-        rows = await group_card_rows((group_id,), {group_id: "已移出被动互动范围。"}, {group_id: "已移除"})
-        await finish_group_overview(passive_group, "被动互动群已更新", f"已移除群 {group_id}", rows)
-    await passive_group.finish("用法：#被动互动群 添加|移除|列表 QQ群号")
-
-
-FEATURE_SCOPE_ALIASES = {
-    "查重": ("duplicate", "查重"),
-    "游戏": ("game", "游戏"),
-    "游戏接口": ("game_api", "游戏接口"),
-    "今日老婆": ("today_wife", "今日老婆"),
-    "缘分": ("today_wife", "今日老婆"),
-    "活动": ("activity", "活动"),
-    "被动": ("passive", "被动互动"),
-    "被动互动": ("passive", "被动互动"),
-    "整点报时": ("hourly", "整点报时"),
-    "整点": ("hourly", "整点报时"),
-}
-
-
-feature_scope = on_command("功能范围", priority=5, block=True)
-
-
-@feature_scope.handle()
-async def _(event: MessageEvent, args=CommandArg()):
-    await require_passive_settings_operator(feature_scope, event)
-    tokens = text_arg(args).split()
-    if not tokens or tokens[0] in {"列表", "list"}:
-        group_ids = tuple(settings.managed_group_ids)
-        rows = await group_card_rows(
-            group_ids,
-            {group_id: group_scope_detail(group_id) for group_id in group_ids},
-            {group_id: "功能范围" for group_id in group_ids},
-        )
-        await finish_group_overview(feature_scope, "功能范围", "已持久化的业务范围", rows)
-    if len(tokens) != 3 or tokens[0] not in FEATURE_SCOPE_ALIASES:
-        await feature_scope.finish(
-            "用法：#功能范围 查重|游戏|游戏接口|今日老婆|缘分|活动|被动|整点报时 添加|移除 QQ群号"
-        )
-    feature, label = FEATURE_SCOPE_ALIASES[tokens[0]]
-    action = tokens[1].lower()
-    group_id = valid_qq_id(tokens[2])
-    if group_id is None:
-        await feature_scope.finish("QQ群号必须是数字。")
-    if action in {"添加", "add"}:
-        try:
-            groups = passive.add_feature_group(feature, group_id)
-        except ValueError:
-            await feature_scope.finish("该群未在机器人管理范围内，不能加入功能范围。")
-        db.audit(user_id(event), "feature_scope_add", current_group(event), f"feature={feature};group={group_id}")
-        rows = await group_card_rows(
-            groups,
-            {item: group_scope_detail(item) for item in groups},
-            {item: label for item in groups},
-        )
-        await finish_group_overview(feature_scope, "功能范围已更新", f"{label}功能已加入群 {group_id}", rows)
-    if action in {"移除", "删除", "remove", "delete"}:
-        groups = passive.remove_feature_group(feature, group_id)
-        db.audit(user_id(event), "feature_scope_remove", current_group(event), f"feature={feature};group={group_id}")
-        rows = await group_card_rows(
-            (group_id,),
-            {group_id: group_scope_detail(group_id)},
-            {group_id: f"已移除{label}"},
-        )
-        await finish_group_overview(feature_scope, "功能范围已更新", f"{label}功能已移除群 {group_id}", rows)
-    await feature_scope.finish(
-        "用法：#功能范围 查重|游戏|游戏接口|今日老婆|缘分|活动|被动|整点报时 添加|移除 QQ群号"
+        f"{row['label']}：{'开' if row['effective_enabled'] else '关'}"
+        for row in group_domains().feature_rows(group_id)
     )
 
 
@@ -1404,54 +1128,11 @@ RANKING_SCOPES = {
     "总": ("total", "总"), "总榜": ("total", "总"), "全部": ("total", "总"),
 }
 RANKING_TITLES = {
-    "day": ("本群今日灌水王", "A海岸今日灌水王"),
-    "week": ("本群本周灌水王", "A海岸本周灌水王"),
-    "month": ("本群本月灌水王", "A海岸本月灌水王"),
-    "total": ("本群传奇灌水王", "A海岸传奇灌水王"),
+    "day": "今日发言榜",
+    "week": "本周发言榜",
+    "month": "本月发言榜",
+    "total": "累计发言榜",
 }
-RANKING_SUBTITLE = "前 100 名｜按发言数降序、QQ 号升序｜记录自 2026-07-28 起"
-PERSONAL_STATS_TITLES = {
-    "day": "今日个人发言统计",
-    "week": "本周个人发言统计",
-    "month": "本月个人发言统计",
-    "total": "个人累计发言统计",
-}
-
-
-def personal_stats_query(args: Message, default_user_id: int) -> tuple[int, str] | None:
-    """Parse an optional QQ/@ target followed by an optional ranking scope."""
-    mentions: list[MessageSegment] = []
-    text_parts: list[str] = []
-    for segment in args:
-        if segment.type == "at":
-            mentions.append(segment)
-        elif segment.type == "text":
-            text_parts.append(str(segment.data.get("text", "")))
-        else:
-            return None
-    tokens = "".join(text_parts).split()
-    if mentions:
-        if len(mentions) != 1 or len(tokens) > 1:
-            return None
-        target = valid_qq_id(str(mentions[0].data.get("qq", "")))
-        if target is None:
-            return None
-        scope_token = tokens[0] if tokens else "日"
-    elif not tokens:
-        return default_user_id, "day"
-    elif len(tokens) == 1:
-        if tokens[0] in RANKING_SCOPES:
-            return default_user_id, RANKING_SCOPES[tokens[0]][0]
-        target = valid_qq_id(tokens[0])
-        scope_token = "日"
-    elif len(tokens) == 2:
-        target = valid_qq_id(tokens[0])
-        scope_token = tokens[1]
-    else:
-        return None
-    if target is None or scope_token not in RANKING_SCOPES:
-        return None
-    return target, RANKING_SCOPES[scope_token][0]
 
 
 async def finish_message_ranking(
@@ -1460,112 +1141,69 @@ async def finish_message_ranking(
     group_id = current_group(event)
     tokens = text_arg(args).split()
     if len(tokens) > 1 or (tokens and tokens[0] not in RANKING_SCOPES):
-        command = "A海岸发言排行" if a_coast else "发言排行"
+        command = "集群发言排行" if a_coast else "发言排行"
         await matcher.finish(f"用法：{settings.command_prefix}{command} 日|周|月|总")  # type: ignore[attr-defined]
     scope, _ = RANKING_SCOPES[tokens[0]] if tokens else RANKING_SCOPES["日"]
     if group_id is None:
-        if not a_coast or not is_super_admin(user_id(event)):
-            await matcher.finish("发言排行榜仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
-    elif group_id not in stats_service.enabled_groups():
-        await matcher.finish("发言排行榜仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
-    ranking_rows = stats_service.ranking_rows(scope, None if a_coast else group_id)
+        await matcher.finish("发言榜需要在目标 QQ 群内查询。")  # type: ignore[attr-defined]
+    domain = group_domains().domain_for_group(group_id)
+    if domain is None:
+        await matcher.finish("当前群尚未完成登记，请稍后重试。")  # type: ignore[attr-defined]
+    if a_coast and domain.mode != "cluster":
+        await matcher.finish("当前群不属于集群；请使用 #发言榜 查看本群排行。")  # type: ignore[attr-defined]
+    ranking_group_ids = (
+        group_domains().domain_groups(domain.domain_id) if a_coast else (group_id,)
+    )
+    ranking_rows = stats_service.ranking_rows_for_groups(scope, ranking_group_ids)
     rows = user_report_rows(ranking_rows)
+    public_group_key = group_domains().public_group_key(group_id) or DOMAIN_GROUP_KEY
     web_payload = await build_community_ranking_payload(
         scope,
-        ALL_GROUP_KEY if a_coast else str(group_id),
+        DOMAIN_GROUP_KEY if a_coast else public_group_key,
         rows=rows,
+        domain=domain,
+        selected_group_id=None if a_coast else group_id,
     )
-    title = RANKING_TITLES[scope][1 if a_coast else 0]
+    title = str(web_payload["title"])
     message_prefix = Message(MessageSegment.at(user_id(event))) if group_id is not None else Message()
-    link = public_web_url("ranking")
+    link = public_domain_ranking_url(domain.public_token)
     try:
         image = await community_web_renderer.render_ranking(web_payload)
     except Exception:
         logger.exception("Community ranking HTML render failed; trying Pillow fallback")
-        fallback = f"{stats_service.render_rows(rows, title)}\n记录自 2026-07-28 起"
+        fallback = f"{stats_service.render_rows(rows, title)}\n{web_payload['subtitle']}"
         avatar_paths = await cached_avatar_paths(rows)
-        group_totals = stats_service.group_totals(scope) if a_coast else ()
+        group_totals = (
+            stats_service.group_totals_for_groups(scope, ranking_group_ids)
+            if a_coast
+            else ()
+        )
         group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
         daily_totals = (
             stats_service.recent_group_daily_totals(group_id)
             if group_id is not None and not a_coast
             else ()
         )
-        await finish_with_image_or_text(
-            matcher,
-            fallback,
-            lambda: report_renderer.render_ranking(
+        try:
+            image = report_renderer.render_ranking(
                 rows,
                 title,
-                RANKING_SUBTITLE,
+                str(web_payload["subtitle"]),
                 avatar_paths,
                 show_group_labels=a_coast,
                 group_totals=group_totals,
                 group_avatar_paths=group_avatars,
                 daily_totals=daily_totals,
-            ),
-            prefix=MessageSegment.at(user_id(event)) if group_id is not None else None,
-        )
-        return
-    payload = message_prefix + local_image_segment(image)
+            )
+            payload = message_prefix + local_image_segment(image)
+        except Exception:
+            logger.exception("Pillow ranking fallback failed; using text")
+            payload = message_prefix + fallback
+    else:
+        payload = message_prefix + local_image_segment(image)
     if link is not None:
         payload += f"\n在线：{link}"
     await matcher.finish(payload)
-
-
-async def finish_personal_message_stats(
-    matcher: object, event: MessageEvent, args: Message
-) -> None:
-    query = personal_stats_query(args, user_id(event))
-    if query is None:
-        await matcher.finish(
-            f"用法：{settings.command_prefix}个人发言统计 [QQ号|@成员] [日|周|月|总]"
-        )  # type: ignore[attr-defined]
-    target_user_id, scope = query
-    await finish_personal_message_stats_for_target(matcher, event, target_user_id, scope)
-
-
-async def finish_personal_message_stats_for_target(
-    matcher: object, event: MessageEvent, target_user_id: int, scope: str
-) -> None:
-    group_id = current_group(event)
-    if group_id is None:
-        if not is_super_admin(user_id(event)):
-            await matcher.finish("个人发言统计仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
-    elif group_id not in stats_service.enabled_groups():
-        await matcher.finish("个人发言统计仅在 A海岸群聊内可用。")  # type: ignore[attr-defined]
-    group_totals = stats_service.personal_group_totals(target_user_id, scope)
-    title = PERSONAL_STATS_TITLES[scope]
-    if not group_totals:
-        await matcher.finish(f"该成员在本次统计范围内暂无 A海岸群发言数据。")  # type: ignore[attr-defined]
-    profiles = user_report_rows([{"user_id": target_user_id, "message_count": sum(int(row["message_count"]) for row in group_totals)}])
-    profile = profiles[0]
-    avatar_paths = await cached_avatar_paths(profiles)
-    group_avatars = await group_avatar_paths(group_totals)
-    fallback = "\n".join(
-        [
-            f"{profile['nickname'] or target_user_id}｜{title}",
-            f"五群合计：{profile['message_count']} 条",
-            *(
-                f"{row['group_name']}：{row['message_count']} 条"
-                for row in group_totals
-            ),
-            "记录自 2026-07-28 起",
-        ]
-    )
-    await finish_with_image_or_text(
-        matcher,
-        fallback,
-        lambda: report_renderer.render_personal_message_stats(
-            profile,
-            title,
-            "五群合计｜仅展示本次统计范围内有发言的群｜按发言数降序",
-            avatar_paths.get(target_user_id),
-            group_totals,
-            group_avatars,
-        ),
-        prefix=MessageSegment.at(user_id(event)) if group_id is not None else None,
-    )
 
 
 group_ranking = on_command(
@@ -1584,8 +1222,8 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
 
 
 a_coast_ranking = on_command(
-    "A海岸发言排行",
-    aliases={"A海岸发言榜", "A海岸统计", "a海岸发言排行", "a海岸发言榜", "a海岸统计"},
+    "集群发言排行",
+    aliases={"集群发言榜", "集群统计", "A海岸发言排行", "A海岸发言榜", "A海岸统计", "a海岸发言排行", "a海岸发言榜", "a海岸统计"},
     rule=Rule(lambda: settings.stats_realtime_enabled),
     priority=5,
     block=True,
@@ -1596,21 +1234,6 @@ a_coast_ranking._tangtang_skip_quote = True
 @a_coast_ranking.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
     await finish_message_ranking(a_coast_ranking, event, args, a_coast=True)
-
-
-personal_message_stats = on_command(
-    "个人发言统计",
-    aliases={"个人发言榜", "个人统计", "我的发言统计", "我的发言榜", "我的统计"},
-    rule=Rule(lambda: settings.stats_realtime_enabled),
-    priority=5,
-    block=True,
-)
-personal_message_stats._tangtang_skip_quote = True
-
-
-@personal_message_stats.handle()
-async def _(event: MessageEvent, args: Message = CommandArg()):
-    await finish_personal_message_stats(personal_message_stats, event, args)
 
 
 status = on_command("机器人状态", priority=5, block=True)
@@ -1658,23 +1281,3 @@ async def _run_local_ranking_feature(
         Message(request.args),
         a_coast=request.a_coast,
     )
-
-
-@register_local_feature("personal_stats")
-async def _run_local_personal_stats_feature(
-    matcher: object,
-    bot: Bot,
-    event: MessageEvent,
-    request: FeatureRequest,
-) -> None:
-    if request.personal_target == "self":
-        target_user_id = user_id(event)
-    else:
-        from bot.services.tangtang_features import mentioned_user_ids
-
-        targets = mentioned_user_ids(event.message, bot.self_id)
-        if len(targets) != 1:
-            await matcher.finish("查询某位成员的发言，请只 @ 一位成员。")
-        target_user_id = targets[0]
-    scope, _ = RANKING_SCOPES.get(request.args, RANKING_SCOPES["日"])
-    await finish_personal_message_stats_for_target(matcher, event, target_user_id, scope)

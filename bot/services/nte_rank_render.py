@@ -326,7 +326,7 @@ class NTERankRenderer:
             return "本群"
         if result.scope == "bot":
             return "BOT"
-        return "A海岸五群"
+        return "机器人总榜"
 
     @staticmethod
     def _suit_text(row: RankRow) -> str:

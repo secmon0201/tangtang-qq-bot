@@ -11,7 +11,6 @@ from PIL import Image, ImageColor
 from bot.services.nte_help_render import NTEHelpRenderer
 from bot.services.nte_rank_data import (
     NTERankDataService,
-    NTE_RANK_GROUP_ALIASES,
     RankRequest,
     parse_rank_command,
     resolve_scope,
@@ -64,13 +63,15 @@ def test_rank_parser_and_default_scope_split():
         assert parse_rank_command(f"{prefix}早雾评分排名 页2") == RankRequest("早雾", False, None, 2)
     assert parse_rank_command("#ntebot早雾排名") == RankRequest("早雾", False, "bot", 1)
     assert parse_rank_command("nte群最强排行") == RankRequest(None, True, "group", 1)
+    assert parse_rank_command("nte早雾总排行") == RankRequest("早雾", False, "bot", 1)
+    assert parse_rank_command("nte最强总排行") == RankRequest(None, True, "bot", 1)
     for prefix in ("#nte", "nte", "#NTE", "NTE"):
         assert is_nte_help_command(f"{prefix}帮助")
         assert is_new_nte_help_command(f"{prefix}帮助")
         assert is_nte_help_command(f"{prefix}原版帮助")
         assert is_original_nte_help_command(f"{prefix}原版帮助")
-    assert resolve_scope(1128870029, None) == "a_coast"
-    assert resolve_scope(9001, None) == "bot"
+    assert resolve_scope(1128870029, None) == "group"
+    assert resolve_scope(9001, None) == "group"
     assert resolve_scope(9001, "群") == "group"
     assert resolve_scope(1128870029, "bot") == "bot"
 
@@ -101,12 +102,12 @@ def test_recent_group_and_stable_sorting(tmp_path: Path):
 
     service = NTERankDataService(db)
     result = service.build_role_rank(RankRequest("c1", False, None), 1128870029)
-    assert result.scope == "a_coast"
-    assert [row.uid for row in result.rows] == ["u3", "u2", "u1"]
-    assert result.rows[1].group_id == 1077416717
-    assert result.rows[1].group_name == "A海岸-剧团"
-    assert result.rows[1].element_type == "CHARACTER_ELEMENT_TYPE_NATURE"
-    assert result.rows[1].nickname == "two"
+    assert result.scope == "group"
+    assert [row.uid for row in result.rows] == ["u3", "u1", "u2", "u4"]
+    assert result.rows[2].group_id == 1128870029
+    assert result.rows[2].group_name == "A海岸一群"
+    assert result.rows[2].element_type == "CHARACTER_ELEMENT_TYPE_NATURE"
+    assert result.rows[2].nickname == "two-coast"
 
     bot_result = service.build_role_rank(RankRequest("c1", False, "bot"), 9001)
     external_row = next(row for row in bot_result.rows if row.uid == "u4")
@@ -127,26 +128,13 @@ def test_rank_uses_bot_group_name_when_core_has_placeholder(tmp_path: Path):
 
     bot_db = tmp_path / "bot.db"
     with sqlite3.connect(bot_db) as metadata:
-        metadata.execute("CREATE TABLE managed_groups (group_id INTEGER PRIMARY KEY, group_name TEXT, enabled INTEGER)")
-        metadata.execute("INSERT INTO managed_groups VALUES (1128870029, 'A海岸测试群', 1)")
+        metadata.execute("CREATE TABLE managed_groups (group_id INTEGER PRIMARY KEY, group_name TEXT, alias TEXT, enabled INTEGER)")
+        metadata.execute("INSERT INTO managed_groups VALUES (1128870029, 'A海岸测试群', '修会', 1)")
 
     result = NTERankDataService(db, group_metadata_path=bot_db).build_role_rank(
         RankRequest("c1", False, "group"), 1128870029
     )
-    assert result.rows[0].group_name == "A海岸-修会"
-
-
-def test_rank_group_aliases_cover_all_managed_rank_groups():
-    assert NTE_RANK_GROUP_ALIASES == {
-        1128870029: "A海岸-修会",
-        1077416717: "A海岸-剧团",
-        1083457871: "A海岸-莫塔里",
-        1090284567: "A海岸-翡萨烈",
-        278824712: "A海岸-墓岛",
-        1067772451: "测试群",
-        819667289: "喜报群",
-        1102823315: "巨龙群",
-    }
+    assert result.rows[0].group_name == "修会"
 
 
 def test_page_size_and_personal_overflow(tmp_path: Path):

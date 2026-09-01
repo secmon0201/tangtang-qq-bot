@@ -32,7 +32,7 @@ UPSTREAM_TIMEOUT_SECONDS = 180
 DEFAULT_MAX_CONCURRENCY = 32
 DEFAULT_CLIENT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_REQUEST_BYTES = 32 * 1024 * 1024
-OPERATOR_KINDS = frozenset({"activity", "operations", "duplicate"})
+OPERATOR_KINDS = frozenset({"duplicate"})
 SHORT_LINK_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "public-short-links.json"
 SITE_ROOT = (Path(__file__).resolve().parents[1] / "site").resolve()
 PUBLIC_SITE_RELEASES_ROOT = (
@@ -53,8 +53,6 @@ SITE_PAGE_ROUTES = {
     "/experience/": "experience/index.html",
     "/games": "games/index.html",
     "/games/": "games/index.html",
-    "/community": "community/index.html",
-    "/community/": "community/index.html",
     "/operator": "operator/index.html",
     "/operator/": "operator/index.html",
     "/technology": "technology/index.html",
@@ -299,7 +297,7 @@ def route_public_target(raw_target: str) -> Route | None:
         upstream = "/asoul-live/" + remainder
         return Route("live", 8080, urlunsplit(("", "", upstream, parsed.query, "")))
     if public_area in {"ranking", "help"}:
-        upstream = f"/community/{public_area}/" + remainder
+        upstream = f"/{public_area}/" + remainder
         return Route(public_area, 8080, urlunsplit(("", "", upstream, parsed.query, "")))
     return None
 
@@ -535,7 +533,7 @@ def main() -> int:
         f"tangtang web gateway listening on http://127.0.0.1:{args.port} "
         f"with max_concurrency={args.max_concurrency}, "
         f"client_timeout={args.client_timeout_seconds}s, max_request={args.max_request_mb}MiB "
-        "-> short links, site, live, ranking, help, notice, activity, operations, duplicate, nte",
+        "-> short links, site, live, token ranking, help, notice, duplicate, nte",
         flush=True,
     )
     server.serve_forever()

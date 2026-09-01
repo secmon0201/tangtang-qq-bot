@@ -21,6 +21,13 @@ Guaranteed by tests and validators: no plugin-to-plugin imports, one-way layer d
 
 Intentional sharing: settings, SQLite, permission/role checks, QQ platform calls, avatar/media helpers, and report renderers are shared contracts with tests. Changing them is a deliberate cross-cutting change, not accidental coupling.
 
+## Group domains
+
+- `bot/services/group_domains.py` owns unlimited managed-group registration, aliases, solo domains, private clusters, feature defaults, and public ranking-token rotation. SQLite is the runtime authority; `.env` group lists are migration seeds or machine-level settings only.
+- A newly observed group becomes an independent solo domain. The fixed A-Coast five-group set is the first private cluster, not the default product boundary.
+- Group owners and QQ group administrators can edit only the current group's alias and switches. Only super administrators can create, inspect, invite to, remove from, or dissolve private clusters.
+- Per-group switches control local invocation and push behavior. Cluster membership alone controls cluster statistics, so disabling a feature in one member group never removes that group's records from the cluster aggregate.
+
 ## Locating ownership
 
 - From a command or event, find its plugin in `bot/plugins`, read its registry key, then `rg` that key across `bot/services`, `bot/resources`, `tests`, and `docs`.

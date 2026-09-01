@@ -60,7 +60,7 @@ def test_sync_feature_scope_writes_sorted_group_ids(monkeypatch, tmp_path):
     assert "GAME_GROUP_IDS=1001,1002,1003" in path.read_text(encoding="utf-8")
 
 
-def test_passive_feature_scope_command_writes_env(monkeypatch, tmp_path):
+def test_passive_feature_scope_command_uses_sqlite_without_rewriting_env(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
     from bot.db import Database
@@ -74,7 +74,6 @@ def test_passive_feature_scope_command_writes_env(monkeypatch, tmp_path):
             game_group_ids=(),
             game_api_group_ids=(),
             game_api_enabled=True,
-            activity_group_ids=(),
             random_reaction_group_ids=(),
             hourly_announcement_group_ids=(),
         ),
@@ -88,7 +87,10 @@ def test_passive_feature_scope_command_writes_env(monkeypatch, tmp_path):
         db, defaults=PassiveSettings(0.1, 120, 0.1, 3600, 100), sync_env=True
     )
     store.add_feature_group("duplicate", 1002)
-    assert "DUPLICATE_GROUP_IDS=1002" in env_path.read_text(encoding="utf-8")
+    assert store.groups("duplicate") == frozenset({1002})
+    assert env_path.read_text(encoding="utf-8") == (
+        "DUPLICATE_GROUP_IDS=\nGAME_API_ENABLED=true\n"
+    )
 
 
 def test_passive_group_update_rewrites_only_its_env_value(monkeypatch, tmp_path):
@@ -128,7 +130,6 @@ def test_game_api_hot_switch_writes_env(monkeypatch, tmp_path):
             game_group_ids=(),
             game_api_group_ids=(),
             game_api_enabled=True,
-            activity_group_ids=(),
             random_reaction_group_ids=(),
             hourly_announcement_group_ids=(),
         ),
@@ -161,7 +162,6 @@ def test_game_api_hot_switch_defaults_from_env_and_mirrors_it(monkeypatch, tmp_p
             game_group_ids=(),
             game_api_group_ids=(),
             game_api_enabled=False,
-            activity_group_ids=(),
             random_reaction_group_ids=(),
             hourly_announcement_group_ids=(),
         ),

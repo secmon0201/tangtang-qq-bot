@@ -6,6 +6,11 @@ from PIL import Image
 from bot.services.reports import ReportRenderer, report_group_marker
 
 
+def test_report_renderer_uses_ak_bot_branding():
+    assert ReportRenderer.BRAND_HEADER == "AK-BOT FUNCTION"
+    assert ReportRenderer.BRAND_FOOTER == "AK bot"
+
+
 def test_duplicate_report_renders_one_image_sized_page(tmp_path: Path):
     renderer = ReportRenderer(tmp_path)
     result = [

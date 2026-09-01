@@ -4,6 +4,8 @@ import asyncio
 from types import SimpleNamespace
 
 import nonebot
+import pytest
+from fastapi import HTTPException
 from nonebot.adapters.onebot.v11 import Message
 
 nonebot.init()
@@ -11,6 +13,13 @@ nonebot.init()
 import bot.plugins.commands as commands
 from bot.application.local_features import registered_local_features
 from bot.config import A_COAST_GROUP_IDS
+
+
+def test_retired_community_route_returns_404_after_matchers_are_registered():
+    with pytest.raises(HTTPException) as captured:
+        asyncio.run(commands.retired_community_route())
+
+    assert captured.value.status_code == 404
 
 
 def test_personal_message_ranking_is_not_exposed_or_registered():
@@ -28,82 +37,69 @@ def test_personal_message_ranking_is_not_exposed_or_registered():
     assert "personal_stats" not in registered_local_features()
 
 
-class _Matcher:
-    async def finish(self, message: str) -> None:
-        raise AssertionError(f"unexpected command rejection: {message}")
+class _Finished(Exception):
+    pass
 
 
-def test_super_admin_can_request_every_a_coast_ranking_scope_in_private_chat(monkeypatch):
-    requested: list[tuple[str, int | None]] = []
-    rendered_titles: list[str] = []
+def test_ranking_cannot_be_queried_without_a_target_group(monkeypatch):
+    responses: list[str] = []
 
-    class StatsService:
-        def ranking_rows(self, scope: str, group_id: int | None):
-            requested.append((scope, group_id))
-            return []
+    class Matcher:
+        async def finish(self, message):
+            responses.append(str(message))
+            raise _Finished
 
-        def group_totals(self, scope: str):
-            return []
+    monkeypatch.setattr(commands, "current_group", lambda event: None)
 
-        def render_rows(self, rows, title: str) -> str:
-            return title
-
-    async def no_avatars(rows):
-        return {}
-
-    async def fail_web_render(payload):
-        raise RuntimeError("web renderer unavailable")
-
-    async def record_response(matcher, fallback, render, *, prefix=None):
-        rendered_titles.append(fallback)
-
-    monkeypatch.setattr(commands, "is_super_admin", lambda user_id: user_id == 42)
-    monkeypatch.setattr(commands, "stats_service", StatsService())
-    monkeypatch.setattr(commands, "cached_avatar_paths", no_avatars)
-    monkeypatch.setattr(commands, "finish_with_image_or_text", record_response)
-    monkeypatch.setattr(commands.community_web_renderer, "render_ranking", fail_web_render)
-    event = SimpleNamespace(user_id=42)
-
-    for argument in ("日", "周", "月", "总"):
+    with pytest.raises(_Finished):
         asyncio.run(
-            commands.finish_message_ranking(_Matcher(), event, Message(argument), a_coast=True)
+            commands.finish_message_ranking(
+                Matcher(), SimpleNamespace(user_id=42), Message("日"), a_coast=True
+            )
         )
 
-    assert requested == [("day", None), ("week", None), ("month", None), ("total", None)]
-    assert rendered_titles == [
-        "A海岸今日灌水王\n记录自 2026-07-28 起",
-        "A海岸本周灌水王\n记录自 2026-07-28 起",
-        "A海岸本月灌水王\n记录自 2026-07-28 起",
-        "A海岸传奇灌水王\n记录自 2026-07-28 起",
-    ]
+    assert responses == ["发言榜需要在目标 QQ 群内查询。"]
 
 
-def test_ranking_uses_web_capture_and_appends_the_shared_short_link(monkeypatch, tmp_path):
+def test_cluster_ranking_uses_web_capture_and_appends_its_bearer_link(monkeypatch, tmp_path):
     delivered: list[Message] = []
+    token = "A" * 43
+    domain = SimpleNamespace(domain_id=7, mode="cluster", public_token=token)
 
     class StatsService:
-        def ranking_rows(self, scope: str, group_id: int | None):
-            assert (scope, group_id) == ("day", None)
+        def ranking_rows_for_groups(self, scope: str, group_ids):
+            assert scope == "day"
+            assert tuple(group_ids) == A_COAST_GROUP_IDS
             return [{"rank": 1, "nickname": "测试成员", "message_count": 7, "group_name": "修会"}]
 
-        def render_rows(self, rows, title: str) -> str:
-            raise AssertionError("HTML screenshot should avoid the Pillow fallback")
+    class Domains:
+        def domain_for_group(self, group_id):
+            assert group_id == A_COAST_GROUP_IDS[0]
+            return domain
 
-        def group_totals(self, scope: str):
-            return [
-                {"group_id": group_id, "group_name": str(group_id), "message_count": 1}
-                for group_id in A_COAST_GROUP_IDS
-            ]
+        def domain_groups(self, domain_id):
+            assert domain_id == 7
+            return A_COAST_GROUP_IDS
 
-    async def no_avatars(rows):
-        return {}
+        def public_group_key(self, group_id):
+            return "member-key"
 
-    async def no_group_avatars(rows):
-        return {}
+    async def build_payload(scope, group_key, **kwargs):
+        assert (scope, group_key) == ("day", "domain")
+        assert kwargs["domain"] is domain
+        assert kwargs["selected_group_id"] is None
+        assert len(kwargs["rows"]) == 1
+        return {
+            "scope": "day",
+            "group": "domain",
+            "title": "A海岸今日发言榜",
+            "subtitle": "历史数据最早自 2026-08-29",
+            "chart": {"kind": "group", "rows": [{"label": "修会"}] * 5},
+        }
 
     async def render_web(payload):
         assert payload["scope"] == "day"
-        assert payload["group"] == "a-coast"
+        assert payload["group"] == "domain"
         assert payload["chart"]["kind"] == "group"
         assert len(payload["chart"]["rows"]) == 5
         image = tmp_path / "ranking.png"
@@ -115,11 +111,10 @@ def test_ranking_uses_web_capture_and_appends_the_shared_short_link(monkeypatch,
             delivered.append(message)
 
     monkeypatch.setattr(commands, "stats_service", StatsService())
-    monkeypatch.setattr(commands, "current_group", lambda event: None)
-    monkeypatch.setattr(commands, "is_super_admin", lambda user_id: user_id == 42)
+    monkeypatch.setattr(commands, "current_group", lambda event: A_COAST_GROUP_IDS[0])
+    monkeypatch.setattr(commands, "group_domains", lambda: Domains())
     monkeypatch.setattr(commands, "user_report_rows", lambda rows: list(rows))
-    monkeypatch.setattr(commands, "cached_avatar_paths", no_avatars)
-    monkeypatch.setattr(commands, "group_avatar_paths", no_group_avatars)
+    monkeypatch.setattr(commands, "build_community_ranking_payload", build_payload)
     monkeypatch.setattr(commands.community_web_renderer, "render_ranking", render_web)
 
     asyncio.run(
@@ -129,5 +124,5 @@ def test_ranking_uses_web_capture_and_appends_the_shared_short_link(monkeypatch,
     )
 
     assert len(delivered) == 1
-    assert "在线：s.secmon.cn/s" in str(delivered[0])
-    assert delivered[0][0].type == "image"
+    assert f"在线：https://tangtang.secmon.cn/ranking/{token}/" in str(delivered[0])
+    assert any(segment.type == "image" for segment in delivered[0])

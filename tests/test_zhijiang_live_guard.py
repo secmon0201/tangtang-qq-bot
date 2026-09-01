@@ -41,7 +41,7 @@ def entry(event_id: str, starts_at: datetime) -> LiveSchedule:
     )
 
 
-def test_live_guard_closes_games_and_extends_from_the_last_started_live(tmp_path):
+def test_live_guard_records_and_extends_pause_without_changing_global_switch(tmp_path):
     _db, scopes, guard = make_guard(tmp_path)
     first_start = datetime(2026, 7, 25, 20, 0, tzinfo=TIMEZONE)
     second_start = first_start + timedelta(minutes=30)
@@ -49,28 +49,29 @@ def test_live_guard_closes_games_and_extends_from_the_last_started_live(tmp_path
     guard.entries = (first, second)
 
     assert guard.apply_due(first_start) == (first,)
-    assert not scopes.is_game_globally_enabled()
-
-    assert guard.apply_due(second_start) == (second,)
-    assert not scopes.is_game_globally_enabled()
-
-    guard.tick(second_start + timedelta(minutes=59, seconds=59))
-    assert not scopes.is_game_globally_enabled()
-    guard.tick(second_start + timedelta(hours=1))
     assert scopes.is_game_globally_enabled()
 
+    assert guard.apply_due(second_start) == (second,)
+    assert scopes.is_game_globally_enabled()
 
-def test_live_guard_respects_manual_open_until_a_new_schedule_starts(tmp_path):
+    guard.tick(second_start + timedelta(minutes=59, seconds=59))
+    assert scopes.is_game_globally_enabled()
+    guard.tick(second_start + timedelta(hours=1))
+    assert scopes.is_game_globally_enabled()
+    assert guard.active_entries(second_start + timedelta(hours=1)) == ()
+
+
+def test_live_guard_does_not_override_a_manual_global_switch(tmp_path):
     _db, scopes, guard = make_guard(tmp_path)
     starts_at = datetime(2026, 7, 25, 20, 0, tzinfo=TIMEZONE)
     guard.entries = (entry("first", starts_at),)
 
     guard.apply_due(starts_at)
-    assert not scopes.is_game_globally_enabled()
-    scopes.set_game_globally_enabled(True)
+    assert scopes.is_game_globally_enabled()
+    scopes.set_game_globally_enabled(False)
 
     guard.tick(starts_at + timedelta(minutes=15))
-    assert scopes.is_game_globally_enabled()
+    assert not scopes.is_game_globally_enabled()
 
 
 def test_active_entries_include_all_streams_started_in_the_current_pause_window(tmp_path):

@@ -172,6 +172,16 @@ def usage_events(usage_dir: Path) -> list[dict]:
     return events
 
 
+def enable_plugin_group_features(monkeypatch, *group_ids: int) -> None:
+    enabled = tuple(group_ids or (1001,))
+    domains = SimpleNamespace(
+        all_group_ids=lambda: enabled,
+        feature_enabled=lambda group_id, feature: int(group_id) in enabled,
+        effective_feature_enabled=lambda group_id, feature: int(group_id) in enabled,
+    )
+    monkeypatch.setattr("bot.plugins.tangtang_chat.group_domains", lambda: domains)
+
+
 def test_config_validation():
     config = enabled_config()
     assert config.enabled and config.mode == "d"
@@ -349,6 +359,7 @@ def test_reasoning_effort_accepts_official_deepseek_values():
 
 
 def test_call_event_rule(monkeypatch):
+    enable_plugin_group_features(monkeypatch, 1001)
     monkeypatch.setattr(
         "bot.plugins.tangtang_chat.loader",
         SimpleNamespace(load=lambda: enabled_config()),
@@ -367,6 +378,7 @@ def test_call_event_rule(monkeypatch):
 
 
 def test_proactive_event_rule(monkeypatch):
+    enable_plugin_group_features(monkeypatch, 1001)
     monkeypatch.setattr("bot.plugins.tangtang_chat.automation_is_paused", lambda: False)
     monkeypatch.setattr(
         "bot.plugins.tangtang_chat.loader",
@@ -388,6 +400,14 @@ def test_proactive_event_rule(monkeypatch):
     monkeypatch.setattr(
         "bot.plugins.tangtang_chat.loader",
         SimpleNamespace(load=lambda: enabled_config()),
+    )
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.group_domains",
+        lambda: SimpleNamespace(
+            all_group_ids=lambda: (1001,),
+            feature_enabled=lambda _group_id, feature: feature != "proactive_chat",
+            effective_feature_enabled=lambda _group_id, _feature: True,
+        ),
     )
     assert not is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
 
@@ -515,6 +535,7 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     sent: list[str] = []
     executed: list[object] = []
     recorded: list[dict] = []
+    enable_plugin_group_features(monkeypatch, 1001)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -563,6 +584,7 @@ def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
+    enable_plugin_group_features(monkeypatch, 1001)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -599,6 +621,7 @@ def test_mentioned_member_does_not_switch_ranking_away_from_the_group(monkeypatc
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
+    enable_plugin_group_features(monkeypatch, 1001)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -681,6 +704,7 @@ def test_tangtang_db_migrates_old_schema_for_feature(tmp_path):
 
 def test_parallel_compatibility_with_passive_matcher(monkeypatch):
     from bot.plugins.random_reactions import is_passive_reaction_event
+    enable_plugin_group_features(monkeypatch, 1001)
 
     monkeypatch.setattr(
         "bot.plugins.tangtang_chat.loader",

@@ -1,7 +1,12 @@
 from datetime import datetime
 from types import SimpleNamespace
 
+import nonebot
+
+nonebot.init()
+
 from bot.plugins.scope import (
+    disabled_feature_for,
     is_bot_mentioned,
     is_disabled_game_command,
     is_feature_group,
@@ -10,6 +15,22 @@ from bot.plugins.scope import (
 from bot.config import settings
 from bot.services.roles import UserRole
 from bot.services.zhijiang_live_guard import LiveSchedule
+
+
+def test_legacy_a_coast_ranking_alias_uses_the_speech_ranking_switch(monkeypatch):
+    import bot.plugins.scope as scope
+
+    class Domains:
+        @staticmethod
+        def effective_feature_enabled(group_id, feature):
+            assert group_id == 9001
+            assert feature == "speech_ranking"
+            return False
+
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
+
+    assert disabled_feature_for("#A海岸发言排行 月", 9001) == "speech_ranking"
+    assert disabled_feature_for("#a海岸统计", 9001) == "speech_ranking"
 
 
 def test_external_game_commands_are_not_gated_by_the_mini_game_switch():
@@ -39,7 +60,7 @@ def test_game_menu_remains_available_while_gameplay_is_paused(monkeypatch):
     assert not scope.is_disabled_game_command(GroupEvent())
 
 
-def test_game_total_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
+def test_domain_game_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
     import bot.plugins.scope as scope
 
     class GroupEvent:
@@ -50,16 +71,25 @@ def test_game_total_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
             return "#转盘总榜"
 
     class Scopes:
-        def groups(self, feature):
-            assert feature == "game"
-            return frozenset()
-
         @staticmethod
         def is_game_globally_enabled():
             return True
 
+    class Domains:
+        @staticmethod
+        def feature_enabled(group_id, feature):
+            assert int(group_id) == int(settings.managed_group_ids[0])
+            assert feature == "mini_games"
+            return False
+
+        @staticmethod
+        def effective_feature_enabled(_group_id, feature):
+            assert feature == "live_guard"
+            return False
+
     monkeypatch.setattr(scope, "GroupMessageEvent", GroupEvent)
     monkeypatch.setattr(scope, "passive_settings", lambda: Scopes())
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
     assert scope.is_disabled_game_command(GroupEvent())
 
 
@@ -156,13 +186,18 @@ def test_live_guard_reminder_mentions_a_normal_user_and_the_current_stream(monke
             return "#装填"
 
     class Scopes:
-        def groups(self, feature):
-            assert feature == "game"
-            return frozenset(settings.managed_group_ids)
-
         @staticmethod
         def is_game_globally_enabled():
-            return False
+            return True
+
+    class Domains:
+        @staticmethod
+        def feature_enabled(_group_id, feature):
+            return feature == "mini_games"
+
+        @staticmethod
+        def effective_feature_enabled(_group_id, feature):
+            return feature == "live_guard"
 
     class Guard:
         @staticmethod
@@ -180,6 +215,7 @@ def test_live_guard_reminder_mentions_a_normal_user_and_the_current_stream(monke
 
     monkeypatch.setattr(scope, "GroupMessageEvent", GroupEvent)
     monkeypatch.setattr(scope, "passive_settings", lambda: Scopes())
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
     monkeypatch.setattr(scope, "zhijiang_live_guard", lambda: Guard())
     monkeypatch.setattr(scope, "user_role", lambda _user_id: UserRole.USER)
 
@@ -201,12 +237,18 @@ def test_live_guard_reminder_replies_to_operators_during_a_live_pause(monkeypatc
             return "#装填"
 
     class Scopes:
-        def groups(self, _feature):
-            return frozenset(settings.managed_group_ids)
-
         @staticmethod
         def is_game_globally_enabled():
-            return False
+            return True
+
+    class Domains:
+        @staticmethod
+        def feature_enabled(_group_id, feature):
+            return feature == "mini_games"
+
+        @staticmethod
+        def effective_feature_enabled(_group_id, feature):
+            return feature == "live_guard"
 
     class Guard:
         @staticmethod
@@ -224,6 +266,7 @@ def test_live_guard_reminder_replies_to_operators_during_a_live_pause(monkeypatc
 
     monkeypatch.setattr(scope, "GroupMessageEvent", GroupEvent)
     monkeypatch.setattr(scope, "passive_settings", lambda: Scopes())
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
     monkeypatch.setattr(scope, "zhijiang_live_guard", lambda: Guard())
     monkeypatch.setattr(scope, "user_role", lambda _user_id: UserRole.SUPER_ADMIN)
     message = scope.live_guard_mini_game_reminder(GroupEvent())
@@ -244,12 +287,18 @@ def test_live_guard_reminder_stays_silent_for_manual_game_closures(monkeypatch):
             return "#骰子"
 
     class Scopes:
-        def groups(self, _feature):
-            return frozenset(settings.managed_group_ids)
-
         @staticmethod
         def is_game_globally_enabled():
             return False
+
+    class Domains:
+        @staticmethod
+        def feature_enabled(_group_id, feature):
+            return feature == "mini_games"
+
+        @staticmethod
+        def effective_feature_enabled(_group_id, feature):
+            return feature == "live_guard"
 
     class Guard:
         @staticmethod
@@ -258,6 +307,7 @@ def test_live_guard_reminder_stays_silent_for_manual_game_closures(monkeypatch):
 
     monkeypatch.setattr(scope, "GroupMessageEvent", GroupEvent)
     monkeypatch.setattr(scope, "passive_settings", lambda: Scopes())
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
     monkeypatch.setattr(scope, "zhijiang_live_guard", lambda: Guard())
     monkeypatch.setattr(scope, "user_role", lambda _user_id: UserRole.SUPER_ADMIN)
 

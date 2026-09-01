@@ -35,11 +35,6 @@ PAGE_BOOTSTRAP = {
         ["hero", "signal", "conversation", "social", "memory"],
     ),
     "games": ("/games/", "games/index.html", ["hero", "worlds", "boundaries"]),
-    "community": (
-        "/community/",
-        "community/index.html",
-        ["hero", "coast", "memory", "participate"],
-    ),
     "operator": (
         "/operator/",
         "operator/index.html",

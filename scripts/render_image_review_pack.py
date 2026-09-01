@@ -30,30 +30,10 @@ def write_shared_reports() -> list[Path]:
     graphic_cover = OUTPUT_DIR / "graphic_announcement_cover.png"
     graphic_sticker = Path("bot/resources/asoul_stickers/心宜/为你打call-0_sticker_static.png")
     Image.new("RGB", (2200, 280), "#b6d5e9").save(graphic_cover)
-    activity = {
-        "activity_id": 518,
-        "title": "今晚八点血染钟楼体验局",
-        "activity_type": "announcement",
-        "status": "ongoing",
-        "status_label": "进行中",
-        "visibility": "public",
-        "visibility_label": "公开参与",
-        "starts_text": "2026-07-28 20:00",
-        "ends_text": "2026-07-28 23:59",
-        "participant_count": 12,
-        "group_count": 3,
-        "creator_nickname": "Secmon是谁呢",
-        "creator_id": "595861835",
-        "description": "欢迎参加枝江群联动活动。\n请在开始前确认时间，并按活动 ID 报名。",
-    }
     groups = (
         {"group_id": 1001, "group_name": "测试群"},
-        {"group_id": 1002, "group_name": "枝江活动一群"},
-        {"group_id": 1003, "group_name": "枝江活动二群"},
-    )
-    participants = (
-        {"registration_no": 1, "display_user_id": "123****789", "nickname": "嘉然今天吃什么", "group_label": "测试群", "user_id": 1},
-        {"registration_no": 2, "display_user_id": "987****321", "nickname": "向晚大魔王", "group_label": "枝江活动一群", "user_id": 2},
+        {"group_id": 1002, "group_name": "海风群"},
+        {"group_id": 1003, "group_name": "星河群"},
     )
     paths = [
         renderer.render_duplicate(
@@ -68,8 +48,8 @@ def write_shared_reports() -> list[Path]:
         ),
         renderer.render_ranking(
             [
-                {"rank": 1, "user_id": 1, "nickname": "嘉然今天吃什么", "message_count": 128, "group_labels": "测试群、枝江活动一群"},
-                {"rank": 2, "user_id": 2, "nickname": "向晚大魔王", "message_count": 87, "group_labels": "枝江活动二群"},
+                {"rank": 1, "user_id": 1, "nickname": "嘉然今天吃什么", "message_count": 128, "group_labels": "测试群、海风群"},
+                {"rank": 2, "user_id": 2, "nickname": "向晚大魔王", "message_count": 87, "group_labels": "星河群"},
             ],
             "本周发言排行榜",
             "按发言数降序排列",
@@ -82,12 +62,12 @@ def write_shared_reports() -> list[Path]:
         renderer.render_admin_panel(
             "管理员帮助",
             "配置和查询均在本地完成",
-            [("功能范围", "#功能范围 列表\n#功能范围 添加 活动", "范围变化会即时生效。"), ("被动互动", "#被动互动状态\n#被动互动 设置", "每个群可独立配置。")],
+            [("群设置", "#群设置\n#群设置 小游戏 开", "本群管理员可独立配置。"), ("系统设置", "#系统设置 集群 列表", "仅超级管理员可用。")],
         ),
         renderer.render_group_overview(
             "功能范围已更新",
-            "活动功能已加入群 1067772451",
-            [{"group_id": 1001, "group_name": "测试群", "tag": "活动", "detail": "统计：关 | 查重：开 | 游戏：开 | 活动：开 | 整点报时：开"}],
+            "小游戏已在群 1067772451 开启",
+            [{"group_id": 1001, "group_name": "测试群", "tag": "独群", "detail": "发言榜：开 | 小游戏：开 | 今日老婆：开 | 准时报点：关"}],
         ),
         renderer.render_whitelist(
             [{"user_id": 1, "nickname": "嘉然今天吃什么", "note": "不参与跨群查重"}, {"user_id": 2, "nickname": "向晚大魔王", "note": "管理员白名单"}],
@@ -95,19 +75,12 @@ def write_shared_reports() -> list[Path]:
         renderer.render_user_help(
             "普通用户帮助",
             "按功能分类；文字版可在 QQ 中展开查看",
-            [("查询", "查询自己的记录", [("发言排行", "#发言排行 周", "查看本周群内排行"), ("活动大厅", "#活动大厅", "查看可报名活动")])],
+            [("查询", "查询当前群信息", [("发言排行", "#发言排行 周", "查看本周群内排行"), ("发言搜索", "#发言搜索 @成员 关键词", "只搜索当前群记录")])],
         ),
-        renderer.render_survey_poster(20260728, "下周的群联动活动，你更希望在什么时间段参加？"),
-        renderer.render_activity_hall([activity]),
-        renderer.render_activity_detail(activity, groups, ({"prize_name": "活动纪念徽章", "quantity": 3}, {"prize_name": "群内头衔", "quantity": 5})),
-        renderer.render_activity_unsupported_notice(activity["title"]),
-        renderer.render_activity_help(),
-        renderer.render_activity_participants(activity, participants),
-        renderer.render_activity_winners(activity, [{"prize_name": "活动纪念徽章", "nickname": "嘉然今天吃什么", "display_user_id": "123****789", "registration_no": 1, "user_id": 1}]),
         renderer.render_global_announcement("今晚八点 A-SOUL 演唱会开播\n欢迎一起进直播间！"),
         renderer.render_global_graphic_announcement(
-            "夏日群联动活动开放报名",
-            "本周六 20:00 开始，欢迎各群成员一起参与夏日特别活动。\n请提前确认时间，并在活动网页内填写报名信息；活动开始后会同步公布分组与注意事项。",
+            "周末直播提醒",
+            "本周六 20:00 开始，欢迎群友一起观看特别直播。\n请提前确认时间，开播后会同步发送直播间地址与注意事项。",
             graphic_cover,
             sticker=graphic_sticker if graphic_sticker.is_file() else None,
         ),
@@ -139,7 +112,7 @@ def write_game_reports() -> list[Path]:
         "title": "小游戏总榜单",
         "global": True,
         "show_group_details": True,
-        "groups": [{"group_id": 1001, "group_name": "测试群"}, {"group_id": 1002, "group_name": "枝江活动一群"}],
+        "groups": [{"group_id": 1001, "group_name": "测试群"}, {"group_id": 1002, "group_name": "星河群"}],
         "sections": [
             {"title": "幸运骰局", "value_label": "胜场", "rows": [{"rank": 1, "user_id": 1, "nickname": "嘉然今天吃什么", "games": 24, "value": 16, "group_ids": (1001, 1002)}, {"rank": 2, "user_id": 2, "nickname": "向晚大魔王", "games": 18, "value": 11, "group_ids": (1002,)}]},
         ],
@@ -301,12 +274,12 @@ def write_archive_reports() -> list[Path]:
         {
             "occurred_at": "2026-07-29 20:08:18",
             "group_id": 1077416717,
-            "group_name": "枝江活动一群",
-            "content": "已经报名活动，期待一起看直播。",
+            "group_name": "星河群",
+            "content": "已经预约直播，期待一起看直播。",
         },
     ]
     profile_rows = [
-        {"hour": hour, "content": "今晚 20:00 直播吗？哈哈" if hour % 2 else "公告更新，活动报名已开启"}
+        {"hour": hour, "content": "今晚 20:00 直播吗？哈哈" if hour % 2 else "公告更新，直播预约已开启"}
         for hour in range(24)
     ]
     return [
@@ -315,7 +288,7 @@ def write_archive_reports() -> list[Path]:
             595861835,
             "心宜的应援者",
             "2026-07-29T02:01:05+08:00",
-            "糖糖开篇：这是一位积极参与群内话题的成员。\n\n正文观察：常在直播和活动话题出现，也会热心回应其他群友。\n\n糖糖总评：保持这份真诚的应援热情。",
+            "糖糖开篇：这是一位积极参与群内话题的成员。\n\n正文观察：常在直播话题出现，也会热心回应其他群友。\n\n糖糖总评：保持这份真诚的应援热情。",
             profile_rows,
         ),
     ]
@@ -333,7 +306,7 @@ def write_preview_sheets(paths: list[Path]) -> list[Path]:
         page_paths = paths[page_start:page_start + columns * rows]
         sheet = Image.new("RGB", (columns * cell_width + 64, rows * cell_height + 92), "#fff8fc")
         draw = ImageDraw.Draw(sheet)
-        draw.text((32, 24), f"A-SOUL BOT  图片审阅  {page_start // (columns * rows) + 1}", font=title_font, fill="#d65791")
+        draw.text((32, 24), f"AK-BOT FUNCTION  图片审阅  {page_start // (columns * rows) + 1}", font=title_font, fill="#d65791")
         for index, path in enumerate(page_paths):
             column, row = index % columns, index // columns
             left, top = 32 + column * cell_width, 78 + row * cell_height

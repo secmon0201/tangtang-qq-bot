@@ -1,4 +1,4 @@
-"""Expose only capability-scoped operator web paths to a Cloudflare tunnel."""
+"""Expose only the capability-scoped duplicate-check web path."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tangtang_web_gateway import OPERATOR_KINDS, route_public_target
 
 
-LEGACY_PREFIX = "/operator/"
 HOP_BY_HOP_HEADERS = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade",
@@ -20,13 +19,11 @@ class OperatorProxy(BaseHTTPRequestHandler):
     server_version = "operator-web-proxy/1.0"
 
     def _forward(self) -> None:
-        upstream_target = self.path
-        if not self.path.startswith(LEGACY_PREFIX):
-            route = route_public_target(self.path)
-            if route is None or route.name not in OPERATOR_KINDS:
-                self.send_error(404)
-                return
-            upstream_target = route.upstream_target
+        route = route_public_target(self.path)
+        if route is None or route.name not in OPERATOR_KINDS:
+            self.send_error(404)
+            return
+        upstream_target = route.upstream_target
         length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(length) if length else None
         connection = http.client.HTTPConnection("127.0.0.1", self.server.target_port, timeout=60)
@@ -60,8 +57,8 @@ def main() -> int:
     server = ThreadingHTTPServer(("127.0.0.1", args.port), OperatorProxy)
     server.target_port = args.target_port
     print(
-        f"operator web proxy listening on http://127.0.0.1:{args.port} "
-        "-> /activity/*, /operations/*, /duplicate/* only (legacy /operator/* accepted)",
+        f"duplicate web proxy listening on http://127.0.0.1:{args.port} "
+        "-> /duplicate/* only",
         flush=True,
     )
     server.serve_forever()

@@ -95,8 +95,10 @@ def rounded_matrix_title(draw: ImageDraw.ImageDraw, palette: Palette) -> int:
     """A compact title plate made from rounded, colorful matrix cells."""
     draw.rounded_rectangle((52, 80, WIDTH - 52, 230), radius=32, fill=palette.title_fill)
     draw.rounded_rectangle((62, 90, WIDTH - 62, 220), radius=26, outline=palette.border, width=2)
-    draw.rounded_rectangle((82, 107, 208, 139), radius=16, fill=palette.surface)
-    draw.text((101, 113), "A-SOUL LIVE", font=font(16, True), fill=palette.accent)
+    brand_font = font(16, True)
+    brand_width = text_width(draw, "AK-BOT FUNCTION", brand_font) + 38
+    draw.rounded_rectangle((82, 107, 82 + brand_width, 139), radius=16, fill=palette.surface)
+    draw.text((101, 113), "AK-BOT FUNCTION", font=brand_font, fill=palette.accent)
     draw.text((82, 146), "枝江直播状态", font=font(48, True), fill=palette.ink)
     draw.text((82, 207), "直播防护运行快照  |  2026-07-28 01:56", font=font(17), fill=palette.muted)
     draw_bow(draw, WIDTH - 128, 135, 30, "#b397d0", "#79588b")

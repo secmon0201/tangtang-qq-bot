@@ -1,6 +1,7 @@
 from PIL import Image
 import asyncio
 from io import BytesIO
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -161,7 +162,10 @@ def test_web_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
     plugin = announcement_plugin()
     poster = tmp_path / "poster.png"
     Image.new("RGB", (10, 10), "white").save(poster)
-    session = plugin.web_sessions.create(100)
+    session = plugin.web_sessions.create(
+        100,
+        (plugin.AnnouncementTarget("group:1001", "测试群", "group", (1001,)),),
+    )
 
     async def request_json():
         return {
@@ -170,6 +174,7 @@ def test_web_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
             "member": "__none__",
             "sticker": "__random__",
             "at_all": True,
+            "targets": ["group:1001"],
         }
 
     monkeypatch.setattr(plugin, "renderer", SimpleNamespace(render_global_announcement=lambda _text, sticker=None: poster))
@@ -183,13 +188,17 @@ def test_web_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
     assert session.draft_path == poster
     assert session.draft_extra_text == "图片下方说明"
     assert session.draft_at_all is True
+    assert session.draft_target_group_ids == (1001,)
 
 
 def test_web_graphic_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
     plugin = announcement_plugin()
     poster = tmp_path / "poster.png"
     Image.new("RGB", (10, 10), "white").save(poster)
-    session = plugin.web_sessions.create(100)
+    session = plugin.web_sessions.create(
+        100,
+        (plugin.AnnouncementTarget("group:1001", "测试群", "group", (1001,)),),
+    )
     source = BytesIO()
     Image.new("RGB", (10, 10), "pink").save(source, format="PNG")
     source.seek(0)
@@ -211,6 +220,7 @@ def test_web_graphic_preview_post_returns_the_rendered_png(monkeypatch, tmp_path
             member="__none__",
             sticker="__random__",
             at_all="false",
+            targets=json.dumps(["group:1001"]),
         )
     )
 
@@ -221,6 +231,40 @@ def test_web_graphic_preview_post_returns_the_rendered_png(monkeypatch, tmp_path
         assert preview.format == "WEBP"
     assert session.draft_path == poster
     assert session.draft_extra_text == "图片下方说明"
+    assert session.draft_target_group_ids == (1001,)
+
+
+def test_announcement_target_snapshot_supports_cluster_and_group_multiselect_without_duplicates():
+    plugin = announcement_plugin()
+    options = (
+        plugin.AnnouncementTarget("cluster:7", "联动集群", "cluster", (1001, 1002)),
+        plugin.AnnouncementTarget("group:1002", "二群", "group", (1002,), "cluster:7"),
+        plugin.AnnouncementTarget("group:2001", "独群", "group", (2001,)),
+    )
+    session = plugin.web_sessions.create(100, options)
+
+    resolved = plugin.web_sessions.resolve_targets(
+        session, ["cluster:7", "group:1002", "group:2001"]
+    )
+
+    assert resolved == (1001, 1002, 2001)
+    assert session.target_options == options
+
+
+def test_announcement_target_selection_is_required_and_rejects_unknown_keys():
+    plugin = announcement_plugin()
+    session = plugin.web_sessions.create(
+        100,
+        (plugin.AnnouncementTarget("group:1001", "测试群", "group", (1001,)),),
+    )
+
+    for selected in ([], ["group:missing"]):
+        try:
+            plugin.web_sessions.resolve_targets(session, selected)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid announcement targets must be rejected")
 
 
 def test_global_announcement_broadcast_sends_one_image_to_each_a_coast_group(monkeypatch, tmp_path):

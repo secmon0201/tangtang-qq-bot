@@ -636,7 +636,7 @@
       root.innerHTML = `
         <article class="schedule-card">
         <section class="masthead">
-          <div><div class="schedule-eyebrow"><span class="xinyi-mark" aria-hidden="true"></span><span>枝江直播日历</span></div><h1>${escapeHtml(payload.title || labels[payload.view] || "直播日历")}</h1><p class="masthead-copy">从开播时间到节目内容，一眼找到值得等候的那一场。</p></div>
+          <div><div class="schedule-eyebrow"><span class="xinyi-mark" aria-hidden="true"></span><span>AK-BOT FUNCTION</span></div><h1>${escapeHtml(payload.title || labels[payload.view] || "直播日历")}</h1><p class="masthead-copy">从开播时间到节目内容，一眼找到值得等候的那一场。</p></div>
           <div class="signal-block"><span class="signal-value">${Number(payload.event_count || 0)}</span><span class="signal-label">场直播安排</span></div>
         </section>
         <div class="schedule-body">${days.map((day) => `

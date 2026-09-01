@@ -26,4 +26,4 @@ if (-not $publicUrl) { throw 'cloudflared did not produce an operator web URL wi
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($UrlPath, $publicUrl, $utf8)
 Write-Output "Operator web tunnel ready: $publicUrl"
-Write-Output 'Use #活动网页, #运营网页, or #查重网页.'
+Write-Output 'Use #查重网页.'

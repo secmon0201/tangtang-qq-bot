@@ -447,7 +447,7 @@ class ManagerApp:
 
     def _build_config_tab(self, parent: ttk.Frame) -> None:
         fields = [
-            ("MANAGED_GROUP_IDS", "管理群号（最多 10 个，逗号分隔）"),
+            ("MANAGED_GROUP_IDS", "初始管理群（不限数量，逗号分隔）"),
             ("BOT_OPERATOR_IDS", "操作者 QQ 号（逗号分隔）"),
             ("NAPCAT_QQ_ID", "机器人 QQ 号"),
             ("NAPCAT_DIR", "NapCat.Shell 目录"),

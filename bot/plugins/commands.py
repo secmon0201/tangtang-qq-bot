@@ -9,7 +9,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status as fastapi_status
 from fastapi.responses import HTMLResponse
 from nonebot import get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
@@ -249,7 +249,7 @@ async def community_help_api() -> dict[str, Any]:
 )
 async def retired_community_route(path: str = "") -> None:
     del path
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    raise HTTPException(status_code=fastapi_status.HTTP_404_NOT_FOUND)
 
 
 user_help_text_command = on_command("帮助文字", priority=5, block=True)
@@ -346,7 +346,8 @@ async def build_community_ranking_payload(
         member_group_id: group_domains().display_name(member_group_id)
         for member_group_id in domain_group_ids
     }
-    options = [{"key": DOMAIN_GROUP_KEY, "label": domain.alias or domain.name}]
+    domain_label = group_domains().domain_display_name(domain)
+    options = [{"key": DOMAIN_GROUP_KEY, "label": domain_label}]
     if domain.mode == "cluster":
         options.extend(
             {
@@ -366,7 +367,7 @@ async def build_community_ranking_payload(
         daily_totals=daily_totals,
         selected_group_id=group_id,
         group_label_override=(
-            labels[group_id] if group_id is not None else (domain.alias or domain.name)
+            labels[group_id] if group_id is not None else domain_label
         ),
         group_labels=labels,
         group_options=options,
@@ -629,7 +630,7 @@ async def _open_operator_web(matcher: object, event: MessageEvent, kind: str, la
         await matcher.finish(f"只有超级管理员可以使用{label}。")  # type: ignore[attr-defined]
     base_url = operator_web_base_url()
     if base_url is None:
-        await matcher.finish("运营网页隧道尚未启动，请先启动运营网页隧道。")  # type: ignore[attr-defined]
+        await matcher.finish("查重网页隧道尚未启动，请先启动查重网页隧道。")  # type: ignore[attr-defined]
     session = operator_web_sessions.create(user_id(event), kind, is_super_admin=True)
     await matcher.finish(
         f"{label}（链接仅限本次操作，15 分钟内有效）：\n"
@@ -724,211 +725,93 @@ def admin_help_page_text(title: str, sections: list[tuple[str, str, str]]) -> st
 def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]]:
     """Build the complete, current super-admin manual as small readable pages."""
     prefix = settings.command_prefix
-    scope_lines = "\n".join(
-        f"{label}：{','.join(map(str, sorted(passive.groups(feature)))) or '未开启'}"
-        for feature, label in (
-            ("duplicate", "查重群"),
-            ("game", "游戏群"),
-            ("game_api", "游戏接口群"),
-            ("today_wife", "今日老婆群"),
-            ("activity", "活动群"),
-            ("passive", "被动互动群"),
-            ("hourly", "整点报时群"),
-        )
-    )
-    managed = ",".join(map(str, sorted(settings.managed_group_ids)))
+    active_groups = group_domains().all_group_ids()
     return [
         (
-            "超级管理员手册 1/8｜权限与触发",
-            "权限、范围、@ 规则和费用边界",
+            "超级管理员手册 1/4｜权限与本群设置",
+            "群主、群管理员与超级管理员的职责边界",
             [
                 (
-                    "三类用户",
-                    "超级管理员：BOT_OPERATOR_IDS\n活动管理员：ACTIVITY_ADMIN_IDS，或活动有效群的群主、群管理员\n普通用户：未列入以上名单的 QQ",
-                    "活动有效群的群主和群管理员自动获得活动管理权限，ACTIVITY_ADMIN_BLACKLIST_IDS 可排除指定 QQ。活动管理员可创建活动并管理自己创建的活动；超级管理员可管理全部活动和全局配置。",
+                    "本群机器人管理员",
+                    f"{prefix}群设置\n{prefix}群设置 代称 <名称>\n{prefix}群设置 <功能> 开|关",
+                    "群主和 QQ 群管理员自动拥有本群机器人管理权限；超级管理员也可管理当前群。群设置只影响本群，不改变集群统计成员关系。",
                 ),
                 (
-                    "触发规则",
-                    "所有角色：使用 #指令 [参数]\n普通用户、活动管理员和超级管理员共用同一命令格式\n私聊同样使用 # 前缀",
-                    "命令先识别 # 前缀，再按已有权限规则决定是否执行。机器人自身消息不会再次触发。",
+                    "功能开关",
+                    f"{prefix}开关小游戏\n{prefix}开关今日老婆\n{prefix}开关准时报点\n{prefix}开关被呼叫会话\n{prefix}开关B站推送\n{prefix}开关被动互动\n{prefix}开关NTE",
+                    "新独群默认开启被动指令能力，主动推送默认关闭；加入集群时全部功能开启，之后仍由本群管理员分别开关。",
                 ),
                 (
-                    "范围与费用",
-                    f"管理群总范围：{managed}\n管理群数量：{len(settings.managed_group_ids)}/10\n传输：{settings.transport}，接口：{settings.host}:{settings.port}",
-                    "所有功能先检查管理范围和功能范围。基础功能使用本地规则、SQLite 和 Pillow；仅糖糖聊天和发言画像会在启用时调用外部模型。",
+                    "本群过滤",
+                    f"{prefix}群设置 过滤 列表\n{prefix}群设置 过滤 添加 QQ号\n{prefix}群设置 过滤 移除 QQ号",
+                    "过滤名单只作用于当前群，不扩散到同一集群的其他群。",
                 ),
             ],
         ),
         (
-            "超级管理员手册 2/8｜功能范围与状态",
-            "查看和热更新每个功能针对哪些群",
+            "超级管理员手册 2/4｜系统与集群",
+            "只在私聊开放的全局管理能力",
             [
                 (
-                    "查看总范围",
-                    f"{prefix}功能范围 列表\n{prefix}机器人状态\n{prefix}被动互动状态\n\n当前已持久化范围：\n{scope_lines}",
-                    "功能范围命令修改后立即生效并写入 SQLite。",
+                    "集群维护",
+                    f"{prefix}系统设置 集群 列表\n{prefix}系统设置 集群 创建 <名称>\n{prefix}系统设置 集群 邀请 <集群ID> <群号>\n{prefix}系统设置 集群 移除 <群号>\n{prefix}系统设置 集群 解散 <集群ID>",
+                    "集群不对群管理员开放。成员变化会立即轮换排行令牌；只能邀请机器人当前实际加入的群。",
                 ),
                 (
-                    "热更新功能范围",
-                    f"{prefix}功能范围 查重 添加 QQ群号\n{prefix}功能范围 游戏 添加 QQ群号\n{prefix}功能范围 游戏接口 添加 QQ群号\n{prefix}功能范围 今日老婆 添加 QQ群号\n{prefix}功能范围 活动 添加 QQ群号\n{prefix}功能范围 被动 添加 QQ群号\n{prefix}功能范围 整点报时 添加 QQ群号",
-                    f"移除时把“添加”替换为“移除”。目标群必须属于 MANAGED_GROUP_IDS；未开启的群不会在后台执行对应功能。A海岸发言统计固定为五个指定群，不能通过此命令修改。游戏接口（异环 #nte）范围默认全部管理群，与本地小游戏范围相互独立，用 {prefix}游戏接口 状态|开启|关闭 控制。",
+                    "全局运行条件",
+                    f"{prefix}系统设置 NTE 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
+                    "全局运行条件不会改写各群已保存的开关意图；重新开启后，各群按原状态恢复。",
                 ),
                 (
-                    "权限和无效请求",
-                    "范围维护只接受超级管理员\n超级管理员可以通过私聊维护全局范围\n群外或未开启的功能按各功能规则处理",
-                    "游戏接口命令在未开放群保持无反应；异环 NTE 前缀可带或不带 # 且不区分大小写，gs/ww/yh 一律不响应；统计关闭时统计插件不会加载，也不会读取群消息。",
+                    "当前规模",
+                    f"已登记群：{len(active_groups)} 个\n群数量不设上限\nSQLite 为运行权威",
+                    "新群在机器人首次观察到群消息或同步群列表时自动登记为独群；.env 只用于首次迁移种子和机器级参数。",
                 ),
             ],
         ),
         (
-            "超级管理员手册 3/8｜查重与白名单",
-            "跨群成员查重、白名单和图片结果",
+            "超级管理员手册 3/4｜统计与 NTE",
+            "当前群、当前集群与机器人总榜的明确边界",
             [
                 (
-                    "四种查重模式",
-                    f"{prefix}查重1 群号1 群号2 ...\n{prefix}查重2 起点群 目标群1 目标群2 ...\n{prefix}查重3 群号1 群号2 ...\n{prefix}查重4 起点群 目标群1 目标群2 ...",
-                    "查重1：所有指定群互相查重；查重2：只看起点群成员是否在目标群出现；查重3/4分别是不使用白名单的查重1/2。省略群号使用当前配置范围。",
+                    "发言榜",
+                    f"{prefix}发言排行 日|周|月|总\n{prefix}集群发言排行 日|周|月|总",
+                    "普通发言榜只统计当前群；集群发言榜只在集群成员群内可用。23:50 推送由各群开关控制：独群发送本群榜，集群成员群发送当前集群榜。",
                 ),
                 (
-                    "白名单维护",
-                    f"{prefix}白名单 菜单\n{prefix}白名单 列表\n{prefix}白名单 添加 QQ号 [备注]\n{prefix}白名单 删除 QQ号",
-                    "白名单只影响普通查重1/2，不影响查重3/4。群内命令需要查重功能已对当前群开放；超级管理员也可在私聊查看、维护白名单。菜单是本地图片，文字命令始终有效。",
+                    "发言档案",
+                    f"{prefix}发言记录 QQ号|@成员 [页码]\n{prefix}发言搜索 QQ号|@成员 关键词 [页码]\n{prefix}发言画像 QQ号|@成员",
+                    "记录和搜索只读取当前群；画像按当前群域读取。历史说明使用糖糖实际加入该群的日期。",
                 ),
                 (
-                    "结果和隐私",
-                    "查重结果使用本地确定性图片，全部成员合并为一张图\n图片顶部标出 1、2、3 群，成员行只显示重复群编号",
-                    "头像和昵称属于普通 QQ 资料请求，不调用 AI。跨群结果只对超级管理员开放；不要把结果转发到无关群。",
+                    "NTE 排行",
+                    f"{prefix}nte薄荷排行\n{prefix}nte薄荷总排行\n{prefix}nte最强排行\n{prefix}nte最强总排行",
+                    "默认排行只看当前群；只有显式写出“总排行”才查看机器人记录到的全部群。关闭本群 NTE 只阻止本群主动调用，不改写上游数据。",
                 ),
             ],
         ),
         (
-            "超级管理员手册 4/8｜被动互动与糖糖主动回复",
-            "随机表情、随机复读、三连复读、糖糖主动回复和过滤名单",
+            "超级管理员手册 4/4｜公告与运维",
+            "多选目标公告、查重与本地运行边界",
             [
                 (
-                    "被动互动范围",
-                    f"{prefix}被动互动群 列表\n{prefix}被动互动群 添加 QQ群号\n{prefix}被动互动群 移除 QQ群号\n{prefix}被动互动状态 [QQ群号]",
-                    "只有被动互动范围内的普通非命令纯文本消息会进入被动处理。每个群都有独立参数，热更新立即持久化。",
+                    "公告面板",
+                    f"{prefix}公告面板\n兼容：{prefix}公告网页",
+                    "仅超级管理员可打开。独群、集群和集群成员可同时多选，实际群号在会话创建时冻结并自动去重；文字、图文和原图使用同一目标规则。",
                 ),
                 (
-                    "随机表情和随机复读",
-                    f"{prefix}表情命中率 QQ群号 0-50%\n{prefix}表情冷却 QQ群号 秒\n{prefix}复读命中率 QQ群号 0-10%\n{prefix}复读冷却 QQ群号 分钟\n{prefix}复读间隔 QQ群号 消息条数",
-                    "随机表情受命中率和冷却影响；随机复读还要满足纯文本、消息间隔和冷却。全局启动开关仍来自 .env，逐群参数可热更。",
+                    "查重与白名单",
+                    f"{prefix}查重1 / {prefix}查重2 / {prefix}查重3 / {prefix}查重4\n{prefix}白名单 菜单|列表|添加|删除",
+                    "查重是独立的内部能力，不随公开群功能列表展示；跨群结果只对超级管理员开放。",
                 ),
                 (
-                    "三连复读",
-                    f"{prefix}三连复读 列表\n{prefix}三连复读 QQ群号 开启\n{prefix}三连复读 QQ群号 关闭\n{prefix}三连复读 QQ群号 状态\n{prefix}三连复读 QQ群号 概率 0-100%",
-                    "三连复读属于被动互动范围，有独立逐群开关和命中概率。连续三条完全相同的纯文本后按概率额外复读一次；不受随机复读命中率、冷却和消息间隔影响。过滤名单用户、机器人自身消息和 #命令不会触发。",
-                ),
-                (
-                    "糖糖主动回复",
-                    f"{prefix}糖糖主动回复 状态\n{prefix}糖糖主动回复 开启\n{prefix}糖糖主动回复 关闭\n{prefix}糖糖主动回复 概率 0-20%\n{prefix}糖糖主动回复 冷却 分钟\n{prefix}糖糖主动回复 间隔 消息条数",
-                    "开启后，糖糖会对未呼叫的普通群消息按概率尝试主动接话；参数写回 .env，重启后保持一致。可与复读类被动互动并行，重叠时请调低复读或主动回复概率。",
-                ),
-                (
-                    "主动与被动过滤名单",
-                    f"{prefix}主动过滤 QQ号1,QQ号2\n{prefix}移除主动过滤 QQ号1,QQ号2\n{prefix}主动过滤 列表\n\n{prefix}被动过滤 QQ号1,QQ号2\n{prefix}移除被动过滤 QQ号1,QQ号2\n{prefix}被动过滤 列表",
-                    "主动名单静默拦截被过滤用户的 # 指令和小游戏；被动名单阻止随机表情/复读、三连复读和 @机器人的自动表情。两份名单独立保存，支持逗号、中文逗号或空格批量填写。",
-                ),
-            ],
-        ),
-        (
-            "超级管理员手册 5/8｜活动用户操作",
-            "普通用户如何查看、报名和查询结果",
-            [
-                (
-                    "查看活动",
-                    f"{prefix}活动帮助\n{prefix}活动大厅\n{prefix}活动详情 ID\n{prefix}查看名单 ID\n{prefix}我的活动",
-                    "活动大厅只显示未开始和进行中的活动。活动详情、名单和结果都使用本地图片；多图内容会折叠合并转发。ID 从 500 起连续生成。",
-                ),
-                (
-                    "报名和退出",
-                    f"{prefix}报名 ID\n{prefix}取消报名 ID\n也支持：报名517、报名 517、报名：517、报名#517",
-                    "活动开放群内的所有用户均可不 @ 进行活动操作。报名成功会添加续标识并引用回复当前人数；重复报名只添加续标识；取消报名会添加续标识和疑问表情。活动结束后不能报名或退出。",
-                ),
-                (
-                    "名单隐私",
-                    f"{prefix}获奖名单 ID\n{prefix}查看获奖名单 ID",
-                    "群聊始终是公开上下文：普通用户、活动管理员和超级管理员看到的跨群名单都按活动设置脱敏。活动创建者和超级管理员可在私聊查看自己有权限活动的完整信息。公开参与活动才在群内显示完整参与信息。",
-                ),
-            ],
-        ),
-        (
-            "超级管理员手册 6/8｜活动创建与管理",
-            "创建、修改、取消、提前结束和自动结算",
-            [
-                (
-                    "创建活动",
-                    f"{prefix}创建活动\n活动名：名称\n开始时间：YYYY-M-D HH:MM\n结束时间：YYYY-M-D HH:MM\n类型：通报/抽奖\n参与群：群号1,群号2",
-                    "超级管理员、配置的活动管理员，以及活动有效群内的群主和群管理员可创建。参与群必须属于活动功能范围；抽奖必须填写奖项，通报不要填写奖项。",
-                ),
-                (
-                    "格式示例",
-                    f"{prefix}创建活动\n活动名：夏日抽奖\n开始时间：2026-7-25 20:00\n结束时间：2026-7-25 22:00\n类型：抽奖\n奖项：一等奖=1；二等奖=3\n隐私：公开",
-                    "奖项格式：等号前为奖项内容、等号后为数量；多个奖项使用分号分隔。每个字段独占一行，未填写的可选字段使用默认值。",
-                ),
-                (
-                    "修改活动",
-                    f"{prefix}修改活动\n活动ID：517\n活动名：新标题\n结束时间：2026-7-25 22:30",
-                    "活动ID 是必填定位字段，活动名、开始时间、结束时间、类型、说明、奖项、参与群、隐私可修改；未填写或留空保持原值。进行中的活动仅超级管理员可修改；参与群变化会通知相关群。",
-                ),
-                (
-                    "结束和取消",
-                    f"{prefix}提前结束 ID\n{prefix}取消活动 ID [原因]",
-                    "活动创建者只能管理自己创建的活动；超级管理员可以管理全部活动。取消是软删除并保留审计记录；抽奖活动结束时自动开奖，同一用户一场活动最多中奖一次。",
-                ),
-            ],
-        ),
-        (
-            "超级管理员手册 7/8｜直播、枝江、A-SOUL 与 A海岸",
-            "直播日程、B站维护、枝江资料和固定统计范围",
-            [
-                (
-                    "A海岸发言统计",
-                    f"{prefix}发言排行 日|周|月|总\n{prefix}A海岸发言排行 日|周|月|总\n{prefix}发言画像 QQ号|@成员\n{prefix}画像 QQ号|@成员",
-                    f"A海岸五群内的所有用户均可调用两种排行榜；不需要超级管理员权限。超级管理员私聊可使用 {prefix}A海岸发言排行 日|周|月|总 查看全部 A海岸榜单。灌水榜记录自 2026-07-28 起。\n\n群内榜只计算当前群；A海岸榜合并五群，但每位用户只显示其在当前统计窗口内发言次数最高的一个完整群名；次数并列时按 A海岸固定群顺序判定。日、周、月、总榜均取前 100，图片显示头像和昵称但不显示 QQ 号。\n\n每天 23:50-23:59 会向五个 A海岸群各自动发送一次 A海岸日榜；窗口内重连会补发未成功的群。\n\n发言原文统一保存在糖糖本地聊天记录库，全部固定覆盖五个 A海岸群，不提供单群范围：A海岸群成员可在群内使用 {prefix}发言画像 QQ号；超级管理员私聊也可使用画像。画像以动态长图展示头像、QQ 号、确立时间、24 小时发言占比、本地六维文本风格与 AI 正文。{prefix}发言记录 QQ号 [页码]、{prefix}发言搜索 QQ号 关键词 [页码] 仍仅超级管理员私聊可用。\n\n每条原文只会用于一次 AI 画像，之后以既有画像加新发言更新。统计只保存 QQ 号、最后昵称和发言次数，不保存消息内容；范围固定，不能通过功能范围命令修改。",
-                ),
-                (
-                    "枝江直播守卫与百科",
-                    f"{prefix}枝江直播 [状态]\n{prefix}刷新枝江直播",
-                    "枝江直播显示未来日程；状态显示守卫和小游戏暂停状态；-a 隐藏心宜、思诺场次。刷新枝江直播仅超级管理员可用。直播守卫会在识别到直播期间自动暂停小游戏；百科为本地资料检索。",
-                ),
-                (
-                    "A-SOUL（A手）日程与 B站",
-                    f"{prefix}A魂帮助\n{prefix}今日直播\n{prefix}明日直播\n{prefix}本周直播\n{prefix}日程高亮 YYYY-MM-DD [序号] [粉色|红色|白金色]\n{prefix}取消日程高亮 YYYY-MM-DD 序号\n{prefix}日程高亮列表\n{prefix}取消日程高亮记录 序号",
-                    f"A-SOUL 日程对所有人可查；日程高亮仅超级管理员可维护。B站自动播报状态使用 {prefix}bili_status；登录或退出使用 {prefix}bili_login、{prefix}bili_logout，登录请在私聊完成。B站接口测试和原始数据导出只在私聊使用，避免将调试数据发送到群聊。",
-                ),
-            ],
-        ),
-        (
-            "超级管理员手册 8/8｜游戏、报时与维护",
-            "当前开关、维护命令和故障排查",
-            [
-                (
-                    "游戏和整点报时",
-                    f"游戏范围：{prefix}功能范围 游戏 添加|移除 QQ群号\n游戏接口：{prefix}游戏接口 状态|开启|关闭，{prefix}功能范围 游戏接口 添加|移除 QQ群号\n小游戏清理：{prefix}清游 → {prefix}确认 / {prefix}取消\n今日老婆清理：{prefix}清缘 → {prefix}确认清缘 / {prefix}取消清缘\n{prefix}整点报时 状态\n{prefix}整点报时 开启|关闭\n{prefix}整点报时 时段 HH:MM HH:MM\n{prefix}整点报时 范围 添加|移除|列表 QQ群号",
-                    f"#清游 只清小游戏对局和战绩；#清缘 只清当前群的今日老婆关系历史，近三天匿名活跃计数保留，两个操作各自需要 60 秒内确认。游戏接口识别 NTE 前缀（可带或不带 #，大小写不敏感），默认全部管理群可用，与小游戏开关、直播守卫互不影响。整点报时只在开启状态和目标群发送。",
-                ),
-                (
-                    "A海岸全群通告",
-                    f"{prefix}全局通告 [@全体] [人物] [表情包名] <内容>\n{prefix}全局图片公告 [@全体]\n{prefix}图片公告 [@全体]",
-                    "超级管理员或公告名单成员可用。图片公告可回复一张图片后发送指令，也可将指令和图片放在同一条消息中；只取第一张图片，固定发送到五个 A海岸群。默认不 @ 全体，加入 @全体 或 @all 才会提醒全体成员。",
-                ),
-                (
-                    "Codex 持续任务",
-                    f"{prefix}Codex <需求>\n{prefix}Codex 续 ID <补充需求>\n{prefix}启动Codex ID\n{prefix}暂停Codex ID\n{prefix}取消Codex ID\n{prefix}Codex 状态|列表|结果|重试 ID",
-                    "仅超级管理员可用。新任务与续办都先入队，必须用启动命令执行；同一 ID 会恢复同一 Codex 会话上下文。全机仅串行执行一个任务，完成、失败或停止后均向固定通知群发送折叠结果。详细说明见《功能-Codex持续任务.md》。",
-                ),
-                (
-                    "本机维护",
-                    "启动工具\\11-仅重启机器人.bat\nPowerShell：.\\scripts\\stop.ps1\nPowerShell：.\\scripts\\start.ps1\n配置校验：.\\venv\\Scripts\\python.exe scripts\\validate_qq_config.py --env .env",
-                    f"只改 NoneBot 时不用重启 NapCat；检查日志目录 logs，OneBot 地址为 {settings.host}:{settings.port}。不要把 .env 中的 API Key、OneBot Token 或 NapCat Token 发到群里。",
+                    "运行边界",
+                    "Windows 本地｜NoneBot2｜OneBot v11｜NapCat｜SQLite\nNTE 上游只读",
+                    "QQ 登录与验证始终由用户手工完成。普通 Python 改动只重启 NoneBot，不重启 NapCat/QQ，也不修改 GsUID.Core。",
                 ),
             ],
         ),
     ]
-
-
 async def send_super_admin_help(bot: Bot, matcher: object, event: MessageEvent) -> None:
     pages = super_admin_help_pages()
     paths: list[Path | None] = []
@@ -1244,7 +1127,7 @@ async def _(event: MessageEvent):
     if not group_allowed(event) and not is_operator(event):
         await status.finish("当前群未纳入机器人管理范围。")
     rows = [dict(row) for row in db.managed_groups()]
-    lines = [f"管理群：{len(rows)}/10"]
+    lines = [f"管理群：{len(rows)}（数量不设上限）"]
     for row in rows:
         group_id = int(row["group_id"])
         row["detail"] = group_scope_detail(group_id)
@@ -1253,7 +1136,6 @@ async def _(event: MessageEvent):
         "实时消息统计：" + ("开启" if settings.stats_realtime_enabled else "关闭")
     )
     lines.append("功能范围：详见上方群信息卡片")
-    lines.append(f"活跃活动：{len(db.activities())} 个")
     if settings.gsuid_enabled:
         lines.append("游戏接口：异环 NTEUID（NTE 前缀可带或不带 #，大小写不敏感，独立 GsUID Core 进程）")
     else:

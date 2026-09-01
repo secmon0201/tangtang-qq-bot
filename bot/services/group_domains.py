@@ -166,6 +166,13 @@ class GroupDomainService:
         group_name: str = "",
         joined_at: str | None = None,
     ) -> bool:
+        existing = self.database.managed_group(int(group_id), include_disabled=True)
+        previous_domain_id = (
+            int(existing["domain_id"])
+            if existing is not None and existing["domain_id"] is not None
+            else None
+        )
+        was_enabled = bool(existing["enabled"]) if existing is not None else False
         created = self.database.ensure_group(
             group_id, group_name=group_name, joined_at=joined_at
         )
@@ -202,6 +209,11 @@ class GroupDomainService:
                    WHERE group_id=?""",
                 (int(domain_id), secrets.token_urlsafe(12), int(group_id)),
             )
+            if existing is not None and not was_enabled:
+                if previous_domain_id is not None:
+                    self._rotate_link(connection, previous_domain_id, now)
+                if previous_domain_id != int(domain_id):
+                    self._rotate_link(connection, int(domain_id), now)
             mode = str(
                 connection.execute(
                     "SELECT mode FROM group_domains WHERE domain_id=?", (int(domain_id),)
@@ -313,7 +325,12 @@ class GroupDomainService:
             return None
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT * FROM group_domains WHERE public_token=? AND enabled=1",
+                """SELECT d.* FROM group_domains AS d
+                   WHERE d.public_token=? AND d.enabled=1
+                     AND EXISTS (
+                         SELECT 1 FROM managed_groups AS g
+                         WHERE g.domain_id=d.domain_id AND g.enabled=1
+                     )""",
                 (str(token),),
             ).fetchone()
         return self._domain(row)
@@ -335,13 +352,21 @@ class GroupDomainService:
     def domain_groups(self, domain_id: int, *, enabled_only: bool = True) -> tuple[int, ...]:
         clause = " AND enabled=1" if enabled_only else ""
         with self.database.connect() as connection:
+            domain = connection.execute(
+                "SELECT domain_key FROM group_domains WHERE domain_id=?",
+                (int(domain_id),),
+            ).fetchone()
             rows = list(
                 connection.execute(
                     f"SELECT group_id FROM managed_groups WHERE domain_id=?{clause} ORDER BY group_id",
                     (int(domain_id),),
                 )
             )
-        return tuple(int(row["group_id"]) for row in rows)
+        group_ids = tuple(int(row["group_id"]) for row in rows)
+        if domain is not None and str(domain["domain_key"]) == A_COAST_DOMAIN_KEY:
+            present = set(group_ids)
+            return tuple(group_id for group_id in A_COAST_GROUP_IDS if group_id in present)
+        return group_ids
 
     def ranking_group_ids(self, group_id: int, *, cluster: bool) -> tuple[int, ...]:
         domain = self.domain_for_group(group_id)
@@ -356,6 +381,13 @@ class GroupDomainService:
         if row is None:
             return str(int(group_id))
         return str(row["alias"] or row["group_name"] or row["group_id"])
+
+    def domain_display_name(self, domain: GroupDomain) -> str:
+        if domain.mode == "solo":
+            groups = self.domain_groups(domain.domain_id)
+            if groups:
+                return self.display_name(groups[0])
+        return domain.alias or domain.name
 
     def public_group_key(self, group_id: int) -> str | None:
         row = self.database.managed_group(int(group_id), include_disabled=True)
@@ -402,11 +434,23 @@ class GroupDomainService:
     def rotate_link(self, domain_id: int) -> str:
         token = self._new_token()
         with self.database.connect() as connection:
-            connection.execute(
-                "UPDATE group_domains SET public_token=?,updated_at=? WHERE domain_id=?",
-                (token, utc_now(), int(domain_id)),
-            )
+            self._rotate_link(connection, int(domain_id), utc_now(), token=token)
         return token
+
+    @staticmethod
+    def _rotate_link(connection, domain_id: int, now: str, *, token: str | None = None) -> str:
+        replacement = token or GroupDomainService._new_token()
+        connection.execute(
+            "UPDATE group_domains SET public_token=?,updated_at=? WHERE domain_id=?",
+            (replacement, now, int(domain_id)),
+        )
+        return replacement
+
+    def disable_group(self, group_id: int) -> None:
+        domain = self.domain_for_group(int(group_id))
+        self.database.disable_group(int(group_id))
+        if domain is not None:
+            self.rotate_link(domain.domain_id)
 
     def create_cluster(self, name: str, alias: str = "") -> GroupDomain:
         cleaned = " ".join(str(name).split())
@@ -428,16 +472,28 @@ class GroupDomainService:
 
     def add_group_to_cluster(self, group_id: int, domain_id: int) -> None:
         group_id = int(group_id)
+        now = utc_now()
         with self.database.connect() as connection:
+            group = connection.execute(
+                "SELECT domain_id FROM managed_groups WHERE group_id=? AND enabled=1",
+                (group_id,),
+            ).fetchone()
+            if group is None:
+                raise ValueError("group is not active")
+            previous_domain_id = (
+                int(group["domain_id"]) if group["domain_id"] is not None else None
+            )
             domain = connection.execute(
                 "SELECT mode FROM group_domains WHERE domain_id=? AND enabled=1",
                 (int(domain_id),),
             ).fetchone()
             if domain is None or str(domain["mode"]) != "cluster":
                 raise ValueError("cluster not found")
+            if previous_domain_id == int(domain_id):
+                return
             connection.execute(
                 "UPDATE managed_groups SET domain_id=?,updated_at=? WHERE group_id=?",
-                (int(domain_id), utc_now(), group_id),
+                (int(domain_id), now, group_id),
             )
             for spec in FEATURE_SPECS:
                 connection.execute(
@@ -446,9 +502,11 @@ class GroupDomainService:
                        VALUES (?,?,1,?)
                        ON CONFLICT(group_id,feature_key) DO UPDATE SET
                            configured_enabled=1,updated_at=excluded.updated_at""",
-                    (group_id, spec.key, utc_now()),
+                    (group_id, spec.key, now),
                 )
-        self.rotate_link(domain_id)
+            if previous_domain_id is not None:
+                self._rotate_link(connection, previous_domain_id, now)
+            self._rotate_link(connection, int(domain_id), now)
 
     def remove_group_from_cluster(self, group_id: int) -> None:
         group_id = int(group_id)
@@ -464,7 +522,8 @@ class GroupDomainService:
                 "UPDATE managed_groups SET domain_id=?,updated_at=? WHERE group_id=?",
                 (solo_id, now, group_id),
             )
-        self.rotate_link(previous.domain_id)
+            self._rotate_link(connection, previous.domain_id, now)
+            self._rotate_link(connection, solo_id, now)
 
     def dissolve_cluster(self, domain_id: int) -> None:
         domain_id = int(domain_id)
@@ -487,6 +546,7 @@ class GroupDomainService:
                     "UPDATE managed_groups SET domain_id=?,updated_at=? WHERE group_id=?",
                     (solo_id, now, group_id),
                 )
+                self._rotate_link(connection, solo_id, now)
             connection.execute(
                 """UPDATE group_domains
                    SET enabled=0,public_token=?,updated_at=? WHERE domain_id=?""",

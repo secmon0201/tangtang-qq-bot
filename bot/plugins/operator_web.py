@@ -53,7 +53,7 @@ async def operator_web_page(token: str) -> HTMLResponse:
     if operator_web_sessions.get(token) is None:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="链接已过期，请重新在 QQ 获取。")
     if not PAGE_PATH.is_file():
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="运营网页资源不可用")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="查重网页资源不可用")
     return HTMLResponse(PAGE_PATH.read_text(encoding="utf-8"))
 
 

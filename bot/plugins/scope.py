@@ -50,7 +50,12 @@ MINI_GAME_START_COMMAND_RE = re.compile(
     r"^#\s*(?:装填|装弹(?:\s*成语(?:\s*.*)?)?|骰子|猜数)(?:\s|$)"
 )
 FEATURE_COMMAND_PATTERNS = (
-    ("speech_ranking", re.compile(r"^#\s*(?:发言排行|发言榜|统计|集群发言排行|集群发言榜|集群统计)(?:\s|$)")),
+    (
+        "speech_ranking",
+        re.compile(
+            r"^#\s*(?:发言排行|发言榜|统计|集群发言排行|集群发言榜|集群统计|[Aa]海岸发言排行|[Aa]海岸发言榜|[Aa]海岸统计)(?:\s|$)"
+        ),
+    ),
     ("nte", re.compile(r"^#?\s*nte(?:\s|$|[\u4e00-\u9fff])", re.IGNORECASE)),
     ("zhijiang_calendar", re.compile(r"^#\s*(?:枝江直播|直播日程|本周直播|今日直播|明日直播)(?:\s|$)")),
     ("mini_games", MINI_GAME_COMMAND_RE),
@@ -200,7 +205,7 @@ async def _sync_joined_groups(bot: Bot) -> None:
     for row in database().managed_groups():
         group_id = int(row["group_id"])
         if group_id not in live_ids:
-            database().disable_group(group_id)
+            group_domains().disable_group(group_id)
 
 
 # Run before all matchers. A newly observed QQ group is registered as an

@@ -13,7 +13,6 @@ def disable_real_completion_notification(monkeypatch):
     for key in (
         "DUPLICATE_GROUP_IDS",
         "GAME_GROUP_IDS",
-        "ACTIVITY_GROUP_IDS",
         "HOURLY_ANNOUNCEMENT_GROUP_IDS",
         "BOT_RANDOM_REACTION_GROUP_IDS",
         "ASOUL_BILI_GROUP_IDS",
@@ -30,12 +29,9 @@ def test_config_deduplicates_ids_and_keeps_secrets_out_of_settings(monkeypatch, 
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1001,1002")
     monkeypatch.setenv("BOT_OPERATOR_IDS", "99")
     monkeypatch.setenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", "66,66")
-    monkeypatch.setenv("ACTIVITY_ADMIN_IDS", "77,77")
-    monkeypatch.setenv("ACTIVITY_ADMIN_BLACKLIST_IDS", "88,88")
     monkeypatch.delenv("STATS_GROUP_IDS", raising=False)
     monkeypatch.delenv("DUPLICATE_GROUP_IDS", raising=False)
     monkeypatch.delenv("GAME_GROUP_IDS", raising=False)
-    monkeypatch.delenv("ACTIVITY_GROUP_IDS", raising=False)
     monkeypatch.delenv("ASOUL_BILI_GROUP_IDS", raising=False)
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
     monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
@@ -45,9 +41,6 @@ def test_config_deduplicates_ids_and_keeps_secrets_out_of_settings(monkeypatch, 
     assert config.managed_group_ids == (1001, 1002)
     assert config.operator_ids == frozenset({99})
     assert config.global_announcement_operator_ids == frozenset({66})
-    assert config.activity_admin_ids == frozenset({77})
-    assert config.activity_admin_blacklist_ids == frozenset({88})
-    assert config.activity_withdraw_ack_emoji_id == "32"
     assert config.avatar_refresh_interval == 3600
     assert config.avatar_refresh_cooldown == 900
     assert config.avatar_refresh_max_per_call == 24
@@ -73,12 +66,6 @@ def test_config_can_disable_a_coast_profile(monkeypatch):
     assert config.a_coast_profile_enabled is False
 
 
-def test_config_rejects_invalid_activity_withdraw_reaction(monkeypatch):
-    monkeypatch.setenv("ACTIVITY_WITHDRAW_ACK_EMOJI_ID", "?")
-    with pytest.raises(ValueError, match="ACTIVITY_WITHDRAW_ACK_EMOJI_ID"):
-        Settings.from_env()
-
-
 def test_config_feature_groups_must_be_managed_subset(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1002")
     monkeypatch.setenv("STATS_GROUP_IDS", "1002")
@@ -93,7 +80,7 @@ def test_config_combines_external_and_a_coast_bilibili_groups(monkeypatch):
         "MANAGED_GROUP_IDS",
         "9999,1128870029,1077416717,1083457871,1090284567,278824712",
     )
-    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS", "ACTIVITY_GROUP_IDS"):
+    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
         monkeypatch.setenv(name, "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
@@ -115,7 +102,7 @@ def test_config_combines_external_and_a_coast_bilibili_groups(monkeypatch):
 
 def test_config_allows_explicit_a_coast_bilibili_group_when_switch_is_off(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1128870029")
-    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS", "ACTIVITY_GROUP_IDS"):
+    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
         monkeypatch.setenv(name, "")
     monkeypatch.setenv("ASOUL_BILI_GROUP_IDS", "1128870029")
     monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "false")
@@ -129,7 +116,7 @@ def test_config_allows_explicit_a_coast_bilibili_group_when_switch_is_off(monkey
 
 def test_config_uses_custom_a_coast_bilibili_scope(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1002")
-    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS", "ACTIVITY_GROUP_IDS"):
+    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
         monkeypatch.setenv(name, "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
@@ -142,20 +129,8 @@ def test_config_uses_custom_a_coast_bilibili_scope(monkeypatch):
     assert config.asoul_bili_effective_group_ids == (1001, 1002)
 
 
-def test_config_validates_activity_admin_ids(monkeypatch):
-    monkeypatch.setenv("ACTIVITY_ADMIN_IDS", "not-a-qq-number")
-    with pytest.raises(ValueError, match="invalid QQ/group ID"):
-        Settings.from_env()
-
-
 def test_config_validates_global_announcement_operator_ids(monkeypatch):
     monkeypatch.setenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", "not-a-qq-number")
-    with pytest.raises(ValueError, match="invalid QQ/group ID"):
-        Settings.from_env()
-
-
-def test_config_validates_activity_admin_blacklist_ids(monkeypatch):
-    monkeypatch.setenv("ACTIVITY_ADMIN_BLACKLIST_IDS", "not-a-qq-number")
     with pytest.raises(ValueError, match="invalid QQ/group ID"):
         Settings.from_env()
 
@@ -219,7 +194,6 @@ def test_config_rejects_random_reaction_groups_outside_managed_scope(monkeypatch
     monkeypatch.setenv("STATS_GROUP_IDS", "")
     monkeypatch.setenv("DUPLICATE_GROUP_IDS", "")
     monkeypatch.setenv("GAME_GROUP_IDS", "")
-    monkeypatch.setenv("ACTIVITY_GROUP_IDS", "")
     monkeypatch.delenv("ASOUL_BILI_GROUP_IDS", raising=False)
     monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "1002")
     with pytest.raises(ValueError, match="RANDOM_REACTION_GROUP_IDS"):
@@ -234,7 +208,7 @@ def test_config_validates_hourly_announcement_window(monkeypatch):
 
 def test_config_rejects_hourly_groups_outside_managed_scope(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001")
-    for name in ("STATS_GROUP_IDS", "DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS", "ACTIVITY_GROUP_IDS"):
+    for name in ("STATS_GROUP_IDS", "DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
         monkeypatch.setenv(name, "")
     monkeypatch.setenv("HOURLY_ANNOUNCEMENT_GROUP_IDS", "1002")
     with pytest.raises(ValueError, match="HOURLY_ANNOUNCEMENT_GROUP_IDS"):

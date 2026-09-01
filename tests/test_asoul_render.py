@@ -5,6 +5,11 @@ from PIL import Image
 from bot.services.asoul_render import ASoulImageRenderer
 
 
+def test_asoul_renderer_uses_ak_bot_branding():
+    assert ASoulImageRenderer.BRAND_HEADER == "AK-BOT FUNCTION"
+    assert ASoulImageRenderer.BRAND_FOOTER == "AK bot"
+
+
 class _ImageResponse:
     def __init__(self) -> None:
         buffer = BytesIO()

@@ -8,7 +8,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from zoneinfo import ZoneInfo
 
 from bot.config import A_COAST_GROUP_IDS, settings
-from bot.services.a_coast_daily_ranking import DomainDailyRankingDeliveryService
+from bot.services.daily_ranking import DomainDailyRankingDeliveryService
 from bot.services.avatars import AvatarService
 from bot.services.community_web import (
     DOMAIN_GROUP_KEY,
@@ -110,7 +110,8 @@ async def build_community_ranking_payload(
         member_group_id: group_domains().display_name(member_group_id)
         for member_group_id in domain_group_ids
     }
-    options = [{"key": DOMAIN_GROUP_KEY, "label": domain.alias or domain.name}]
+    domain_label = group_domains().domain_display_name(domain)
+    options = [{"key": DOMAIN_GROUP_KEY, "label": domain_label}]
     if domain.mode == "cluster":
         options.extend(
             {
@@ -119,7 +120,7 @@ async def build_community_ranking_payload(
             }
             for member_group_id in domain_group_ids
         )
-    label = labels[group_id] if group_id is not None else (domain.alias or domain.name)
+    label = labels[group_id] if group_id is not None else domain_label
     history_since = (
         group_domains().joined_date(group_id)
         if group_id is not None

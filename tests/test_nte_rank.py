@@ -178,9 +178,9 @@ def test_help_data_has_custom_ranking_category_and_original_help_entry():
         assert removed not in all_help_text
     assert [(entry["name"], entry["eg"]) for entry in data["定制排行"]["data"]] == [
         ("角色排行", "薄荷排行"),
-        ("角色本群排行", "薄荷群排行"),
+        ("角色总排行", "薄荷总排行"),
         ("最强排行", "最强排行"),
-        ("本群最强排行", "群最强排行"),
+        ("最强总排行", "最强总排行"),
     ]
     assert {entry["sticker_group"] for entry in data["定制排行"]["data"]} == {"贝拉"}
     sticker_groups = {

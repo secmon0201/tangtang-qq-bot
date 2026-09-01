@@ -34,7 +34,7 @@ class _Stats:
 
 
 def test_community_short_links_are_bare_and_approved():
-    assert public_web_url("ranking") == "s.secmon.cn/s"
+    assert public_web_url("ranking") is None
     assert public_web_url("help") == "s.secmon.cn/h"
 
 
@@ -44,7 +44,7 @@ def test_ranking_payload_keeps_the_requested_scope_and_fixed_group_order():
     assert payload["title"] == "莫塔里本周发言榜"
     assert payload["group_label"] == "莫塔里"
     assert payload["scope_title"] == "本周发言榜"
-    assert payload["header_kicker"] == "A-COAST COMMUNITY / WEEKLY LINE-UP"
+    assert payload["header_kicker"] == "AK-BOT FUNCTION"
     assert payload["displayed_count"] == 2
     assert [item["label"] for item in payload["group_options"]] == [
         "A海岸", "修会", "剧团", "莫塔里", "翡萨烈", "墓岛"
@@ -71,7 +71,7 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
     payload = ranking_payload(
         _Stats(),
         "week",
-        "a-coast",
+        "domain",
         rows=[
             {
                 "rank": rank,
@@ -89,8 +89,8 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
 
     assert payload["rows"][0]["avatar"].startswith("data:image/webp;base64,")
     assert payload["rows"][0]["group_name"] == "A海岸1群"
-    assert payload["chart"]["title"] == "A海岸五群发言对比"
-    assert payload["chart"]["x_axis_label"] == "A海岸群组（群）"
+    assert payload["chart"]["title"] == "A海岸群组发言对比"
+    assert payload["chart"]["x_axis_label"] == "群组"
     assert payload["chart"]["y_axis_label"] == "发言数（条）"
     assert [row["label"] for row in payload["chart"]["rows"]] == [
         "修会", "剧团", "莫塔里", "翡萨烈", "墓岛"
@@ -99,7 +99,9 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
     assert all(row["avatar"].startswith("data:image/webp;base64,") for row in payload["chart"]["rows"])
     capture = page_html("ranking", payload, capture=True)
     assert 'class="avatar"' in capture
-    assert "A海岸五群发言对比" in capture
+    assert "A海岸群组发言对比" in capture
+    assert "AK-BOT FUNCTION" in capture
+    assert "AK bot" in capture
     assert 'class="chart-line"' in capture
 
     renderer = CommunityWebRenderer(tmp_path)
@@ -132,7 +134,7 @@ def test_help_payload_uses_the_shared_public_command_catalog():
 
     assert payload["mode"] == "help"
     assert payload["categories"][0]["items"][0]["title"] == "在线帮助"
-    assert any(item["title"] == "A 海岸发言统计" for item in payload["categories"])
+    assert any(item["title"] == "发言统计" for item in payload["categories"])
     assert all(
         item["title"] != "个人发言统计"
         for category in payload["categories"]
@@ -160,7 +162,7 @@ def test_help_payload_preserves_every_source_item_once_and_groups_local_games():
     assert games["item_count"] == 8
 
 
-def test_help_payload_indexes_confirmed_live_and_ranking_destinations():
+def test_help_payload_indexes_only_confirmed_public_destinations():
     payload = help_payload()
     groups = {group["key"]: group for group in payload["groups"]}
 
@@ -169,12 +171,7 @@ def test_help_payload_indexes_confirmed_live_and_ranking_destinations():
         "https://tangtang.secmon.cn/live/?view=tomorrow",
         "https://tangtang.secmon.cn/live/?view=week",
     ]
-    assert [action["target"] for action in groups["stats"]["quick_actions"]] == [
-        "https://tangtang.secmon.cn/ranking/?scope=day&group=a-coast",
-        "https://tangtang.secmon.cn/ranking/?scope=week&group=a-coast",
-        "https://tangtang.secmon.cn/ranking/?scope=month&group=a-coast",
-        "https://tangtang.secmon.cn/ranking/?scope=total&group=a-coast",
-    ]
+    assert groups["stats"]["quick_actions"] == []
 
 
 def test_help_page_exposes_accessible_tabs_copy_feedback_and_mobile_layout():

@@ -87,5 +87,5 @@ if (Test-Path -LiteralPath $nteConfig) {
 Remove-Item -LiteralPath (Join-Path $Root 'data\nte_tunnel_disabled.flag') -Force -ErrorAction SilentlyContinue
 Write-Output "Tangtang named web tunnel ready: $publicUrl"
 Write-Output 'Public homepage: / (static site)'
-Write-Output 'Short links: s.secmon.cn/r, s.secmon.cn/s, s.secmon.cn/h'
-Write-Output 'Bot feature paths: /live/*, /ranking/*, /help/*, /notice/*, /activity/*, /operations/*, /duplicate/*, /nte/*'
+Write-Output 'Short links: s.secmon.cn/r, s.secmon.cn/h'
+Write-Output 'Bot feature paths: /live/*, /ranking/<token>/*, /help/*, /notice/*, /duplicate/*, /nte/*'

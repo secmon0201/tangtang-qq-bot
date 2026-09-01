@@ -29,6 +29,14 @@ class FakeMatcher:
         raise _ScheduleFinished()
 
 
+def enable_bilibili_groups(monkeypatch, *group_ids: int) -> None:
+    monkeypatch.setattr(
+        plugin,
+        "group_domains",
+        lambda: SimpleNamespace(enabled_groups=lambda feature: frozenset(group_ids)),
+    )
+
+
 def test_schedule_web_payload_selects_only_requested_view(monkeypatch):
     captured = {}
 
@@ -140,6 +148,7 @@ def test_week_schedule_reply_ignores_a_option(monkeypatch):
 def test_live_push_mentions_all_only_when_bot_is_admin(monkeypatch):
     bot = FakeBot()
     calls = []
+    enable_bilibili_groups(monkeypatch, 1067772451)
 
     async def updates():
         return ["【开播】测试UP\n直播标题\nhttps://live.bilibili.com/1"]
@@ -169,6 +178,7 @@ def test_live_push_mentions_all_only_when_bot_is_admin(monkeypatch):
 def test_live_push_mentions_all_when_bot_is_admin(monkeypatch):
     bot = FakeBot()
     calls = []
+    enable_bilibili_groups(monkeypatch, 1067772451)
 
     async def updates():
         return ["【开播】测试UP\n直播标题\nhttps://live.bilibili.com/1"]
@@ -200,6 +210,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp
     bot = FakeBot()
     calls = []
     rendered = []
+    enable_bilibili_groups(monkeypatch, 1067772451)
     card = tmp_path / "05a.png"
     card.write_bytes(b"png")
     messages = [
@@ -251,6 +262,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp
 
 
 def test_monitor_does_not_poll_before_a_bot_is_connected(monkeypatch):
+    enable_bilibili_groups(monkeypatch, 1067772451)
     async def updates():
         raise AssertionError("Bilibili detection must wait for a connected bot")
 

@@ -27,6 +27,8 @@
 3. Run the gates; the one-to-one registry test fails until files and registry match.
 4. Restart NoneBot only if it was running the removed feature.
 
+For the retired cross-group activity and survey features, keep only the current documentation pointer to their historical Git revision. They must not remain registered, routable, listed in help, included in image review packs, or writable through legacy `.env` scope mappings. Group activity counters are a separate live statistics capability and must remain intact.
+
 ## Keep changes orthogonal
 
 - Do not touch unrelated plugins, registry entries, or docs inside a feature change.

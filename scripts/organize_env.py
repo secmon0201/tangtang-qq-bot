@@ -35,8 +35,6 @@ SECTIONS = (
         (
             "BOT_OPERATOR_IDS",
             "GLOBAL_ANNOUNCEMENT_OPERATOR_IDS",
-            "ACTIVITY_ADMIN_IDS",
-            "ACTIVITY_ADMIN_BLACKLIST_IDS",
         ),
     ),
     (
@@ -47,7 +45,6 @@ SECTIONS = (
             "DUPLICATE_GROUP_IDS",
             "GAME_GROUP_IDS",
             "GAME_API_GROUP_IDS",
-            "ACTIVITY_GROUP_IDS",
             "HOURLY_ANNOUNCEMENT_GROUP_IDS",
         ),
     ),
@@ -106,13 +103,9 @@ SECTIONS = (
         ),
     ),
     (
-        "七、活动、小游戏与整点报时",
-        "跨群活动、小游戏和整点报时的业务参数。",
+        "七、小游戏与整点报时",
+        "小游戏和整点报时的业务参数。",
         (
-            "ACTIVITY_ACK_EMOJI_ID",
-            "ACTIVITY_WITHDRAW_ACK_EMOJI_ID",
-            "ACTIVITY_MAINTENANCE_INTERVAL_SECONDS",
-            "ACTIVITY_BROADCAST_MAX_ATTEMPTS",
             "MINI_GAME_GUESS_CURSED_NUMBERS",
             "HOURLY_ANNOUNCEMENT_ENABLED",
             "HOURLY_ANNOUNCEMENT_START",

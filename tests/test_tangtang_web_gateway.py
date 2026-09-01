@@ -78,16 +78,16 @@ def test_public_routes_are_explicit_and_rewritten():
     assert gateway.route_public_target("/notice/token").upstream_target == "/announcement/token"
     assert gateway.route_public_target("/notice/api/token/state").upstream_target == "/announcement/api/token/state"
     assert gateway.route_public_target("/wife/token") is None
-    assert gateway.route_public_target("/activity/token").upstream_target == "/operator/token?kind=activity"
-    assert gateway.route_public_target("/operations/api/token/state").upstream_target == "/operator/api/operations/token/state"
+    assert gateway.route_public_target("/activity/token") is None
+    assert gateway.route_public_target("/operations/api/token/state") is None
     assert gateway.route_public_target("/duplicate/api/token/scan").upstream_target == "/operator/api/duplicate/token/scan"
     assert gateway.route_public_target("/nte/i/token").upstream_target == "/nte/i/token"
     assert gateway.route_public_target("/live/?view=tomorrow").upstream_target == "/asoul-live/?view=tomorrow"
     assert gateway.route_public_target("/live/api/schedule?view=week").upstream_target == "/asoul-live/api/schedule?view=week"
-    assert gateway.route_public_target("/ranking/?scope=week&group=a-coast").upstream_target == "/community/ranking/?scope=week&group=a-coast"
-    assert gateway.route_public_target("/ranking/api?scope=day&group=1128870029").upstream_target == "/community/ranking/api?scope=day&group=1128870029"
-    assert gateway.route_public_target("/help/").upstream_target == "/community/help/"
-    assert gateway.route_public_target("/help/api").upstream_target == "/community/help/api"
+    assert gateway.route_public_target("/ranking/token/?scope=week").upstream_target == "/ranking/token/?scope=week"
+    assert gateway.route_public_target("/ranking/token/api?scope=day").upstream_target == "/ranking/token/api?scope=day"
+    assert gateway.route_public_target("/help/").upstream_target == "/help/"
+    assert gateway.route_public_target("/help/api").upstream_target == "/help/api"
 
 
 def test_private_and_unknown_routes_are_blocked():
@@ -102,12 +102,11 @@ def test_root_domain_short_links_are_explicit_redirects():
 
     assert gateway.SHORT_LINK_REDIRECTS == {
         "/r": "https://tangtang.secmon.cn/live/?view=week",
-        "/s": "https://tangtang.secmon.cn/ranking/?scope=day&group=a-coast",
         "/h": "https://tangtang.secmon.cn/help/",
     }
     assert gateway.short_redirect_target("s.secmon.cn", "/r") == "https://tangtang.secmon.cn/live/?view=week"
     assert gateway.short_redirect_target("S.SECMON.CN:443", "/r?source=qq") == "https://tangtang.secmon.cn/live/?view=week"
-    assert gateway.short_redirect_target("s.secmon.cn", "/s") == "https://tangtang.secmon.cn/ranking/?scope=day&group=a-coast"
+    assert gateway.short_redirect_target("s.secmon.cn", "/s") is None
     assert gateway.short_redirect_target("s.secmon.cn", "/h") == "https://tangtang.secmon.cn/help/"
     assert gateway.short_redirect_target("s.secmon.cn", "/t") is None
     assert gateway.short_redirect_target("secmon.cn", "/r") is None
@@ -146,9 +145,11 @@ def test_public_site_routes_are_allowlisted_without_path_traversal(
     configure_site_root(gateway, built, tmp_path, monkeypatch)
 
     assert gateway.resolve_public_site_file("/") == built / "index.html"
-    for page in ("experience", "games", "community", "operator", "technology", "release"):
+    for page in ("experience", "games", "operator", "technology", "release"):
         assert gateway.resolve_public_site_file(f"/{page}/") == built / page / "index.html"
         assert gateway.resolve_public_site_file(f"/{page}") == built / page / "index.html"
+    assert gateway.resolve_public_site_file("/community/") is None
+    assert gateway.resolve_public_site_file("/community") is None
     for original_url in (
         "/styles.css",
         "/assets/tangtang-avatar.jpg",
@@ -254,7 +255,7 @@ def test_gateway_serves_homepage_and_keeps_private_paths_blocked(
         assert "糖糖" in body.decode("utf-8")
         connection.close()
 
-        for page in ("experience", "games", "community", "operator", "technology", "release"):
+        for page in ("experience", "games", "operator", "technology", "release"):
             connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
             connection.request("GET", f"/{page}/")
             response = connection.getresponse()
@@ -264,6 +265,13 @@ def test_gateway_serves_homepage_and_keeps_private_paths_blocked(
             assert response.getheader("Cache-Control") == "no-cache, max-age=0, must-revalidate"
             assert "糖糖" in body.decode("utf-8")
             connection.close()
+
+        connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
+        connection.request("GET", "/community/")
+        response = connection.getresponse()
+        response.read()
+        assert response.status == 404
+        connection.close()
 
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
         connection.request("GET", "/api/send_msg")
@@ -440,15 +448,15 @@ def test_public_pages_preserve_audience_and_nte_information_architecture(built_p
         built / manifest["static_assets"]["/app.js"].lstrip("/")
     ).read_text(encoding="utf-8")
 
-    assert "糖糖在群里的九种打开方式" in home
+    assert "糖糖在群里的八种打开方式" in home
     assert "普通群友而言" in home
     assert "Python 3.13" not in home
     assert "#nte薄荷排行" in games
-    assert "#nte群最强排行" in games
-    assert "A海岸五群合榜" in games
-    assert 'data-scope="managed"' in games
-    assert "bot 全部有效群排行" in app_script
-    assert "一次性运营网页" in operator
+    assert "#nte薄荷总排行" in games
+    assert "#nte最强总排行" in games
+    assert 'data-scope="total"' in games
+    assert "机器人总排行" in app_script
+    assert "群设置" in operator
     assert "Windows 本地运行" in technology
     assert "/api/*、/ws/*、/internal/*" in technology
 
@@ -457,7 +465,7 @@ def test_homepage_exploration_cards_use_dedicated_assets(built_public_site):
     built, manifest = built_public_site
     home = (built / "index.html").read_text(encoding="utf-8")
 
-    for original_url in ("/assets/home-games.jpg", "/assets/home-a-coast.webp"):
+    for original_url in ("/assets/tangtang-avatar.jpg", "/assets/home-games.jpg"):
         built_url = manifest["static_assets"][original_url]
         assert built_url in home
         assert (built / built_url.lstrip("/")).is_file()

@@ -77,7 +77,7 @@ PLUGIN_SPECS = (
     PluginSpec(
         "operator_web",
         "bot.plugins.operator_web",
-        "运营网页",
+        "查重网页",
         "运行维护",
         ("onebot",),
         after=("commands",),

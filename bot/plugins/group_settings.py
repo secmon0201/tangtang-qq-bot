@@ -348,7 +348,8 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
     if tokens[:2] == ["集群", "邀请"] and len(tokens) == 4:
         if not all(value.isdigit() for value in tokens[2:]):
             await system_settings.finish("用法：#系统设置 集群 邀请 <集群ID> <群号>")
-        domains.ensure_group(int(tokens[3]))
+        if not db.is_managed_group(int(tokens[3])):
+            await system_settings.finish("该群尚未加入机器人，不能邀请到集群。")
         domains.add_group_to_cluster(int(tokens[3]), int(tokens[2]))
         await system_settings.finish("已加入集群，集群链接已轮换。")
     if tokens[:2] == ["集群", "移除"] and len(tokens) == 3 and tokens[2].isdigit():

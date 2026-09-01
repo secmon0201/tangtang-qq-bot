@@ -12,6 +12,11 @@ Maintenance contract for `C:\Users\59586\Documents\通讯程序集成管理机�
 - Layer flow: `bot/plugins -> bot/application -> bot/services`; `bot/integrations` wraps external runtimes. Plugins never import plugins; services and application never import plugins.
 - Every `bot/plugins/*.py` entry, except `__init__.py`, is registered exactly once in `bot/application/plugin_registry.py`. Do not rebuild a plugin list in `bot/__main__.py`.
 - NTE (`#nte`) is the only enabled game interface. Ranking, help, and command takeover stay under `bot/`; never modify `GsUID.Core` or NTEUID; read `GsData.db` read-only.
+- SQLite is authoritative for unlimited managed groups, per-group aliases, feature intent, solo domains, and private clusters. A new QQ group is registered as a solo domain; the fixed A-Coast five-group set is the first private cluster.
+- Group owners and QQ group administrators manage only their current group's feature switches. Private-cluster creation, membership, dissolution, and inspection are super-admin-only; joining a cluster enables every group feature initially without coupling later per-group switches to cluster statistics.
+- Current-group ranking is the default. Cluster ranking requires an explicit cluster command, and NTE robot-wide ranking requires an explicit `总排行`. Token ranking routes are `/ranking/<token>/*`; `/community*`, bare `/ranking/`, and legacy `/s` remain unavailable.
+- Active image headers use `AK-BOT FUNCTION` and footers use `AK bot`. Do not expose `A海岸 bot` or `a-coast community` branding on active outputs.
+- Cross-group activities and surveys are retired from runtime registration, routes, help, review packs, and docs. Preserve only the documented Git-history reference; do not confuse them with group activity counters used by rankings and games.
 - A feature lives in its own plugin, service, resources, tests, and docs. Touching another feature is only legitimate as an intentional shared-contract change that updates the shared module, its tests, and all consumers together.
 - Windows-local deployment only. Never commit `.env`, databases, logs, caches, or upstream repositories.
 - QQ/NapCat login is user-operated. Never ask for or handle credentials.

@@ -350,7 +350,7 @@ def main() -> int:
     except (OSError, ValueError) as exc:
         print(f"configuration invalid: {exc}", file=sys.stderr)
         return 1
-    print(f"configuration valid: groups={groups}, operators={operators}, max_groups=10")
+    print(f"configuration valid: groups={groups}, operators={operators}, max_groups=unlimited")
     return 0
 
 

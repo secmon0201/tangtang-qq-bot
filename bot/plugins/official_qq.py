@@ -23,6 +23,10 @@ from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
 from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
 
 
+BRAND_HEADER = "AK-BOT FUNCTION"
+BRAND_FOOTER = "AK bot"
+
+
 def _official_message(event: Event) -> bool:
     return isinstance(event, (GroupAtMessageCreateEvent, C2CMessageCreateEvent))
 
@@ -78,8 +82,10 @@ def _draw_official_probe_card(path) -> object:
     _draw_corner_ribbons(draw, width, height)
     draw_heart_tail(draw, 78, height - 42)
     paste_horizontal_gradient(image, (52, 56, width - 52, 220), "#f3a2bd", "#fff5f9", radius=22)
-    draw.rounded_rectangle((82, 107, 252, 139), radius=16, fill="#fffefe")
-    draw.text((101, 113), "OFFICIAL QQ", font=_font(16, True), fill="#d65791")
+    brand_font = _font(16, True)
+    brand_width = draw.textbbox((0, 0), BRAND_HEADER, font=brand_font)[2] + 38
+    draw.rounded_rectangle((82, 107, 82 + brand_width, 139), radius=16, fill="#fffefe")
+    draw.text((101, 113), BRAND_HEADER, font=brand_font, fill="#d65791")
     draw.text((82, 130), "官方 QQ 连通测试", font=_font(42, True), fill="#342a32")
     draw_stitched_mascot(draw, width - 118, 16, 50)
     draw.rounded_rectangle((52, 248, width - 52, 530), radius=18, fill="#fffefd", outline="#f0d9e4", width=1)
@@ -87,6 +93,9 @@ def _draw_official_probe_card(path) -> object:
     draw.text((82, 378), "未调用生成式 AI，\n也不会消耗模型 Token。", font=_font(21), fill="#907885", spacing=6)
     draw.rounded_rectangle((82, 466, width - 82, 512), radius=16, fill="#fce4f0")
     draw.text((108, 479), "收到图片即表示官方群消息接收和图片发送均正常。", font=_font(16), fill="#b43e78")
+    footer_font = _font(16)
+    footer_width = draw.textbbox((0, 0), BRAND_FOOTER, font=footer_font)[2]
+    draw.text(((width - footer_width) // 2, height - 48), BRAND_FOOTER, font=footer_font, fill="#907885")
     transparent_rounded_corners(image).save(path, format="PNG")
     return path
 
@@ -131,7 +140,7 @@ async def _(bot: Bot, event: Event):
         f"模式：{'沙箱' if runtime.sandbox else '正式'}\n"
         f"会话：{location}\n"
         "可测试：官方群 @ 消息、私聊消息、本地图片发送、群成员 OpenID 接口。\n"
-        "尚未迁移：QQ 号查重、原 OneBot 统计、跨群活动。",
+        "此模式仅用于沙箱连通测试，不承载当前 OneBot 群功能。",
     )
 
 

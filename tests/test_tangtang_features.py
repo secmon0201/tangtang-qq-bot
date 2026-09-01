@@ -26,7 +26,7 @@ def test_feature_hint_prefilter():
     assert has_feature_hint("糖糖看一下今天有谁在播？")
     assert has_feature_hint("糖糖今天群里发言情况怎么样")
     assert has_feature_hint("糖糖看一下a海岸这个月的发言榜")
-    assert has_feature_hint("糖糖看看现在有哪些活动")
+    assert not has_feature_hint("糖糖看看现在有哪些活动")
     assert has_feature_hint("糖糖看下这周直播日程")
     assert has_feature_hint("糖糖明天有人直播吗")
     assert has_feature_hint("糖糖今天有直播吗")
@@ -44,10 +44,10 @@ def test_explicit_ranking_requests_are_routed_locally_with_persona_feedback():
 
     coast = classify_local_feature("糖糖看A海岸这个月的发言榜")
     assert coast is not None
-    assert coast.action == "a_coast_ranking"
+    assert coast.action == "cluster_ranking"
     assert coast.scope == "month"
     assert coast.a_coast is True
-    assert coast.line == "好呀，糖糖这就看看A海岸本月谁最能聊。"
+    assert coast.line == "好呀，糖糖这就看看当前集群本月谁最能聊。"
 
 
 def test_personal_references_never_switch_ranking_away_from_the_group():
@@ -81,12 +81,12 @@ def test_parse_clear_maybe_chat_and_invalid_outputs():
     assert clear.line == "今天的直播给你找出来啦。"
 
     maybe = TangtangFeatureClassifier._parse(
-        '{"decision":"maybe","action":"a_coast_ranking","scope":"month",'
+        '{"decision":"maybe","action":"cluster_ranking","scope":"month",'
         '"a_coast":true,"line":"你要是想看A海岸这个月发言榜的话，我给你排一排。"}'
     )
     assert maybe is not None
     assert maybe.tier == "maybe"
-    assert maybe.action == "a_coast_ranking"
+    assert maybe.action == "cluster_ranking"
     assert maybe.scope == "month"
     assert maybe.a_coast is True
 
@@ -118,7 +118,7 @@ def test_parse_normalizes_ranking_scope_and_a_coast():
         '"a_coast":true,"line":"这个月A海岸的发言榜来了。"}'
     )
     assert forced_coast is not None
-    assert forced_coast.action == "a_coast_ranking"
+    assert forced_coast.action == "cluster_ranking"
     assert forced_coast.a_coast is True
 
     defaulted = TangtangFeatureClassifier._parse(
@@ -162,7 +162,7 @@ def test_classifier_returns_decision_and_usage():
 def test_request_from_decision_maps_scope_to_chinese():
     decision = FeatureDecision(
         tier="clear",
-        action="a_coast_ranking",
+        action="cluster_ranking",
         scope="month",
         a_coast=True,
         line="本月发言榜来了。",
@@ -171,7 +171,7 @@ def test_request_from_decision_maps_scope_to_chinese():
     assert request.action == "ranking"
     assert request.args == "月"
     assert request.a_coast is True
-    assert feature_label(request) == "A海岸发言排行 月"
+    assert feature_label(request) == "集群发言排行 月"
 
 
 def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
@@ -188,7 +188,6 @@ def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
         "today_live",
         "tomorrow_live",
         "week_live",
-        "activity_hall",
         "ranking",
     ):
         monkeypatch.setitem(local_features._handlers, action, fake_handler)
@@ -201,7 +200,6 @@ def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
         FeatureRequest("today_live"),
         FeatureRequest("tomorrow_live"),
         FeatureRequest("week_live"),
-        FeatureRequest("activity_hall"),
         FeatureRequest("ranking", "周", a_coast=True),
     ]
     for request in requests:
@@ -212,6 +210,5 @@ def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
         ("today_live", ("", False)),
         ("tomorrow_live", ("", False)),
         ("week_live", ("", False)),
-        ("activity_hall", ("", False)),
         ("ranking", ("周", True)),
     ]

@@ -74,7 +74,7 @@ OVERRIDES = {
     "ASOUL_BILI_PUSH_COMMENT": "是否推送 B站评论（当前默认关闭）",
     "GSUID_CORE_PORT": "GsUID Core 本地监听端口",
     "GSUID_CORE_HOST": "GsUID Core 本地地址",
-    "TANGTANG_GROUP_IDS": "糖糖生效群（须在 MANAGED_GROUP_IDS 内，最多 10 个）",
+    "TANGTANG_GROUP_IDS": "糖糖生效群的迁移种子（群数量不设上限，运行时以数据库登记为准）",
     "TANGTANG_IGNORE_PROBABILITY": "呼叫后不回复的概率（0-1）",
     "TANGTANG_C_PROBABILITY": "C 模式闲聊接话概率（0-1）",
     "TANGTANG_API_URL": "糖糖 API 地址",

@@ -5,6 +5,11 @@ from PIL import Image
 from bot.services.a_coast_archive_render import ACoastArchiveImageRenderer
 
 
+def test_archive_renderer_uses_ak_bot_branding():
+    assert ACoastArchiveImageRenderer.BRAND_HEADER == "AK-BOT FUNCTION"
+    assert ACoastArchiveImageRenderer.BRAND_FOOTER == "AK bot"
+
+
 def test_archive_renderer_renders_search_results_as_a_portrait_image(tmp_path: Path):
     renderer = ACoastArchiveImageRenderer(tmp_path)
     avatar = tmp_path / "903848042.png"

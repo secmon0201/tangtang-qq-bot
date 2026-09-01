@@ -19,7 +19,6 @@ FEATURE_SCOPE_ENV_KEYS = {
     "duplicate": "DUPLICATE_GROUP_IDS",
     "game": "GAME_GROUP_IDS",
     "game_api": "GAME_API_GROUP_IDS",
-    "activity": "ACTIVITY_GROUP_IDS",
     "passive": "BOT_RANDOM_REACTION_GROUP_IDS",
     "hourly": "HOURLY_ANNOUNCEMENT_GROUP_IDS",
 }

@@ -57,14 +57,72 @@ def test_schedule_payload_is_shared_by_web_and_capture_modes():
     assert "isolation: isolate" in capture
     assert "background: transparent" in capture
     assert "z-index: 1" in capture
-    assert "background: #f5f7f8" in capture
-    assert "border-bottom: 7px solid var(--z-cyan)" in capture
-    assert "background: var(--z-label)" in capture
+    assert 'class="schedule-rail"' in capture
+    assert 'class="schedule-glow schedule-glow-a"' in capture
+    assert "background: linear-gradient(140deg, #fff8fb, #fff 38%, #f0fbf9 66%, #f7f3ff 100%)" in capture
+    assert "backdrop-filter: blur(18px)" in capture
+    assert "border-radius: 12px 30px 12px 30px" in capture
     assert 'class="date-month"' in capture
+    assert 'class="schedule-meta"' in capture
     assert ".schedule-card .schedule-row::after { display: none; }" in capture
     assert ".schedule-card .masthead::after { display: none; }" in capture
     assert "background: #17181c" not in interactive
     assert "repeating-linear-gradient(135deg, #f9dfe9" in interactive
+
+
+def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp_path):
+    payload = schedule_payload(
+        "week",
+        [
+            (
+                date(2026, 8, 30),
+                [
+                    SimpleNamespace(
+                        starts_at=datetime(2026, 8, 30, 20, 0),
+                        hosts=("心宜", "思诺"),
+                        content="这是一条用于验证手机端不会逐字换行或挤出卡片的较长直播标题",
+                        label="特别直播",
+                        highlighted=True,
+                        highlight_style="粉色",
+                    )
+                ],
+            )
+        ],
+        generated_at="2026-08-30 12:00",
+    )
+
+    async def inspect_layout():
+        renderer = ASoulWebRenderer(tmp_path)
+        try:
+            await renderer.warmup()
+            results = []
+            for width, height in ((375, 812), (667, 375)):
+                await renderer._page.set_viewport_size({"width": width, "height": height})
+                await renderer._page.set_content(page_html(payload), wait_until="load")
+                results.append(
+                    await renderer._page.evaluate(
+                        """() => ({
+                            clientWidth: document.documentElement.clientWidth,
+                            scrollWidth: document.documentElement.scrollWidth,
+                            contentWidths: [...document.querySelectorAll('.schedule-content')].map(node => node.getBoundingClientRect().width),
+                            rowsInsideCard: [...document.querySelectorAll('.schedule-row')].every(node => {
+                                const row = node.getBoundingClientRect();
+                                const card = document.querySelector('.schedule-card').getBoundingClientRect();
+                                return row.left >= card.left && row.right <= card.right;
+                            }),
+                            touchTargets: [...document.querySelectorAll('.view-switcher button')].map(node => node.getBoundingClientRect().height),
+                        })"""
+                    )
+                )
+            return results
+        finally:
+            await renderer.close()
+
+    for result in asyncio.run(inspect_layout()):
+        assert result["scrollWidth"] == result["clientWidth"]
+        assert min(result["contentWidths"]) > 100
+        assert result["rowsInsideCard"] is True
+        assert min(result["touchTargets"]) >= 44
 
 
 def test_notification_payload_keeps_each_visual_kind_distinct():

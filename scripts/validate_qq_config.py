@@ -187,7 +187,7 @@ def validate_asoul_bili(values: dict[str, str], managed_set: set[str]) -> None:
                 "ASOUL_BILI_A_COAST_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: "
                 f"{missing_a_coast_groups}"
             )
-    parse_ids(values.get("ASOUL_BILI_TARGET_UIDS", "672328094,672342685,3537115310721181,3537115310721781,672353429,703007996,3493085336046382"), "ASOUL_BILI_TARGET_UIDS")
+    parse_ids(values.get("ASOUL_BILI_TARGET_UIDS", "672328094,672342685,3537115310721181,3537115310721781,672353429,703007996,3493085336046382,3493082517474232"), "ASOUL_BILI_TARGET_UIDS")
     parse_ids(values.get("ASOUL_BILI_COMMENT_TARGET_UIDS", ""), "ASOUL_BILI_COMMENT_TARGET_UIDS")
     for key, default in (
         ("ASOUL_BILI_ENABLED", "false"),

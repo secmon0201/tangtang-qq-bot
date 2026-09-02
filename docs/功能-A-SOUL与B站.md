@@ -37,6 +37,7 @@ A-SOUL 直播日程查询、B 站自动播报与接口测试命令。自动播�
 ## 配置
 
 - `ASOUL_BILI_ENABLED`、`ASOUL_BILI_POLL_INTERVAL_SECONDS`：播报总开关与轮询间隔。
+- 默认监控 8 个 B 站账号，其中包含枝江娱乐的小黑（UID `3493082517474232`，空间 `https://space.bilibili.com/3493082517474232`）。
 - 新独群的 B站推送默认关闭，加入集群时初始开启；本群群主、群管理员或超级管理员使用 `#群设置 B站推送 开|关` 维护本群接收状态。
 - 推送源、账号登录、轮询参数和暂停参数只能由超级管理员维护。`ASOUL_BILI_GROUP_IDS`、`ASOUL_BILI_PUSH_A_COAST` 与 `ASOUL_BILI_A_COAST_GROUP_IDS` 仅作为旧配置迁移和来源兼容，不再是群级运行权威。
 - `ASOUL_BILI_PUSH_DYNAMIC/VIDEO/LIVE/COMMENT`、`ASOUL_BILI_RENDER_CARDS`：各类推送与卡片开关。

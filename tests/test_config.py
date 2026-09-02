@@ -66,6 +66,15 @@ def test_config_can_disable_a_coast_profile(monkeypatch):
     assert config.a_coast_profile_enabled is False
 
 
+def test_config_defaults_to_eight_bilibili_targets_including_zhijiang_xiaohei(monkeypatch):
+    monkeypatch.delenv("ASOUL_BILI_TARGET_UIDS", raising=False)
+
+    config = Settings.from_env()
+
+    assert len(config.asoul_bili_target_uids) == 8
+    assert config.asoul_bili_target_uids[-1] == "3493082517474232"
+
+
 def test_config_feature_groups_must_be_managed_subset(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1002")
     monkeypatch.setenv("STATS_GROUP_IDS", "1002")

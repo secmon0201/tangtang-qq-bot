@@ -133,6 +133,9 @@ async def write_asoul_reports() -> list[Path]:
         await renderer.render_week_schedule(((today, items), (today + timedelta(days=1), items[:1]))),
         await renderer.render_bilibili_notification("【B站新动态】测试UP\n今晚八点开播，欢迎提前预约。\nhttps://example.test/d"),
         await renderer.render_bilibili_notification(
+            "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n这是一条评论推送审查样例。\nhttps://example.test/comment"
+        ),
+        await renderer.render_bilibili_notification(
             "【B站动态】心宜\n这是带引用与预约信息的动态卡片。",
             dynamic={
                 "author": "测试 UP",
@@ -231,6 +234,9 @@ async def write_asoul_reports() -> list[Path]:
                     "following": "24",
                     "followers": "73.4万",
                 },
+            ),
+            await web_renderer.render_notification(
+                "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n这是一条评论推送审查样例。\nhttps://example.test/comment"
             ),
             await web_renderer.render_notification(
                 "【开播】测试 UP\n夏日晚间歌回",

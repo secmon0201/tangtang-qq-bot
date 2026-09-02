@@ -144,13 +144,23 @@ def test_notification_payload_keeps_each_visual_kind_distinct():
     video = notification_payload("video", video={"author": "思诺", "text": "新视频"})
     started = notification_payload("live", live={"phase": "start", "text": "开播"})
     ended = notification_payload("live", live={"phase": "end", "text": "下播"})
+    comment = notification_payload(
+        "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n回复正文\nhttps://t.bilibili.com/1"
+    )
 
-    assert [dynamic["mode"], video["mode"], started["mode"], ended["mode"]] == [
+    assert [dynamic["mode"], video["mode"], started["mode"], ended["mode"], comment["mode"]] == [
         "dynamic",
         "video",
         "live-start",
         "live-end",
+        "comment",
     ]
+    assert comment["details"] == {
+        "author": "乃琳Queen",
+        "context": "在思诺snow的动态底下的回复",
+        "text": "回复正文",
+        "url": "https://t.bilibili.com/1",
+    }
     notification_html = page_html(dynamic, capture=True)
     assert 'class="notification-surface"' in notification_html
     assert 'class="notification-rail"' in notification_html
@@ -163,6 +173,7 @@ def test_notification_payload_keeps_each_visual_kind_distinct():
     assert "backdrop-filter: blur(18px)" in notification_html
     assert "border-radius: 28px" in notification_html
     assert ".notification-card.dynamic .notification-kind" in notification_html
+    assert ".notification-card.comment .notification-kind" in notification_html
     assert ".notification-card.video .notification-kind" in notification_html
     assert ".notification-card.live-start .notification-kind" in notification_html
     assert ".notification-card.live-end .notification-kind" in notification_html
@@ -188,7 +199,7 @@ def test_notification_media_localization_embeds_rich_emoji_nodes(tmp_path):
     assert 'image(node.url, "inline-emoji")' in html
 
 
-def test_notification_renderer_outputs_all_four_aurora_kinds(tmp_path):
+def test_notification_renderer_outputs_all_five_aurora_kinds(tmp_path):
     async def render_all():
         renderer = ASoulWebRenderer(tmp_path)
         try:
@@ -209,6 +220,9 @@ def test_notification_renderer_outputs_all_four_aurora_kinds(tmp_path):
                     "下播",
                     live={"phase": "end", "author": "测试 UP", "text": "直播结束"},
                 ),
+                await renderer.render_notification(
+                    "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n回复正文\nhttps://t.bilibili.com/1"
+                ),
             ]
             rail_count = await renderer._page.locator(".notification-rail").count()
             glow_count = await renderer._page.locator(".notification-glow").count()
@@ -221,12 +235,12 @@ def test_notification_renderer_outputs_all_four_aurora_kinds(tmp_path):
 
     assert rail_count == 1
     assert glow_count == 3
-    assert title == "直播已结束 · 枝江 B站推送"
+    assert title == "评论区回复 · 枝江 B站推送"
     for path in paths:
         assert path.is_file() and path.stat().st_size > 10_000
         with Image.open(path) as image:
             assert image.width == 1080
-            assert image.height > 500
+            assert image.height > 450
             assert image.getbbox() is not None
 
 

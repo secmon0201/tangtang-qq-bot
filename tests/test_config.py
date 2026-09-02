@@ -68,11 +68,27 @@ def test_config_can_disable_a_coast_profile(monkeypatch):
 
 def test_config_defaults_to_eight_bilibili_targets_including_zhijiang_xiaohei(monkeypatch):
     monkeypatch.delenv("ASOUL_BILI_TARGET_UIDS", raising=False)
+    monkeypatch.delenv("ASOUL_BILI_COMMENT_TARGET_UIDS", raising=False)
 
     config = Settings.from_env()
 
     assert len(config.asoul_bili_target_uids) == 8
     assert config.asoul_bili_target_uids[-1] == "3493082517474232"
+    assert config.asoul_bili_comment_target_uids == (
+        "672328094",
+        "672342685",
+        "3537115310721181",
+        "3537115310721781",
+        "672353429",
+    )
+
+
+def test_config_rejects_comment_target_outside_bilibili_targets(monkeypatch):
+    monkeypatch.setenv("ASOUL_BILI_TARGET_UIDS", "100")
+    monkeypatch.setenv("ASOUL_BILI_COMMENT_TARGET_UIDS", "100,200")
+
+    with pytest.raises(ValueError, match="COMMENT_TARGET_UIDS must be a subset"):
+        Settings.from_env()
 
 
 def test_config_feature_groups_must_be_managed_subset(monkeypatch):

@@ -392,13 +392,11 @@ async def _test_bili(matcher: Any, kind: str, uid: str) -> None:
 
 
 async def _recent_comment_rows(uid: str) -> list[dict[str, str]]:
-    results = await asyncio.gather(
-        service.fetch_recent_dynamic_comments(uid),
-        service.fetch_recent_video_comments(uid),
-        return_exceptions=True,
-    )
-    rows = [item for batch in results if not isinstance(batch, Exception) for item in batch]
-    return list({str(row["id"]): row for row in rows if row.get("id")}.values())
+    dynamics = await service.fetch_dynamics(uid)
+    resource = service.latest_comment_resource(dynamics)
+    if resource is None:
+        return []
+    return await service.fetch_latest_comments(resource)
 
 
 async def _bilibili_card_payload(message: str) -> Any:
@@ -548,7 +546,21 @@ async def _(event: MessageEvent, bot: Bot):
 async def _(event: MessageEvent, args=CommandArg()):
     await _require_admin(bili_test_comment, event)
     await _require_private_bili(bili_test_comment, event)
-    await bili_test_comment.finish("B站评论区扫描已停用，避免扫楼请求触发风控。")
+    uid = _uid_or_usage(text_arg(args), "#bili_test_comment UID")
+    if uid is None:
+        await bili_test_comment.finish("用法：#bili_test_comment UID")
+    if uid not in settings.asoul_bili_comment_target_uids:
+        await bili_test_comment.finish("该 UID 不在评论推送的 5 个目标账号中。")
+    try:
+        rows = await _recent_comment_rows(uid)
+    except Exception as exc:
+        logger.warning("Bilibili comment test failed for uid %s: %s", uid, type(exc).__name__)
+        await bili_test_comment.finish("评论区测试失败，请稍后重试。")
+    if not rows:
+        await bili_test_comment.finish("最新 6 小时动态的当前评论页中没有目标账号回复。")
+    lines = ["【B站评论区测试】"]
+    lines.extend(f"{row['author']}：{row['text']}" for row in rows[:5])
+    await bili_test_comment.finish("\n".join(lines))
 
 
 @bili_test_all.handle()
@@ -567,7 +579,15 @@ async def _(event: MessageEvent, args=CommandArg()):
             replies.append(f"{kind}：查询失败（{type(exc).__name__}）")
             continue
         replies.append(f"{kind}：{'可用，' + item['url'] if item else '未找到可用内容'}")
-    replies.append("comment：已停用（不扫描评论区）")
+    if uid in settings.asoul_bili_comment_target_uids:
+        try:
+            comment_rows = await _recent_comment_rows(uid)
+        except Exception as exc:
+            replies.append(f"comment：查询失败（{type(exc).__name__}）")
+        else:
+            replies.append(f"comment：可用，当前页命中 {len(comment_rows)} 条目标账号回复")
+    else:
+        replies.append("comment：该 UID 不在评论目标范围")
     await bili_test_all.finish("【B站综合测试】\n" + "\n".join(replies))
 
 

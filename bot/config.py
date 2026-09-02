@@ -459,9 +459,20 @@ class Settings:
             "ASOUL_BILI_TARGET_UIDS",
         )
         asoul_bili_comment_target_uids = _csv_digit_strings(
-            os.getenv("ASOUL_BILI_COMMENT_TARGET_UIDS", ""),
+            os.getenv(
+                "ASOUL_BILI_COMMENT_TARGET_UIDS",
+                "672328094,672342685,3537115310721181,3537115310721781,672353429",
+            ),
             "ASOUL_BILI_COMMENT_TARGET_UIDS",
         )
+        invalid_comment_targets = sorted(
+            set(asoul_bili_comment_target_uids) - set(asoul_bili_target_uids)
+        )
+        if invalid_comment_targets:
+            raise ValueError(
+                "ASOUL_BILI_COMMENT_TARGET_UIDS must be a subset of "
+                f"ASOUL_BILI_TARGET_UIDS: {invalid_comment_targets}"
+            )
 
         official_app_id = os.getenv("QQ_OPENAPI_APP_ID", "").strip() or None
         official_token = os.getenv("QQ_OPENAPI_TOKEN", "").strip() or None

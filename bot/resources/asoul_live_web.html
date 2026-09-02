@@ -421,6 +421,7 @@
       box-shadow: none;
     }
     .notification-card.video { --notice-a: #8d67ce; --notice-b: #4a9fd1; --notice-c: #47c9b5; --notice-d: #f2ce63; }
+    .notification-card.comment { --notice-a: #e96391; --notice-b: #8d67ce; --notice-c: #47c9b5; --notice-d: #f2ce63; }
     .notification-card.live-start { --notice-a: #f26f82; --notice-b: #ff796f; --notice-c: #8d67ce; --notice-d: #f2ce63; }
     .notification-card.live-end { --notice-a: #8d67ce; --notice-b: #6d82d7; --notice-c: #47c9b5; --notice-d: #f0b8ca; }
     .notification-card::before { display: none; }
@@ -628,6 +629,7 @@
     .live-start .notification-kind { color: #fff; background: var(--red); }
     .live-end .notification-kind { background: #cfd2d9; }
     .notification-card.dynamic .notification-kind,
+    .notification-card.comment .notification-kind,
     .notification-card.video .notification-kind,
     .notification-card.live-start .notification-kind,
     .notification-card.live-end .notification-kind { color: #5b527e; background: linear-gradient(90deg, rgba(255, 216, 229, .78), rgba(210, 240, 236, .74)); }
@@ -779,10 +781,10 @@
         </article>`;
     }
     function notificationKind(mode) {
-      return { dynamic: "最新动态", video: "最新视频", "live-start": "正在直播", "live-end": "直播已结束" }[mode] || "B站通知";
+      return { dynamic: "最新动态", comment: "评论区回复", video: "最新视频", "live-start": "正在直播", "live-end": "直播已结束" }[mode] || "B站通知";
     }
     function notificationModeCode(mode) {
-      return { dynamic: "DYNAMIC", video: "VIDEO", "live-start": "LIVE", "live-end": "REPLAY" }[mode] || "NOTICE";
+      return { dynamic: "DYNAMIC", comment: "COMMENT", video: "VIDEO", "live-start": "LIVE", "live-end": "REPLAY" }[mode] || "NOTICE";
     }
     function richNodes(value, fallback = "") {
       try {
@@ -798,7 +800,7 @@
       const d = payload.details || {};
       const mode = payload.mode || "dynamic";
       document.title = `${notificationKind(mode)} · 枝江 B站推送`;
-      const title = mode === "dynamic" ? (d.title || "发布了一条新动态") : (d.text || d.title || "新内容已发布");
+      const title = mode === "dynamic" ? (d.title || "发布了一条新动态") : mode === "comment" ? (d.context || "在评论区发布了回复") : (d.text || d.title || "新内容已发布");
       const pictures = mode === "dynamic" ? splitUrls(d.image_urls) : [];
       const quotePictures = mode === "dynamic" ? splitUrls(d.quote_image_urls) : [];
       const cover = mode === "video" || mode.startsWith("live-") ? safeUrl(d.cover_url) : "";
@@ -810,13 +812,13 @@
       root.innerHTML = `<article class="notification-surface"><span class="notification-rail">AK-BOT FUNCTION</span><i class="notification-glow notification-glow-a" aria-hidden="true"></i><i class="notification-glow notification-glow-b" aria-hidden="true"></i><i class="notification-glow notification-glow-c" aria-hidden="true"></i><div class="notification">
         <header class="creator">${image(d.avatar_url, "avatar") || `<div class="avatar"></div>`}<div class="creator-copy"><p class="notification-kicker">AK-BOT FUNCTION</p><div class="creator-heading"><h1 class="creator-name">${escapeHtml(d.author || "B站UP主")}</h1><span class="notification-kind">${notificationKind(mode)}</span></div><p class="creator-profile">${escapeHtml(d.profile || "来自 Bilibili 的最新信号")}</p></div><div class="mode-seal" aria-label="Bilibili ${modeCode}"><span>BILI</span><em>${modeCode}</em></div></header>
         <h2 class="notification-title">${escapeHtml(title)}</h2>
-        ${mode === "dynamic" ? `<p class="notification-text">${richNodes(d.rich_nodes, d.text)}</p>` : ""}
-        ${cover ? `<div class="media-frame">${image(cover)}</div>` : mode !== "dynamic" ? `<div class="media-frame media-fallback">Bilibili ${mode.startsWith("live-") ? "Live" : "Video"}</div>` : ""}
+        ${mode === "dynamic" || mode === "comment" ? `<p class="notification-text">${richNodes(d.rich_nodes, d.text)}</p>` : ""}
+        ${cover ? `<div class="media-frame">${image(cover)}</div>` : !["dynamic", "comment"].includes(mode) ? `<div class="media-frame media-fallback">Bilibili ${mode.startsWith("live-") ? "Live" : "Video"}</div>` : ""}
         ${pictures.length ? `<div class="image-grid ${pictures.length === 1 ? "single" : ""}">${pictures.map((url) => image(url)).join("")}</div>` : ""}
         ${d.quote_text || d.quote_author || quotePictures.length ? `<blockquote class="quote"><strong>${escapeHtml(d.quote_author || "转发内容")}</strong>${d.quote_text ? `<p>${richNodes(d.quote_rich_nodes, d.quote_text)}</p>` : ""}${quotePictures.length ? `<div class="image-grid ${quotePictures.length === 1 ? "single" : ""}">${quotePictures.map((url) => image(url)).join("")}</div>` : ""}</blockquote>` : ""}
         ${d.reserve_title || d.reserve_subtitle ? `<section class="reservation"><div><div class="reservation-label">直播预约</div>${d.reserve_title ? `<div class="reservation-title">${escapeHtml(d.reserve_title)}</div>` : ""}${d.reserve_subtitle ? `<div class="reservation-subtitle">${escapeHtml(d.reserve_subtitle)}</div>` : ""}</div><span class="reservation-action">${escapeHtml(d.reserve_action || "预约")}</span></section>` : ""}
         ${mode === "video" && d.description ? `<p class="notification-text">${escapeHtml(d.description)}</p>` : ""}
-        <div class="stats">${profileStats.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
+        ${mode === "comment" ? "" : `<div class="stats">${profileStats.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>`}
       </div><footer class="footer"><span>本功能由爱托提供技术支持</span><strong>AK bot · Generated by Secmon</strong></footer></article>`;
     }
     function render(payload) { payload?.mode === "schedule" ? renderSchedule(payload) : renderNotification(payload || {}); }

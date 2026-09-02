@@ -745,7 +745,7 @@ def test_monitor_uses_dynamic_feed_for_video_submissions_without_video_polling(t
     assert asyncio.run(service.poll_updates()) == []
 
 
-def test_polling_does_not_call_comment_scanners(tmp_path, monkeypatch):
+def test_polling_pushes_new_target_reply_from_latest_six_hour_dynamic_once(tmp_path, monkeypatch):
     monkeypatch.setattr(
         asoul_module,
         "settings",
@@ -760,8 +760,21 @@ def test_polling_does_not_call_comment_scanners(tmp_path, monkeypatch):
         ),
     )
     service = ASoulService(Database(tmp_path / "bot.db"))
+    now = int(__import__("time").time())
+    replies = [{"id": "r1", "author_uid": "100", "author": "测试UP", "text": "第一条回复"}]
+
     async def dynamics(_: str):
-        raise AssertionError("dynamic polling must remain disabled")
+        return [{
+            "id": "d1",
+            "uid": "100",
+            "author": "测试UP",
+            "text": "最近动态",
+            "url": "https://t.bilibili.com/d1",
+            "notification_kind": "dynamic",
+            "published_at": str(now - 60),
+            "comment_oid": "9001",
+            "comment_type": "17",
+        }]
 
     async def videos(_: str):
         raise AssertionError("automatic monitoring must not poll the video list")
@@ -769,19 +782,151 @@ def test_polling_does_not_call_comment_scanners(tmp_path, monkeypatch):
     async def live_statuses(_: tuple[str, ...]):
         return {}
 
-    async def dynamic_comments(_: str):
-        raise AssertionError("dynamic comment scanning must remain disabled")
-
-    async def video_comments(_: str):
-        raise AssertionError("video comment scanning must remain disabled")
+    async def latest_comments(resource):
+        assert resource["id"] == "d1"
+        return list(replies)
 
     service.fetch_dynamics = dynamics  # type: ignore[method-assign]
     service.fetch_videos = videos  # type: ignore[method-assign]
     service.fetch_live_statuses = live_statuses  # type: ignore[method-assign]
-    service.fetch_recent_dynamic_comments = dynamic_comments  # type: ignore[method-assign]
-    service.fetch_recent_video_comments = video_comments  # type: ignore[method-assign]
+    service.fetch_latest_comments = latest_comments  # type: ignore[method-assign]
 
     assert asyncio.run(service.poll_updates()) == []
+    replies.append({"id": "r2", "author_uid": "100", "author": "测试UP", "text": "新增回复"})
     updates = asyncio.run(service.poll_updates())
 
-    assert updates == []
+    assert updates == [
+        "【B站评论区回复】测试UP\n在测试UP的动态底下的回复\n新增回复\nhttps://t.bilibili.com/d1"
+    ]
+    assert asyncio.run(service.poll_updates()) == []
+
+
+def test_latest_comment_resource_requires_latest_eligible_item_within_six_hours(tmp_path):
+    service = ASoulService(Database(tmp_path / "bot.db"))
+    now = 1_800_000_000
+    old = {
+        "id": "old",
+        "notification_kind": "dynamic",
+        "published_at": str(now - 6 * 60 * 60),
+        "comment_oid": "1",
+        "comment_type": "17",
+    }
+    live_card = {
+        "id": "live",
+        "notification_kind": "live",
+        "published_at": str(now - 30),
+        "comment_oid": "2",
+        "comment_type": "17",
+    }
+    video = {
+        "id": "video",
+        "notification_kind": "video",
+        "published_at": str(now - 60),
+        "comment_oid": "3",
+        "comment_type": "1",
+    }
+
+    assert service.latest_comment_resource([live_card, video, old], now) == video
+    assert service.latest_comment_resource([old], now) is None
+
+
+def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        asoul_module,
+        "settings",
+        SimpleNamespace(
+            timezone="Asia/Shanghai",
+            asoul_bili_comment_target_uids=("100", "200"),
+        ),
+    )
+    service = ASoulService(Database(tmp_path / "bot.db"))
+
+    async def comments(oid, resource_type, **kwargs):
+        assert oid == 9001
+        assert resource_type == asoul_module.comment.CommentResourceType.DYNAMIC
+        assert kwargs["order"] == asoul_module.comment.OrderType.TIME
+        return {
+            "replies": [
+                {
+                    "rpid": 1,
+                    "member": {"mid": "999", "uname": "普通用户"},
+                    "content": {"message": "普通评论"},
+                    "replies": [
+                        {
+                            "rpid": 2,
+                            "member": {"mid": "100", "uname": "嘉然"},
+                            "content": {"message": "跨账号楼中楼回复"},
+                        }
+                    ],
+                },
+                {
+                    "rpid": 3,
+                    "member": {"mid": "200", "uname": "乃琳"},
+                    "content": {"message": "一级回复"},
+                },
+            ]
+        }
+
+    monkeypatch.setattr(asoul_module.comment, "get_comments", comments)
+
+    rows = asyncio.run(
+        service.fetch_latest_comments({"comment_oid": "9001", "comment_type": "17"})
+    )
+
+    assert [(row["id"], row["author_uid"], row["text"]) for row in rows] == [
+        ("2", "100", "跨账号楼中楼回复"),
+        ("3", "200", "一级回复"),
+    ]
+
+
+def test_comment_polling_rotates_two_targets_per_cycle(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        asoul_module,
+        "settings",
+        SimpleNamespace(
+            timezone="Asia/Shanghai",
+            asoul_bili_target_uids=("1", "2", "3", "4", "5"),
+            asoul_bili_comment_target_uids=("1", "2", "3", "4", "5"),
+            asoul_bili_push_dynamic=False,
+            asoul_bili_push_video=False,
+            asoul_bili_push_live=False,
+            asoul_bili_push_comment=True,
+        ),
+    )
+    service = ASoulService(Database(tmp_path / "bot.db"))
+    calls: list[str] = []
+    now = int(__import__("time").time())
+
+    async def dynamics(uid):
+        calls.append(uid)
+        return [{
+            "id": f"d-{uid}",
+            "uid": uid,
+            "author": uid,
+            "text": "最近动态",
+            "url": f"https://t.bilibili.com/d-{uid}",
+            "notification_kind": "dynamic",
+            "published_at": str(now - 60),
+            "comment_oid": uid,
+            "comment_type": "17",
+        }]
+
+    async def live_statuses(_):
+        return {}
+
+    async def latest_comments(_):
+        return []
+
+    service.fetch_dynamics = dynamics  # type: ignore[method-assign]
+    service.fetch_live_statuses = live_statuses  # type: ignore[method-assign]
+    service.fetch_latest_comments = latest_comments  # type: ignore[method-assign]
+
+    cycles: list[set[str]] = []
+    for _ in range(3):
+        before = len(calls)
+        asyncio.run(service.poll_updates())
+        cycles.append(set(calls[before:]))
+
+    assert cycles == [{"1", "2"}, {"3", "4"}, {"1", "5"}]
+    state = service.db.asoul_state(asoul_module.MONITOR_KEY, {})
+    assert state["comment_scan_index"] == 1

@@ -90,12 +90,17 @@ def notification_payload(
         details = dict(video)
         mode = "video"
     else:
+        url = lines[-1] if lines and lines[-1].startswith("http") else ""
+        content_lines = lines[1:-1] if url else lines[1:]
+        is_comment = bool(lines and lines[0].startswith("【B站评论区回复】"))
         details = {
             "author": lines[0].split("】", 1)[-1] if lines else "B站UP主",
-            "text": "\n".join(lines[1:-1]) if len(lines) > 2 else "\n".join(lines[1:]),
-            "url": lines[-1] if lines and lines[-1].startswith("http") else "",
+            "text": "\n".join(content_lines[1:] if is_comment else content_lines),
+            "url": url,
         }
-        mode = "dynamic"
+        if is_comment:
+            details["context"] = content_lines[0] if content_lines else "在评论区发布了回复"
+        mode = "comment" if is_comment else "dynamic"
     details = {str(key): value for key, value in details.items()}
     return {"mode": mode, "message": message, "details": details}
 

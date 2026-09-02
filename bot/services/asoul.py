@@ -40,6 +40,9 @@ MONITOR_KEY = "bilibili_monitor"
 CREDENTIAL_KEY = "bilibili_credential"
 BILIBILI_LIVE_STATUS_URL = "https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids"
 MEMBERS = ("向晚", "贝拉", "珈乐", "嘉然", "乃琳", "心宜", "思诺")
+COMMENT_MAX_AGE_SECONDS = 6 * 60 * 60
+COMMENT_SCAN_TARGETS_PER_POLL = 2
+COMMENT_SEEN_LIMIT = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,6 +367,15 @@ class ASoulService:
                 "notification_kind": notification_kind,
                 "cover_url": self._absolute_url(str(archive.get("cover") or "")),
             }
+            published_at = self._dynamic_pub_ts(item, author)
+            basic = item.get("basic") or {}
+            comment_oid = str(basic.get("comment_id_str") or basic.get("comment_id") or "")
+            comment_type = str(basic.get("comment_type") or "")
+            if published_at:
+                record["published_at"] = str(published_at)
+            if comment_oid and comment_type:
+                record["comment_oid"] = comment_oid
+                record["comment_type"] = comment_type
             if rich_nodes:
                 record["rich_nodes"] = json.dumps(rich_nodes, ensure_ascii=False, separators=(",", ":"))
             image_urls = self._dynamic_image_urls(dynamic)
@@ -727,62 +739,108 @@ class ASoulService:
         while len(self._video_notification_details) > 100:
             self._video_notification_details.pop(next(iter(self._video_notification_details)))
 
-    async def fetch_recent_video_comments(self, uid: str) -> list[dict[str, str]]:
-        self._require_bilibili_api()
-        payload = await self._user(uid).get_videos(ps=3)
-        videos = (payload.get("list") or {}).get("vlist") or []
-        observed: list[dict[str, str]] = []
-        watched = set(settings.asoul_bili_comment_target_uids or settings.asoul_bili_target_uids)
-        for video in videos[:3]:
-            aid = int(video.get("aid") or 0)
-            if not aid:
+    @staticmethod
+    def latest_comment_resource(
+        dynamics: list[dict[str, str]], observed_at: int | None = None
+    ) -> dict[str, str] | None:
+        now = int(time.time()) if observed_at is None else int(observed_at)
+        for item in dynamics:
+            try:
+                published_at = int(item.get("published_at") or 0)
+                comment_oid = int(item.get("comment_oid") or 0)
+                comment_type = int(item.get("comment_type") or 0)
+            except (TypeError, ValueError):
                 continue
-            payload = await comment.get_comments(aid, comment.CommentResourceType.VIDEO, page_index=1, credential=self._credential())
-            for row in (payload.get("replies") or []):
+            age = now - published_at
+            if (
+                item.get("notification_kind") != "live"
+                and 0 <= age < COMMENT_MAX_AGE_SECONDS
+                and comment_oid > 0
+                and comment_type > 0
+            ):
+                return item
+        return None
+
+    async def fetch_latest_comments(self, resource: dict[str, str]) -> list[dict[str, str]]:
+        """Read one recent comment page and filter authors by the comment target set."""
+        self._require_bilibili_api()
+        watched = set(settings.asoul_bili_comment_target_uids)
+        if not watched:
+            return []
+        oid = int(resource["comment_oid"])
+        try:
+            resource_type = comment.CommentResourceType(int(resource["comment_type"]))
+        except ValueError:
+            return []
+        payload = await comment.get_comments(
+            oid,
+            resource_type,
+            page_index=1,
+            order=comment.OrderType.TIME,
+            credential=self._credential(),
+        )
+        observed: list[dict[str, str]] = []
+        for root in payload.get("replies") or []:
+            for row in (root, *(root.get("replies") or [])):
                 member = row.get("member") or {}
                 author_uid = str(member.get("mid") or "")
                 if author_uid not in watched:
                     continue
-                observed.append({
-                    "id": str(row.get("rpid") or ""), "author": str(member.get("uname") or author_uid),
-                    "text": " ".join(str(row.get("content", {}).get("message") or "").split()),
-                    "url": f"https://www.bilibili.com/video/{video.get('bvid', '')}",
-                })
-        return [row for row in observed if row["id"]]
-
-    async def fetch_recent_dynamic_comments(self, uid: str) -> list[dict[str, str]]:
-        """Read the newest visible comments for recent non-video dynamics and their replies."""
-        self._require_bilibili_api()
-        watched = set(settings.asoul_bili_comment_target_uids or settings.asoul_bili_target_uids)
-        observed: list[dict[str, str]] = []
-        payload = await self._user(uid).get_dynamics_new()
-        for item in (payload.get("items") or [])[:3]:
-            basic = item.get("basic") or {}
-            oid = int(basic.get("comment_id_str") or basic.get("comment_id") or 0)
-            dynamic_id = str(item.get("id_str") or "")
-            if not oid or not dynamic_id:
-                continue
-            comments_payload = await comment.get_comments(
-                oid,
-                comment.CommentResourceType.DYNAMIC,
-                page_index=1,
-                credential=self._credential(),
-            )
-            for root in comments_payload.get("replies") or []:
-                for row in (root, *(root.get("replies") or [])):
-                    member = row.get("member") or {}
-                    author_uid = str(member.get("mid") or "")
-                    if author_uid not in watched:
-                        continue
+                reply_id = str(row.get("rpid") or "")
+                text = " ".join(str(row.get("content", {}).get("message") or "").split())
+                if reply_id and text:
                     observed.append(
                         {
-                            "id": str(row.get("rpid") or ""),
+                            "id": reply_id,
+                            "author_uid": author_uid,
                             "author": str(member.get("uname") or author_uid),
-                            "text": " ".join(str(row.get("content", {}).get("message") or "").split()),
-                            "url": f"https://t.bilibili.com/{dynamic_id}",
+                            "text": text,
                         }
                     )
         return [row for row in observed if row["id"]]
+
+    @staticmethod
+    def _comment_message(resource: dict[str, str], reply: dict[str, str]) -> str:
+        owner = str(resource.get("author") or resource.get("uid") or "UP主")
+        if resource.get("notification_kind") == "video":
+            context = f"在{owner}的《{resource.get('text') or '视频'}》视频底下的回复"
+        else:
+            context = f"在{owner}的动态底下的回复"
+        return "\n".join(
+            (
+                f"【B站评论区回复】{reply['author']}",
+                context,
+                reply["text"],
+                str(resource.get("url") or ""),
+            )
+        )
+
+    async def _poll_latest_comment_updates(
+        self,
+        dynamics: list[dict[str, str]],
+        entry: dict[str, Any],
+        observed_at: int,
+    ) -> list[str]:
+        resource = self.latest_comment_resource(dynamics, observed_at)
+        if resource is None:
+            entry.pop("comment_monitor", None)
+            return []
+        replies = await self.fetch_latest_comments(resource)
+        current_ids = [row["id"] for row in replies]
+        monitor = entry.get("comment_monitor")
+        if not isinstance(monitor, dict) or monitor.get("resource_id") != resource["id"]:
+            entry["comment_monitor"] = {
+                "resource_id": resource["id"],
+                "reply_ids": current_ids[:COMMENT_SEEN_LIMIT],
+                "initialized": True,
+                "last_scanned_at": observed_at,
+            }
+            return []
+        known_ids = {str(value) for value in monitor.get("reply_ids", []) if str(value)}
+        unseen = [row for row in replies if row["id"] not in known_ids]
+        monitor["reply_ids"] = list(dict.fromkeys(current_ids + list(known_ids)))[:COMMENT_SEEN_LIMIT]
+        monitor["last_scanned_at"] = observed_at
+        return [self._comment_message(resource, row) for row in reversed(unseen)]
 
     async def dump_dynamic_payload(self, uid: str) -> Path:
         """Persist a credential-free diagnostic response for a super-admin."""
@@ -937,6 +995,20 @@ class ASoulService:
         initialized = bool(state.get("initialized"))
         sent: list[str] = []
         observed_at = int(time.time())
+        comment_targets = tuple(
+            uid
+            for uid in settings.asoul_bili_comment_target_uids
+            if uid in settings.asoul_bili_target_uids
+        )
+        comment_scan_uids: frozenset[str] = frozenset()
+        if settings.asoul_bili_push_comment and comment_targets:
+            start = int(state.get("comment_scan_index") or 0) % len(comment_targets)
+            count = min(COMMENT_SCAN_TARGETS_PER_POLL, len(comment_targets))
+            comment_scan_uids = frozenset(
+                comment_targets[(start + offset) % len(comment_targets)]
+                for offset in range(count)
+            )
+            state["comment_scan_index"] = (start + count) % len(comment_targets)
         try:
             live_statuses = await self.fetch_live_statuses(settings.asoul_bili_target_uids)
         except Exception:
@@ -949,7 +1021,11 @@ class ASoulService:
             dynamics: list[dict[str, str]] = []
             dynamic_fetch_succeeded = False
             # Video submissions are read from the dynamic feed; no separate video-list polling.
-            if settings.asoul_bili_push_dynamic or settings.asoul_bili_push_video:
+            if (
+                settings.asoul_bili_push_dynamic
+                or settings.asoul_bili_push_video
+                or uid in comment_scan_uids
+            ):
                 try:
                     dynamics = await self.fetch_dynamics(uid)
                     dynamic_fetch_succeeded = True
@@ -989,6 +1065,17 @@ class ASoulService:
                                     self._remember_dynamic_notification(message, details)
                                     sent.append(message)
                 entry["dynamic_initialized"] = True
+            if dynamic_fetch_succeeded and uid in comment_scan_uids:
+                try:
+                    sent.extend(
+                        await self._poll_latest_comment_updates(
+                            dynamics,
+                            entry,
+                            observed_at,
+                        )
+                    )
+                except Exception:
+                    pass
             if live_status is not None:
                 was_live = str(entry.get("live", "0"))
                 entry["live"] = live_status["live"]
@@ -1041,10 +1128,12 @@ class ASoulService:
             "【A-SOUL B站监控状态】",
             f"自动播报：{'开启' if settings.asoul_bili_enabled else '关闭'}",
             f"目标 UID：{len(settings.asoul_bili_target_uids)} 个",
+            f"评论目标 UID：{len(settings.asoul_bili_comment_target_uids)} 个",
             f"推送群：{', '.join(map(str, settings.asoul_bili_effective_group_ids)) or '未配置'}",
             f"轮询：每 {settings.asoul_bili_poll_interval_seconds} 秒",
             f"普通/转发/预约动态 / 动态视频 / 开播下播 / 评论：{'开' if settings.asoul_bili_push_dynamic else '关'} / {'开' if settings.asoul_bili_push_video else '关'} / {'开' if settings.asoul_bili_push_live else '关'} / {'开' if settings.asoul_bili_push_comment else '关'}",
             "独立视频轮询：已停用（投稿视频由动态接口识别）",
+            f"评论范围：每轮最多 {COMMENT_SCAN_TARGETS_PER_POLL} 个账号，仅最新且发布未满 6 小时的动态",
             f"图片卡片：{'开' if settings.asoul_bili_render_cards else '关'}",
             f"登录状态：{'已登录' if self.credential_available() else '未登录'}",
             f"游标状态：{'已建立，不会回放历史内容' if initialized else '首次成功轮询时建立基线'}",

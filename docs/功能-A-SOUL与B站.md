@@ -22,15 +22,18 @@ A-SOUL 直播日程查询、B 站自动播报与接口测试命令。自动播�
 | `#bili_status` | 查看 B 站播报、轮询、推送群、登录和游标状态。 |
 | `#bili_login` | 仅私聊，生成 B 站 App 扫码登录；登录态仅存本机 SQLite。 |
 | `#bili_logout` | 清除本机 B 站登录态。 |
-| `#bili_test_dynamic` / `#bili_test_comment` | 已停用，避免高频请求触发风控。 |
+| `#bili_test_dynamic` | 已停用，避免高频请求触发风控。 |
+| `#bili_test_comment UID` | 只读检查该评论目标账号最新 6 小时动态的当前评论页。 |
 | `#bili_dump_dynamic` / `#bili_dump_live` | 导出原始响应到 `data/asoul_debug` 排查接口。 |
 | `#bili_test_video` / `#bili_test_live` / `#bili_test_atall` / `#bili_test_all` | 验证视频、直播、@全体和综合接口。 |
 
 ## 行为规则
 
 - 首次成功轮询只建立游标，不会回放历史动态、视频或直播；之后只推送新增内容。
-- 开播通知尝试 `@全体`，机器人无管理员权限时自动回退普通消息；动态推送由 `ASOUL_BILI_PUSH_DYNAMIC` 控制，评论扫描保持关闭。
-- `ASOUL_BILI_RENDER_CARDS=true` 时，日程查询、动态、视频和开播/下播推送优先通过常驻本地浏览器渲染 HTML/CSS 图片；浏览器不可用时自动回退原 Pillow 卡片，再失败才回退文本。
+- 开播通知尝试 `@全体`，机器人无管理员权限时自动回退普通消息；动态推送由 `ASOUL_BILI_PUSH_DYNAMIC` 控制，评论推送不使用 `@全体`。
+- 评论推送只处理嘉然、乃琳、心宜、思诺、贝拉：既只扫描这 5 个账号各自最新且发布未满 6 小时的动态，也只推送这 5 个账号在这些评论区发表的一级评论或当前页可见楼中楼。视频动态标记为“在《标题》视频底下的回复”，其他动态标记为“在某账号的动态底下的回复”。
+- 每次现有 B 站轮询最多检查 2 个评论目标账号，5 个账号轮转处理；首次启用或最新动态切换时只建立回复游标，不回放已有评论。
+- `ASOUL_BILI_RENDER_CARDS=true` 时，日程查询、动态、视频、评论和开播/下播推送优先通过常驻本地浏览器渲染 HTML/CSS 图片；浏览器不可用时自动回退原 Pillow 卡片，再失败才回退文本。
 - 日程图会按每场直播的出演成员，从对应角色的本地表情包目录随机选择一张；多人直播会在所有出演成员的候选表情中随机选择，网页截图与 Pillow 后备路径使用同一选择规则。
 - 直播开播、下播和视频卡的封面按画框完整宽度等比缩放，高度随原图比例延展，不裁剪。动态、转发引用和直播预约卡完整保留正文与图片；单图按画框宽度等比展示，多图按每行最多三张的自适应九宫格展示，不裁剪、不截断。
 
@@ -39,7 +42,7 @@ A-SOUL 直播日程查询、B 站自动播报与接口测试命令。自动播�
 - `ASOUL_BILI_ENABLED`、`ASOUL_BILI_POLL_INTERVAL_SECONDS`：播报总开关与轮询间隔。
 - 默认监控 8 个 B 站账号，其中包含枝江娱乐的小黑（UID `3493082517474232`，空间 `https://space.bilibili.com/3493082517474232`）。
 - 新独群的 B站推送默认关闭，加入集群时初始开启；本群群主、群管理员或超级管理员使用 `#群设置 B站推送 开|关` 维护本群接收状态。
-- 推送源、账号登录、轮询参数和暂停参数只能由超级管理员维护。`ASOUL_BILI_GROUP_IDS`、`ASOUL_BILI_PUSH_A_COAST` 与 `ASOUL_BILI_A_COAST_GROUP_IDS` 仅作为旧配置迁移和来源兼容，不再是群级运行权威。
+- 推送源、账号登录、轮询参数和暂停参数只能由超级管理员维护。`ASOUL_BILI_TARGET_UIDS` 保留 8 个普通内容订阅账号；`ASOUL_BILI_COMMENT_TARGET_UIDS` 是其子集，当前固定为嘉然、乃琳、心宜、思诺、贝拉。`ASOUL_BILI_GROUP_IDS`、`ASOUL_BILI_PUSH_A_COAST` 与 `ASOUL_BILI_A_COAST_GROUP_IDS` 仅作为旧配置迁移和来源兼容，不再是群级运行权威。
 - `ASOUL_BILI_PUSH_DYNAMIC/VIDEO/LIVE/COMMENT`、`ASOUL_BILI_RENDER_CARDS`：各类推送与卡片开关。
 
 ## 维护与验证

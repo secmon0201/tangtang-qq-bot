@@ -1,5 +1,8 @@
 import asyncio
+from types import SimpleNamespace
+
 import nonebot
+import pytest
 
 nonebot.init()
 
@@ -11,7 +14,6 @@ def test_user_help_text_contains_only_copyable_public_commands():
 
     assert text.splitlines()[0] == "#帮助"
     assert "#帮助文字" in text
-    assert "#机器人状态" in text
     assert "@糖糖 帮我看看今天能玩什么" in text
     assert "#nte帮助" in text
     assert "#nte薄荷排行" in text
@@ -34,6 +36,7 @@ def test_user_help_text_contains_only_copyable_public_commands():
     assert "[-a]" not in text
     assert "#创建活动" not in text
     assert "#查重" not in text
+    assert "#机器人状态" not in text
     assert "#系统设置" not in text
     assert "#公告面板" not in text
     assert "#管理员帮助" not in text
@@ -46,6 +49,7 @@ def test_user_help_sections_exclude_privileged_operations():
 
     assert "创建活动" not in contents
     assert "查重" not in contents
+    assert "机器人状态" not in contents
     assert [heading for heading, _, _ in commands.user_help_categories()] == [
         "使用说明",
         "聊天互动",
@@ -62,6 +66,30 @@ def test_user_help_sections_exclude_privileged_operations():
     assert "#系统设置" not in contents
     assert "#公告面板" not in contents
     assert "#管理员帮助" not in contents
+
+
+def test_robot_status_is_super_admin_only(monkeypatch):
+    responses: list[str] = []
+
+    class Finished(Exception):
+        pass
+
+    class Matcher:
+        async def finish(self, message):
+            responses.append(str(message))
+            raise Finished
+
+    monkeypatch.setattr(commands, "is_super_admin", lambda user_id: False)
+
+    with pytest.raises(Finished):
+        asyncio.run(
+            commands.send_robot_status(
+                Matcher(),
+                SimpleNamespace(user_id=42),
+            )
+        )
+
+    assert responses == ["只有超级管理员可以查看机器人状态。"]
 
 
 def test_user_help_merges_equivalent_commands_and_game_rankings():

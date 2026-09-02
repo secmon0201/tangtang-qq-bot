@@ -180,7 +180,7 @@ def user_help_text() -> str:
     """Return every copyable public command, including compatibility aliases."""
     prefix = settings.command_prefix
     commands = [
-        f"{prefix}帮助", f"{prefix}帮助文字", f"{prefix}机器人状态",
+        f"{prefix}帮助", f"{prefix}帮助文字",
         "@糖糖 帮我看看今天能玩什么", "糖糖 帮我查一下异环怎么登录",
         f"{prefix}枝江直播 [状态]", f"{prefix}直播日程 [状态]",
         f"{prefix}今日直播", f"{prefix}明日直播", f"{prefix}本周直播",
@@ -1130,10 +1130,9 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
 status = on_command("机器人状态", priority=5, block=True)
 
 
-@status.handle()
-async def _(event: MessageEvent):
-    if not group_allowed(event) and not is_operator(event):
-        await status.finish("当前群未纳入机器人管理范围。")
+async def send_robot_status(matcher: object, event: MessageEvent) -> None:
+    if not is_super_admin(user_id(event)):
+        await matcher.finish("只有超级管理员可以查看机器人状态。")  # type: ignore[attr-defined]
     rows = [dict(row) for row in db.managed_groups()]
     lines = [f"管理群：{len(rows)}（数量不设上限）"]
     for row in rows:
@@ -1151,10 +1150,15 @@ async def _(event: MessageEvent):
     fallback = "\n".join(lines)
     status_group_avatar_paths = await group_avatar_paths(rows)
     await finish_with_image_or_text(
-        status,
+        matcher,
         fallback,
         lambda: report_renderer.render_status(rows, lines[1:], status_group_avatar_paths),
     )
+
+
+@status.handle()
+async def _(event: MessageEvent):
+    await send_robot_status(status, event)
 
 
 @register_local_feature("ranking")

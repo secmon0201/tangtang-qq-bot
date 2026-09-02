@@ -149,6 +149,7 @@ def test_help_payload_uses_the_shared_public_command_catalog():
     )
     assert "#nte薄荷排行" in commands
     assert "#群设置" in commands
+    assert "#机器人状态" not in commands
     assert "#系统设置" not in commands
     assert "#公告面板" not in commands
     assert "#管理员帮助" not in commands

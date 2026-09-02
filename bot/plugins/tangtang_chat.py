@@ -14,7 +14,7 @@ from bot.application.local_features import (
     request_from_decision,
     run_feature_call,
 )
-from bot.services.runtime import database, group_domains
+from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
@@ -103,6 +103,7 @@ def is_call_event(event: MessageEvent) -> bool:
     config = runtime_config()
     if (
         not config.enabled
+        or not passive_settings().is_chat_globally_enabled("mention_chat")
         or not group_domains().feature_enabled(int(event.group_id), "mention_chat")
     ):
         return False
@@ -131,6 +132,8 @@ def is_proactive_event(event: MessageEvent) -> bool:
     config = runtime_config()
     if not config.enabled or not config.proactive_enabled:
         return False
+    if not passive_settings().is_chat_globally_enabled("proactive_chat"):
+        return False
     if not group_domains().feature_enabled(int(event.group_id), "proactive_chat"):
         return False
     if _is_stale(event):
@@ -156,6 +159,8 @@ tangtang_call = on_message(rule=is_call_event, priority=-1, block=False)
 async def _(bot: Bot, event: GroupMessageEvent):
     if str(event.user_id) == str(bot.self_id):
         return
+    if not passive_settings().is_chat_globally_enabled("mention_chat"):
+        return
     if db.passive_filter_contains(int(event.user_id)):
         return
     config = runtime_config()
@@ -170,6 +175,8 @@ tangtang_proactive = on_message(rule=is_proactive_event, priority=-1, block=Fals
 @tangtang_proactive.handle()
 async def _(bot: Bot, event: GroupMessageEvent):
     if str(event.user_id) == str(bot.self_id):
+        return
+    if not passive_settings().is_chat_globally_enabled("proactive_chat"):
         return
     if db.passive_filter_contains(int(event.user_id)):
         return

@@ -27,6 +27,7 @@ Intentional sharing: settings, SQLite, permission/role checks, QQ platform calls
 - A newly observed group becomes an independent solo domain. The fixed A-Coast five-group set is the first private cluster, not the default product boundary.
 - Group owners and QQ group administrators can edit only the current group's alias and switches. Only super administrators can create, inspect, invite to, remove from, or dissolve private clusters.
 - Per-group switches control local invocation and push behavior. Cluster membership alone controls cluster statistics, so disabling a feature in one member group never removes that group's records from the cluster aggregate.
+- Token-consuming mention chat and proactive chat additionally require their SQLite robot-wide runtime gates. A robot-wide gate is a reversible cost-control condition and must never overwrite the saved per-group intent.
 
 ## Locating ownership
 

@@ -13,7 +13,8 @@ def test_proactive_status_text_uses_env_config_values():
     text = _status_text(config)
     assert "糖糖主动回复当前配置" in text
     assert "糖糖总开关：关闭" in text
-    assert "主动回复：关闭" in text
+    assert "主动回复参数开关：关闭" in text
+    assert "系统总控：开启" in text
     assert "命中率：2%" in text
     assert "冷却：30 分钟" in text
     assert "消息间隔：30 条" in text

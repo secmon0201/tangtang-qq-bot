@@ -50,12 +50,27 @@ async def _is_group_admin(bot: Bot, event: GroupMessageEvent) -> bool:
 
 def _feature_status(group_id: int, *, admin: bool) -> str:
     rows = domains.feature_rows(group_id)
-    visible = rows if admin else [row for row in rows if row["effective_enabled"]]
+    global_states = {
+        feature_key: passive.is_chat_globally_enabled(feature_key)
+        for feature_key in ("mention_chat", "proactive_chat")
+    }
+    visible = [
+        row
+        for row in rows
+        if admin
+        or (
+            row["effective_enabled"]
+            and global_states.get(str(row["key"]), True)
+        )
+    ]
     lines = ["本群功能："]
     for row in visible:
-        state = "开" if row["effective_enabled"] else "关"
+        global_enabled = global_states.get(str(row["key"]), True)
+        state = "开" if row["effective_enabled"] and global_enabled else "关"
         if row["configured_enabled"] and not row["effective_enabled"]:
             state = "已配置开启，依赖项关闭"
+        elif row["configured_enabled"] and not global_enabled:
+            state = "已配置开启，全局条件关闭"
         lines.append(f"{row['label']}：{state}")
         if admin and not row["configured_enabled"]:
             lines.append(f"  开启：#群设置 {row['label']} 开")
@@ -126,6 +141,17 @@ def _percent(value: str, maximum: float) -> float | None:
     return parsed if 0 <= parsed <= maximum else None
 
 
+def _feature_update_text(feature_key: str, enabled: bool) -> str:
+    label = FEATURES[feature_key].label
+    if (
+        enabled
+        and feature_key in {"mention_chat", "proactive_chat"}
+        and not passive.is_chat_globally_enabled(feature_key)
+    ):
+        return f"{label}本群开关已开启；全局条件关闭，当前仍不生效。"
+    return f"{label}已{'开启' if enabled else '关闭'}。"
+
+
 @group_settings.handle()
 async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:
     if not isinstance(event, GroupMessageEvent):
@@ -140,9 +166,7 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None
             await group_settings.finish("只有本群群主、群管理员或超级管理员可以修改。")
         enabled = not domains.feature_enabled(group_id, shortcut)
         domains.set_feature(group_id, shortcut, enabled)
-        await group_settings.finish(
-            f"{FEATURES[shortcut].label}已{'开启' if enabled else '关闭'}。"
-        )
+        await group_settings.finish(_feature_update_text(shortcut, enabled))
 
     if not raw or raw in {"状态", "列表", "功能"}:
         await group_settings.finish(_feature_status(group_id, admin=admin))
@@ -189,9 +213,7 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None
             group_id,
             f"feature={feature_key};enabled={str(enabled).lower()}",
         )
-        await group_settings.finish(
-            f"{FEATURES[feature_key].label}已{'开启' if enabled else '关闭'}。"
-        )
+        await group_settings.finish(_feature_update_text(feature_key, enabled))
 
     await group_settings.finish(
         "用法：#群设置 / #群设置 <功能> 开|关 / #群设置 代称 <名称>"
@@ -211,6 +233,8 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
             "#系统设置 集群 列表|创建|邀请|移除|解散\n"
             "#系统设置 NTE 状态|开|关\n"
             "#系统设置 小游戏 全局 状态|开|关\n"
+            "#系统设置 被呼叫会话 状态|开|关\n"
+            "#系统设置 糖糖主动聊天 状态|开|关\n"
             "#系统设置 小游戏 禁言 <群号> 状态|开|关\n"
             "#系统设置 被动互动 <群号> 状态|<参数> <值>\n"
             "#系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM"
@@ -228,6 +252,39 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
         passive.set_game_api_enabled(enabled)
         await system_settings.finish(
             f"NTE 全局运行条件已{'开启' if enabled else '关闭'}；各群开关保持不变。"
+        )
+
+    chat_targets = {
+        "被呼叫会话": ("mention_chat", "被呼叫会话"),
+        "被呼叫回话": ("mention_chat", "被呼叫会话"),
+        "被呼叫": ("mention_chat", "被呼叫会话"),
+        "糖糖会话": ("mention_chat", "被呼叫会话"),
+        "糖糖主动聊天": ("proactive_chat", "糖糖主动聊天"),
+        "主动聊天": ("proactive_chat", "糖糖主动聊天"),
+        "主动回复": ("proactive_chat", "糖糖主动聊天"),
+    }
+    if tokens[0] in chat_targets:
+        feature_key, label = chat_targets[tokens[0]]
+        action = tokens[1] if len(tokens) == 2 else "状态"
+        if action in {"状态", "status"} and len(tokens) in {1, 2}:
+            await system_settings.finish(
+                f"{label}全局运行条件："
+                f"{'开' if passive.is_chat_globally_enabled(feature_key) else '关'}。"
+            )
+        enabled = _switch(action) if len(tokens) == 2 else None
+        if enabled is None:
+            await system_settings.finish(
+                f"用法：#系统设置 {label} 状态|开|关"
+            )
+        passive.set_chat_globally_enabled(feature_key, enabled)
+        db.audit(
+            int(event.user_id),
+            "system_chat_global_update",
+            detail=f"feature={feature_key};enabled={str(enabled).lower()}",
+        )
+        await system_settings.finish(
+            f"{label}全局运行条件已{'开启' if enabled else '关闭'}；"
+            "各群开关保持不变。"
         )
 
     if tokens[:2] == ["小游戏", "全局"]:

@@ -77,6 +77,13 @@ def should_acknowledge_mention(event: MessageEvent) -> bool:
     return isinstance(event, GroupMessageEvent) and is_bot_mentioned(event)
 
 
+def mention_chat_is_available(group_id: int) -> bool:
+    return (
+        passive_settings().is_chat_globally_enabled("mention_chat")
+        and group_domains().feature_enabled(int(group_id), "mention_chat")
+    )
+
+
 def is_disabled_game_command(event: MessageEvent) -> bool:
     """Gate only the local mini-games; the GenshinUID/NTE game interface has
     its own independent gate in ``bot.plugins.game_api``."""
@@ -243,7 +250,7 @@ async def _(bot: Bot, event: MessageEvent):
     """React to every other group mention after any command response is complete."""
     if not should_acknowledge_mention(event):
         return
-    if not group_domains().feature_enabled(int(event.group_id), "mention_chat"):
+    if not mention_chat_is_available(int(event.group_id)):
         return
     if (
         database().passive_filter_contains(int(event.user_id))

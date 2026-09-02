@@ -25,6 +25,10 @@ GAME_MUTE_DISABLED_GROUP_IDS_KEY = "game_mute_disabled_group_ids"
 GAME_GLOBAL_ENABLED_KEY = "game_global_enabled"
 GAME_API_GROUP_IDS_KEY = "game_api_group_ids"
 GAME_API_ENABLED_KEY = "game_api_enabled"
+CHAT_GLOBAL_ENABLED_KEYS = {
+    "mention_chat": "mention_chat_global_enabled",
+    "proactive_chat": "proactive_chat_global_enabled",
+}
 FEATURE_SCOPE_KEYS = {
     "duplicate": "duplicate_group_ids",
     "game": "game_group_ids",
@@ -115,6 +119,16 @@ class PassiveSettingsStore:
             self.database.set_passive_setting(
                 GAME_API_ENABLED_KEY, str(self._game_api_enabled).lower()
             )
+        self._chat_globally_enabled = {
+            feature_key: self._boolean(values, setting_key, True)
+            for feature_key, setting_key in CHAT_GLOBAL_ENABLED_KEYS.items()
+        }
+        for feature_key, setting_key in CHAT_GLOBAL_ENABLED_KEYS.items():
+            if setting_key not in values:
+                self.database.set_passive_setting(
+                    setting_key,
+                    str(self._chat_globally_enabled[feature_key]).lower(),
+                )
         if self.sync_env:
             sync_game_api_enabled(self._game_api_enabled)
         self._settings_by_group = {
@@ -217,6 +231,19 @@ class PassiveSettingsStore:
         if self.sync_env:
             sync_game_api_enabled(self._game_api_enabled)
         return self._game_api_enabled
+
+    def is_chat_globally_enabled(self, feature_key: str) -> bool:
+        if feature_key not in CHAT_GLOBAL_ENABLED_KEYS:
+            raise ValueError("unsupported chat feature")
+        return self._chat_globally_enabled[feature_key]
+
+    def set_chat_globally_enabled(self, feature_key: str, enabled: bool) -> bool:
+        setting_key = CHAT_GLOBAL_ENABLED_KEYS.get(feature_key)
+        if setting_key is None:
+            raise ValueError("unsupported chat feature")
+        self._chat_globally_enabled[feature_key] = bool(enabled)
+        self.database.set_passive_setting(setting_key, str(bool(enabled)).lower())
+        return self._chat_globally_enabled[feature_key]
 
     def for_group(self, group_id: int) -> PassiveSettings:
         group_id = int(group_id)

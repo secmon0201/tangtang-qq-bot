@@ -167,3 +167,25 @@ def test_global_game_switch_is_enabled_by_default_and_persistent(tmp_path):
     assert not store.set_game_globally_enabled(False)
     assert not PassiveSettingsStore(db).is_game_globally_enabled()
     assert PassiveSettingsStore(db).set_game_globally_enabled(True)
+
+
+def test_global_chat_switches_are_enabled_by_default_and_persistent(tmp_path):
+    db = Database(tmp_path / "bot.db")
+    store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
+
+    assert store.is_chat_globally_enabled("mention_chat")
+    assert store.is_chat_globally_enabled("proactive_chat")
+
+    assert not store.set_chat_globally_enabled("mention_chat", False)
+    assert store.is_chat_globally_enabled("proactive_chat")
+    restarted = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
+    assert not restarted.is_chat_globally_enabled("mention_chat")
+    assert restarted.is_chat_globally_enabled("proactive_chat")
+
+    assert not restarted.set_chat_globally_enabled("proactive_chat", False)
+    final = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
+    assert not final.is_chat_globally_enabled("mention_chat")
+    assert not final.is_chat_globally_enabled("proactive_chat")
+
+    with pytest.raises(ValueError, match="unsupported chat feature"):
+        final.is_chat_globally_enabled("unknown")

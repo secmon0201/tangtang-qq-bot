@@ -180,6 +180,10 @@ def enable_plugin_group_features(monkeypatch, *group_ids: int) -> None:
         effective_feature_enabled=lambda group_id, feature: int(group_id) in enabled,
     )
     monkeypatch.setattr("bot.plugins.tangtang_chat.group_domains", lambda: domains)
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.passive_settings",
+        lambda: SimpleNamespace(is_chat_globally_enabled=lambda _feature: True),
+    )
 
 
 def test_config_validation():
@@ -409,6 +413,31 @@ def test_proactive_event_rule(monkeypatch):
             effective_feature_enabled=lambda _group_id, _feature: True,
         ),
     )
+    assert not is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
+
+
+def test_global_chat_switches_gate_call_and_proactive_rules(monkeypatch):
+    enable_plugin_group_features(monkeypatch, 1001)
+    monkeypatch.setattr("bot.plugins.tangtang_chat.automation_is_paused", lambda: False)
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.loader",
+        SimpleNamespace(
+            load=lambda: enabled_config(TANGTANG_PROACTIVE_ENABLED="true")
+        ),
+    )
+
+    enabled = {"mention_chat": False, "proactive_chat": True}
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.passive_settings",
+        lambda: SimpleNamespace(
+            is_chat_globally_enabled=lambda feature: enabled[feature]
+        ),
+    )
+    assert not is_call_event(group_message(group_id=1001, text="糖糖在吗"))
+    assert is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
+
+    enabled.update(mention_chat=True, proactive_chat=False)
+    assert is_call_event(group_message(group_id=1001, text="糖糖在吗"))
     assert not is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
 
 

@@ -759,7 +759,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "全局运行条件",
-                    f"{prefix}系统设置 NTE 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
+                    f"{prefix}系统设置 NTE 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 被呼叫会话 状态|开|关\n{prefix}系统设置 糖糖主动聊天 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
                     "全局运行条件不会改写各群已保存的开关意图；重新开启后，各群按原状态恢复。",
                 ),
                 (

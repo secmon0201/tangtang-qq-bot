@@ -11,6 +11,7 @@ from bot.plugins.scope import (
     is_disabled_game_command,
     is_feature_group,
     is_managed_group,
+    mention_chat_is_available,
 )
 from bot.config import settings
 from bot.services.roles import UserRole
@@ -173,6 +174,37 @@ def test_scope_requires_an_explicit_bot_mention():
 
     assert is_bot_mentioned(Event(True))
     assert not is_bot_mentioned(Event(False))
+
+
+def test_mention_chat_requires_global_and_group_switches(monkeypatch):
+    import bot.plugins.scope as scope
+
+    states = {"global": True, "group": True}
+    monkeypatch.setattr(
+        scope,
+        "passive_settings",
+        lambda: SimpleNamespace(
+            is_chat_globally_enabled=lambda feature: (
+                feature == "mention_chat" and states["global"]
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        scope,
+        "group_domains",
+        lambda: SimpleNamespace(
+            feature_enabled=lambda _group_id, feature: (
+                feature == "mention_chat" and states["group"]
+            )
+        ),
+    )
+
+    assert mention_chat_is_available(1001)
+    states["global"] = False
+    assert not mention_chat_is_available(1001)
+    states["global"] = True
+    states["group"] = False
+    assert not mention_chat_is_available(1001)
 
 
 def test_live_guard_reminder_mentions_a_normal_user_and_the_current_stream(monkeypatch):

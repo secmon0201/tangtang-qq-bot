@@ -180,9 +180,12 @@ def user_help_text() -> str:
     """Return every copyable public command, including compatibility aliases."""
     prefix = settings.command_prefix
     commands = [
-        f"{prefix}帮助", f"{prefix}帮助文字",
+        f"{prefix}帮助", f"{prefix}帮助文字", f"{prefix}机器人状态",
+        "@糖糖 帮我看看今天能玩什么", "糖糖 帮我查一下异环怎么登录",
         f"{prefix}枝江直播 [状态]", f"{prefix}直播日程 [状态]",
         f"{prefix}今日直播", f"{prefix}明日直播", f"{prefix}本周直播",
+        f"{prefix}nte帮助", "nte帮助", f"{prefix}nte登录", f"{prefix}nte查询", f"{prefix}nte刷新面板",
+        f"{prefix}nte薄荷排行", f"{prefix}nte薄荷总排行", f"{prefix}nte最强排行", f"{prefix}nte最强总排行",
         f"{prefix}游戏列表", f"{prefix}小游戏列表", f"{prefix}装填", f"{prefix}开枪",
         f"{prefix}装弹", f"{prefix}丢给 @成员", f"{prefix}装弹成语 [专业/娱乐] [60-600]",
         f"四字词 {prefix}丢给 @成员", f"{prefix}骰子", f"{prefix}猜数", f"{prefix}猜 <0-999>",
@@ -192,6 +195,11 @@ def user_help_text() -> str:
         f"{prefix}定时炸弹榜单", f"{prefix}定时炸弹总榜单", f"{prefix}骰子榜",
         f"{prefix}骰子总榜", f"{prefix}幸运骰局榜单", f"{prefix}幸运骰局总榜单",
         f"{prefix}猜数榜", f"{prefix}猜数总榜", f"{prefix}猜数字榜单", f"{prefix}猜数字总榜单",
+        f"{prefix}群设置", f"{prefix}本群设置", f"{prefix}群设置 <功能> 开|关",
+        f"{prefix}开关小游戏", f"{prefix}开关今日老婆", f"{prefix}开关准时报点",
+        f"{prefix}开关被呼叫会话", f"{prefix}开关B站推送", f"{prefix}开关被动互动", f"{prefix}开关NTE",
+        f"{prefix}群设置 代称 <名称>", f"{prefix}群设置 过滤 列表",
+        f"{prefix}群设置 过滤 添加 QQ号", f"{prefix}群设置 过滤 移除 QQ号",
     ]
     if settings.stats_realtime_enabled:
         commands.extend((

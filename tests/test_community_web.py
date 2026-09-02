@@ -135,11 +135,24 @@ def test_help_payload_uses_the_shared_public_command_catalog():
     assert payload["mode"] == "help"
     assert payload["categories"][0]["items"][0]["title"] == "在线帮助"
     assert any(item["title"] == "发言统计" for item in payload["categories"])
+    assert any(item["title"] == "NTE 查询与排行" for item in payload["categories"])
+    assert any(item["title"] == "本群设置" for item in payload["categories"])
     assert all(
         item["title"] != "个人发言统计"
         for category in payload["categories"]
         for item in category["items"]
     )
+    commands = "\n".join(
+        item["command"]
+        for category in payload["categories"]
+        for item in category["items"]
+    )
+    assert "#nte薄荷排行" in commands
+    assert "#群设置" in commands
+    assert "#系统设置" not in commands
+    assert "#公告面板" not in commands
+    assert "#管理员帮助" not in commands
+    assert "#查重" not in commands
 
 
 def test_help_payload_preserves_every_source_item_once_and_groups_local_games():
@@ -160,6 +173,14 @@ def test_help_payload_preserves_every_source_item_once_and_groups_local_games():
     games = next(group for group in payload["groups"] if group["key"] == "games")
     assert [section["title"] for section in games["sections"]] == ["小游戏", "小游戏榜单"]
     assert games["item_count"] == 8
+    assert [group["key"] for group in payload["groups"]] == [
+        "start", "chat", "nte", "live", "fate", "games", "stats", "group-admin"
+    ]
+    nte = next(group for group in payload["groups"] if group["key"] == "nte")
+    group_admin = next(group for group in payload["groups"] if group["key"] == "group-admin")
+    assert nte["item_count"] == 4
+    assert [section["title"] for section in group_admin["sections"]] == ["本群设置", "群内自动功能"]
+    assert group_admin["item_count"] == 6
 
 
 def test_help_payload_indexes_only_confirmed_public_destinations():
@@ -186,6 +207,12 @@ def test_help_page_exposes_accessible_tabs_copy_feedback_and_mobile_layout():
     assert 'class="help-toast"' in source
     assert "flex-wrap:nowrap" in source
     assert "min-height:46px" in source
+    assert "--help-violet:#8d67ce" in source
+    assert "群友用法，" in source
+    assert "本群设置只影响当前群" in source
+    assert "--help-yellow" not in source
+    assert "box-shadow:4px 4px 0 var(--help-ink)" not in source
+    assert "background-size:32px 32px" not in source
 
 
 def test_ranking_renderer_outputs_png_without_interactive_controls(tmp_path):

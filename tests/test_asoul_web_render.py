@@ -67,7 +67,10 @@ def test_schedule_payload_is_shared_by_web_and_capture_modes():
     assert ".schedule-card .schedule-row::after { display: none; }" in capture
     assert ".schedule-card .masthead::after { display: none; }" in capture
     assert "background: #17181c" not in interactive
-    assert "repeating-linear-gradient(135deg, #f9dfe9" in interactive
+    assert "repeating-linear-gradient(135deg, #f9dfe9" not in interactive
+    assert "backdrop-filter: blur(22px) saturate(145%)" in interactive
+    assert "background: linear-gradient(135deg, #f26f82, #8d67ce)" in interactive
+    assert ".interactive-bar::after" in interactive
 
 
 def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp_path):
@@ -110,6 +113,15 @@ def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp
                                 const card = document.querySelector('.schedule-card').getBoundingClientRect();
                                 return row.left >= card.left && row.right <= card.right;
                             }),
+                            barInsideViewport: (() => {
+                                const bar = document.querySelector('.interactive-bar').getBoundingClientRect();
+                                return bar.left >= 0 && bar.right <= document.documentElement.clientWidth;
+                            })(),
+                            switcherInsideBar: (() => {
+                                const bar = document.querySelector('.interactive-bar').getBoundingClientRect();
+                                const switcher = document.querySelector('.view-switcher').getBoundingClientRect();
+                                return switcher.left >= bar.left && switcher.right <= bar.right;
+                            })(),
                             touchTargets: [...document.querySelectorAll('.view-switcher button')].map(node => node.getBoundingClientRect().height),
                         })"""
                     )
@@ -122,6 +134,8 @@ def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp
         assert result["scrollWidth"] == result["clientWidth"]
         assert min(result["contentWidths"]) > 100
         assert result["rowsInsideCard"] is True
+        assert result["barInsideViewport"] is True
+        assert result["switcherInsideBar"] is True
         assert min(result["touchTargets"]) >= 44
 
 

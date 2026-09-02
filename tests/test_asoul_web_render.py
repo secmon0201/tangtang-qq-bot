@@ -145,7 +145,17 @@ def test_notification_payload_keeps_each_visual_kind_distinct():
     started = notification_payload("live", live={"phase": "start", "text": "开播"})
     ended = notification_payload("live", live={"phase": "end", "text": "下播"})
     comment = notification_payload(
-        "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n回复正文\nhttps://t.bilibili.com/1"
+        "【B站评论区回复】乃琳Queen\n在思诺snow的动态底下的回复\n回复正文\nhttps://t.bilibili.com/1",
+        comment={
+            "author": "乃琳Queen",
+            "context": "在思诺snow的动态底下的回复",
+            "text": "[暗中观察]回复正文",
+            "rich_nodes": (
+                '[{"type":"emoji","text":"[暗中观察]",'
+                '"url":"https://example.test/emote.png"},{"type":"text","text":"回复正文"}]'
+            ),
+            "url": "https://t.bilibili.com/1",
+        },
     )
 
     assert [dynamic["mode"], video["mode"], started["mode"], ended["mode"], comment["mode"]] == [
@@ -158,7 +168,11 @@ def test_notification_payload_keeps_each_visual_kind_distinct():
     assert comment["details"] == {
         "author": "乃琳Queen",
         "context": "在思诺snow的动态底下的回复",
-        "text": "回复正文",
+        "text": "[暗中观察]回复正文",
+        "rich_nodes": (
+            '[{"type":"emoji","text":"[暗中观察]",'
+            '"url":"https://example.test/emote.png"},{"type":"text","text":"回复正文"}]'
+        ),
         "url": "https://t.bilibili.com/1",
     }
     notification_html = page_html(dynamic, capture=True)

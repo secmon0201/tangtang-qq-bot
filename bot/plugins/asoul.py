@@ -67,6 +67,7 @@ async def _send_monitor_messages() -> None:
                 live_details = service.live_notification_details(message)
                 dynamic_details = service.dynamic_notification_details(message)
                 video_details = service.video_notification_details(message)
+                comment_details = service.comment_notification_details(message)
                 caption = (
                     str(dynamic_details.get("url") or message)
                     if dynamic_details is not None
@@ -81,6 +82,7 @@ async def _send_monitor_messages() -> None:
                             live=live_details,
                             dynamic=dynamic_details,
                             video=video_details,
+                            comment=comment_details,
                         )
                         payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
                     except Exception:

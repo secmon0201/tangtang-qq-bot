@@ -206,7 +206,7 @@ def test_live_push_mentions_all_when_bot_is_admin(monkeypatch):
     assert calls[-1][1]["message"][0].data["qq"] == "all"
 
 
-def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp_path):
+def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypatch, tmp_path):
     bot = FakeBot()
     calls = []
     rendered = []
@@ -217,18 +217,29 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp
         "【B站新动态】测试UP\n动态正文\nhttps://example.test/dynamic",
         "【B站新视频】测试UP\n视频标题\nhttps://example.test/video",
         "【开播】测试UP\n直播标题\nhttps://example.test/live",
+        "【B站评论区回复】测试UP\n在其他UP的动态底下的回复\n[暗中观察]评论正文\nhttps://example.test/comment",
     ]
     details = {
         messages[0]: {"author": "测试UP", "text": "动态正文", "likes": "100", "following": "20", "followers": "300"},
         messages[1]: {"author": "测试UP", "text": "视频标题", "likes": "101", "following": "21", "followers": "301"},
         messages[2]: {"phase": "start", "author": "测试UP", "text": "直播标题", "likes": "102", "following": "22", "followers": "302"},
+        messages[3]: {
+            "author": "测试UP",
+            "context": "在其他UP的动态底下的回复",
+            "text": "[暗中观察]评论正文",
+            "rich_nodes": (
+                '[{"type":"emoji","text":"[暗中观察]",'
+                '"url":"https://example.test/emote.png"},{"type":"text","text":"评论正文"}]'
+            ),
+            "url": "https://example.test/comment",
+        },
     }
 
     async def updates():
         return messages
 
-    async def render_notification(message, *, live=None, dynamic=None, video=None):
-        rendered.append((message, live, dynamic, video))
+    async def render_notification(message, *, live=None, dynamic=None, video=None, comment=None):
+        rendered.append((message, live, dynamic, video, comment))
         return card
 
     async def call_api(_, action, **params):
@@ -243,22 +254,31 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_and_live(monkeypatch, tmp
         asoul_bili_render_cards=True,
     ))
     monkeypatch.setattr(plugin.service, "poll_updates", updates)
-    monkeypatch.setattr(plugin.service, "dynamic_notification_details", lambda message: details.get(message) if "动态" in message else None)
-    monkeypatch.setattr(plugin.service, "video_notification_details", lambda message: details.get(message) if "视频" in message else None)
-    monkeypatch.setattr(plugin.service, "live_notification_details", lambda message: details.get(message) if "开播" in message else None)
+    monkeypatch.setattr(plugin.service, "dynamic_notification_details", lambda message: details.get(message) if message.startswith("【B站新动态】") else None)
+    monkeypatch.setattr(plugin.service, "video_notification_details", lambda message: details.get(message) if message.startswith("【B站新视频】") else None)
+    monkeypatch.setattr(plugin.service, "live_notification_details", lambda message: details.get(message) if message.startswith("【开播】") else None)
+    monkeypatch.setattr(plugin.service, "comment_notification_details", lambda message: details.get(message) if message.startswith("【B站评论区回复】") else None)
     monkeypatch.setattr(plugin.web_renderer, "render_notification", render_notification)
     monkeypatch.setattr(plugin, "get_bots", lambda: {str(bot.self_id): bot})
     monkeypatch.setattr(plugin, "call_qq_action", call_api)
 
     asyncio.run(plugin._send_monitor_messages())
 
-    assert [(dynamic is not None, video is not None, live is not None) for _, live, dynamic, video in rendered] == [
-        (True, False, False),
-        (False, True, False),
-        (False, False, True),
+    assert [(dynamic is not None, video is not None, live is not None, comment is not None) for _, live, dynamic, video, comment in rendered] == [
+        (True, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+        (False, False, False, True),
     ]
-    assert [entry[2 if entry[2] is not None else 3 if entry[3] is not None else 1]["likes"] for entry in rendered] == ["100", "101", "102"]
-    assert [action for action, _ in calls] == ["send_group_msg", "send_group_msg", "get_group_member_info", "send_group_msg"]
+    assert [rendered[index][slot]["likes"] for index, slot in ((0, 2), (1, 3), (2, 1))] == ["100", "101", "102"]
+    assert rendered[3][4]["rich_nodes"].startswith('[{"type":"emoji"')
+    assert [action for action, _ in calls] == [
+        "send_group_msg",
+        "send_group_msg",
+        "get_group_member_info",
+        "send_group_msg",
+        "send_group_msg",
+    ]
 
 
 def test_monitor_does_not_poll_before_a_bot_is_connected(monkeypatch):

@@ -70,6 +70,7 @@ class ASoulService:
         self._live_notification_details: dict[str, dict[str, str]] = {}
         self._dynamic_notification_details: dict[str, dict[str, str]] = {}
         self._video_notification_details: dict[str, dict[str, str]] = {}
+        self._comment_notification_details: dict[str, dict[str, str]] = {}
 
     async def schedule_for_days(self, first_day: date, last_day: date) -> dict[date, list[ScheduleItem]]:
         events = await self._calendar_events()
@@ -739,6 +740,15 @@ class ASoulService:
         while len(self._video_notification_details) > 100:
             self._video_notification_details.pop(next(iter(self._video_notification_details)))
 
+    def comment_notification_details(self, message: str) -> dict[str, str] | None:
+        details = self._comment_notification_details.get(message)
+        return dict(details) if details is not None else None
+
+    def _remember_comment_notification(self, message: str, details: dict[str, str]) -> None:
+        self._comment_notification_details[message] = dict(details)
+        while len(self._comment_notification_details) > 100:
+            self._comment_notification_details.pop(next(iter(self._comment_notification_details)))
+
     @staticmethod
     def latest_comment_resource(
         dynamics: list[dict[str, str]], observed_at: int | None = None
@@ -780,36 +790,96 @@ class ASoulService:
             credential=self._credential(),
         )
         observed: list[dict[str, str]] = []
-        for root in payload.get("replies") or []:
+        seen_reply_ids: set[str] = set()
+        roots = [*(payload.get("top_replies") or []), *(payload.get("replies") or [])]
+        for root in roots:
             for row in (root, *(root.get("replies") or [])):
                 member = row.get("member") or {}
                 author_uid = str(member.get("mid") or "")
                 if author_uid not in watched:
                     continue
                 reply_id = str(row.get("rpid") or "")
-                text = " ".join(str(row.get("content", {}).get("message") or "").split())
-                if reply_id and text:
+                if not reply_id or reply_id in seen_reply_ids:
+                    continue
+                content = row.get("content") or {}
+                text, rich_nodes = self._comment_content(
+                    str(content.get("message") or ""),
+                    content.get("emote"),
+                )
+                if text:
+                    seen_reply_ids.add(reply_id)
                     observed.append(
                         {
                             "id": reply_id,
                             "author_uid": author_uid,
                             "author": str(member.get("uname") or author_uid),
+                            "avatar_url": str(member.get("avatar") or ""),
+                            "profile": str(member.get("sign") or ""),
                             "text": text,
+                            "rich_nodes": rich_nodes,
                         }
                     )
         return [row for row in observed if row["id"]]
 
+    @classmethod
+    def _comment_content(
+        cls,
+        message: str,
+        raw_emotes: object,
+    ) -> tuple[str, str]:
+        source = cls._normalize_multiline_text(message)
+        emotes = raw_emotes if isinstance(raw_emotes, dict) else {}
+        nodes: list[dict[str, str]] = []
+        plain_parts: list[str] = []
+        cursor = 0
+        while cursor < len(source):
+            matches = []
+            for raw_label, value in emotes.items():
+                label = str(raw_label)
+                index = source.find(label, cursor) if label else -1
+                if index >= 0:
+                    matches.append((index, label, value))
+            if not matches:
+                tail = source[cursor:]
+                if tail:
+                    nodes.append({"type": "text", "text": tail})
+                    plain_parts.append(tail)
+                break
+            index, label, value = min(matches, key=lambda item: item[0])
+            if index > cursor:
+                text = source[cursor:index]
+                nodes.append({"type": "text", "text": text})
+                plain_parts.append(text)
+            emote = value if isinstance(value, dict) else {}
+            url = cls._absolute_url(str(emote.get("url") or ""))
+            short_label = str(emote.get("jump_title") or "").strip()
+            if not short_label:
+                short_label = label.strip("[]").rsplit("_", 1)[-1] or "表情"
+            if url:
+                nodes.append({"type": "emoji", "text": label, "url": url})
+            else:
+                nodes.append({"type": "text", "text": f"[{short_label}]"})
+            plain_parts.append(f"[{short_label}]")
+            cursor = index + len(label)
+        return "".join(plain_parts).strip(), json.dumps(
+            nodes,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
     @staticmethod
-    def _comment_message(resource: dict[str, str], reply: dict[str, str]) -> str:
+    def _comment_context(resource: dict[str, str]) -> str:
         owner = str(resource.get("author") or resource.get("uid") or "UP主")
         if resource.get("notification_kind") == "video":
-            context = f"在{owner}的《{resource.get('text') or '视频'}》视频底下的回复"
-        else:
-            context = f"在{owner}的动态底下的回复"
+            return f"在{owner}的《{resource.get('text') or '视频'}》视频底下的回复"
+        return f"在{owner}的动态底下的回复"
+
+    @staticmethod
+    def _comment_message(resource: dict[str, str], reply: dict[str, str]) -> str:
         return "\n".join(
             (
                 f"【B站评论区回复】{reply['author']}",
-                context,
+                ASoulService._comment_context(resource),
                 reply["text"],
                 str(resource.get("url") or ""),
             )
@@ -840,7 +910,25 @@ class ASoulService:
         unseen = [row for row in replies if row["id"] not in known_ids]
         monitor["reply_ids"] = list(dict.fromkeys(current_ids + list(known_ids)))[:COMMENT_SEEN_LIMIT]
         monitor["last_scanned_at"] = observed_at
-        return [self._comment_message(resource, row) for row in reversed(unseen)]
+        messages: list[str] = []
+        context = self._comment_context(resource)
+        for row in reversed(unseen):
+            message = self._comment_message(resource, row)
+            self._remember_comment_notification(
+                message,
+                {
+                    "author": row["author"],
+                    "uid": row["author_uid"],
+                    "avatar_url": row.get("avatar_url", ""),
+                    "profile": row.get("profile", ""),
+                    "text": row["text"],
+                    "rich_nodes": row.get("rich_nodes", "[]"),
+                    "context": context,
+                    "url": str(resource.get("url") or ""),
+                },
+            )
+            messages.append(message)
+        return messages
 
     async def dump_dynamic_payload(self, uid: str) -> Path:
         """Persist a credential-free diagnostic response for a super-admin."""

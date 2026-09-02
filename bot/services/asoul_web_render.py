@@ -77,6 +77,7 @@ def notification_payload(
     live: Mapping[str, Any] | None = None,
     dynamic: Mapping[str, Any] | None = None,
     video: Mapping[str, Any] | None = None,
+    comment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     lines = [line.strip() for line in str(message).splitlines() if line.strip()]
     if live is not None:
@@ -89,6 +90,9 @@ def notification_payload(
     elif video is not None:
         details = dict(video)
         mode = "video"
+    elif comment is not None:
+        details = dict(comment)
+        mode = "comment"
     else:
         url = lines[-1] if lines and lines[-1].startswith("http") else ""
         content_lines = lines[1:-1] if url else lines[1:]
@@ -149,8 +153,15 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
         live: Mapping[str, Any] | None = None,
         dynamic: Mapping[str, Any] | None = None,
         video: Mapping[str, Any] | None = None,
+        comment: Mapping[str, Any] | None = None,
     ) -> Path:
-        payload = notification_payload(message, live=live, dynamic=dynamic, video=video)
+        payload = notification_payload(
+            message,
+            live=live,
+            dynamic=dynamic,
+            video=video,
+            comment=comment,
+        )
         return await self.render_payload(payload, str(payload["mode"]))
 
     async def render_payload(self, payload: Mapping[str, Any], prefix: str) -> Path:

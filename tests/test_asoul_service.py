@@ -864,7 +864,27 @@ def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkey
                     "member": {"mid": "200", "uname": "乃琳"},
                     "content": {"message": "一级回复"},
                 },
-            ]
+            ],
+            "top_replies": [
+                {
+                    "rpid": 4,
+                    "member": {
+                        "mid": "100",
+                        "uname": "嘉然",
+                        "avatar": "https://example.test/avatar.jpg",
+                        "sign": "测试签名",
+                    },
+                    "content": {
+                        "message": "[嘉然_暗中观察]置顶回复",
+                        "emote": {
+                            "[嘉然_暗中观察]": {
+                                "url": "https://example.test/emote.png",
+                                "jump_title": "暗中观察",
+                            }
+                        },
+                    },
+                }
+            ],
         }
 
     monkeypatch.setattr(asoul_module.comment, "get_comments", comments)
@@ -874,9 +894,16 @@ def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkey
     )
 
     assert [(row["id"], row["author_uid"], row["text"]) for row in rows] == [
+        ("4", "100", "[暗中观察]置顶回复"),
         ("2", "100", "跨账号楼中楼回复"),
         ("3", "200", "一级回复"),
     ]
+    assert rows[0]["avatar_url"] == "https://example.test/avatar.jpg"
+    assert rows[0]["profile"] == "测试签名"
+    assert rows[0]["rich_nodes"] == (
+        '[{"type":"emoji","text":"[嘉然_暗中观察]",'
+        '"url":"https://example.test/emote.png"},{"type":"text","text":"置顶回复"}]'
+    )
 
 
 def test_comment_polling_rotates_two_targets_per_cycle(tmp_path, monkeypatch):

@@ -450,8 +450,8 @@ def test_public_pages_preserve_audience_and_nte_information_architecture(built_p
 
     assert "从一句指令，到一个群自己的日常" in home
     assert "当前版本 · 九项能力" in home
-    assert "本群开关和全局条件必须同时满足" in home
-    assert "#系统设置 被呼叫会话 状态" in home
+    assert "先看本群设置，再看全局通知" in home
+    assert "#系统设置" not in home
     assert "#发言排行 周" in home
     assert "#nte薄荷排行" in home
     assert "Python 3.13" not in home
@@ -460,7 +460,11 @@ def test_public_pages_preserve_audience_and_nte_information_architecture(built_p
     assert "#nte最强总排行" in games
     assert 'data-scope="total"' in games
     assert "机器人总排行" in app_script
-    assert "群设置" in operator
+    assert "只管理当前群，不碰全局开关" in operator
+    assert "仅超级管理员" in operator
+    assert "#系统设置" in operator
+    assert "抽象示意 · 无真实截图" in games
+    assert "nte-rank-header" not in games
     assert "Windows 本地运行" in technology
     assert "/api/*、/ws/*、/internal/*" in technology
 

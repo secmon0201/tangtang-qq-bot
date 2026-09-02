@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "style_version": "20260902a",
-  "script_version": "20260902a",
+  "style_version": "20260902b",
+  "script_version": "20260902b",
   "navigation": [
     {
       "route": "/",
@@ -51,7 +51,7 @@
       "route": "/",
       "output": "index.html",
       "title": "糖糖 · QQ 群机器人",
-      "description": "糖糖是面向所有 QQ 群的本地社区机器人：枝江与 B 站信号、群聊互动、发言榜、小游戏、NTE 与按群管理。",
+      "description": "糖糖是面向所有 QQ 群的本地社区机器人：枝江与 B 站信号、群聊互动、发言榜、小游戏、NTE 与本群管理。",
       "canonical": "https://tangtang.secmon.cn/",
       "theme_color": "#fffdfd",
       "main_id": "main",
@@ -212,7 +212,7 @@
       "route": "/operator/",
       "output": "operator/index.html",
       "title": "管理运营 · 糖糖",
-      "description": "糖糖面向机器人拥有者和群管理员的运营能力：群设置、公告面板、查重、状态自检与 Codex 持续任务。",
+      "description": "糖糖的管理运营页按身份拆分群管理员、全局公告、超级管理员和持续维护能力。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",
@@ -326,7 +326,7 @@
       "route": "/release/",
       "output": "release/index.html",
       "title": "发布页 · 糖糖",
-      "description": "糖糖 GitHub 发布页正在准备中。",
+      "description": "糖糖公开发布页正在准备中，当前说明试运行版本、暂不提供本地部署，以及集成群独立权限设置与开放群自定义设置。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",

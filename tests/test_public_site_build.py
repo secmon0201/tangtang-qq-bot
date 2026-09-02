@@ -44,6 +44,7 @@ def test_modular_build_produces_complete_pages_and_runtime_assets(tmp_path):
     assert (output / script_url.lstrip("/")).is_file()
     assert (output / style_url.lstrip("/")).is_file()
     home = BeautifulSoup((output / "index.html").read_text(encoding="utf-8"), "html.parser")
+    release = (output / "release" / "index.html").read_text(encoding="utf-8")
     assert home.find("script", src=script_url) is not None
     assert home.find("link", href=style_url) is not None
     assert public_manifest["public_routes"]["/"] == "index.html"
@@ -52,7 +53,11 @@ def test_modular_build_produces_complete_pages_and_runtime_assets(tmp_path):
     assert len(home.select(".capability-tile[data-modal]")) == 9
     assert home.select_one("#quickstart") is not None
     assert len(home.select("#quickstart [data-copy-command]")) == 6
-    assert "本群开关和全局条件必须同时满足" in home.get_text(" ", strip=True)
+    assert "先看本群设置，再看全局通知" in home.get_text(" ", strip=True)
+    assert "#系统设置" not in home.get_text(" ", strip=True)
+    assert "试运行版本" in release
+    assert "暂不提供本地部署" in release
+    assert "集成群独立权限设置，开放群自定义设置" in release
     for command in (
         "#今日直播",
         "#发言排行 周",
@@ -73,12 +78,14 @@ def test_build_fingerprints_referenced_assets_and_excludes_unused_files(tmp_path
     public_manifest = builder.build_site(output)
     static_assets = public_manifest["static_assets"]
 
-    assert "/assets/nte-character-1052.png" in static_assets
-    assert static_assets["/assets/nte-character-1052.png"].endswith(".webp")
+    assert "/assets/nte-rank-header.jpg" not in static_assets
+    assert "/assets/nte-character-1052.png" not in static_assets
     assert "/vendor/lucide.min.js" in static_assets
     assert "/vendor/three.module.min.js" not in static_assets
     assert not list(output.rglob("three.module.min.*"))
     assert not list(output.rglob("bella-sticker.*"))
+    assert not list(output.rglob("nte-rank-header.*"))
+    assert not list(output.rglob("nte-character-1052.*"))
     assert not list(output.rglob("nte-character-1039.*"))
 
     for original_url, built_url in static_assets.items():
@@ -99,15 +106,6 @@ def test_build_outputs_valid_precompressed_and_lossless_variants(tmp_path):
         assert gzip.decompress(identity.with_name(identity.name + ".gz").read_bytes()) == identity.read_bytes()
         assert sizes["br"] < sizes["identity"]
         assert sizes["gzip"] < sizes["identity"]
-
-    original_url = "/assets/nte-character-1052.png"
-    converted_url = public_manifest["static_assets"][original_url]
-    with Image.open(ROOT / "site-src" / "static" / original_url.lstrip("/")) as original_image:
-        expected = original_image.convert("RGBA")
-    with Image.open(output / converted_url.lstrip("/")) as converted_image:
-        actual = converted_image.convert("RGBA")
-    assert expected.size == actual.size
-    assert ImageChops.difference(expected, actual).getbbox() is None
 
 
 def test_removed_section_does_not_keep_its_assets_in_release(tmp_path, monkeypatch):
@@ -197,7 +195,7 @@ def test_move_section_can_reorder_within_one_page():
     ]
 
 
-def test_homepage_modal_content_explains_commands_and_global_gates():
+def test_homepage_modal_content_keeps_private_super_admin_commands_out():
     modal_content = (ROOT / "site-src" / "scripts" / "01-modal-content.js").read_text(
         encoding="utf-8"
     )
@@ -208,8 +206,8 @@ def test_homepage_modal_content_explains_commands_and_global_gates():
         encoding="utf-8"
     )
 
-    assert "机器人级总控" in modal_content
-    assert "#系统设置" in modal_content
+    assert "机器人级运行条件" in modal_content
+    assert "#系统设置" not in modal_content
     assert "#nte薄荷总排行" in modal_content
     assert "modal-examples" in modal_runtime
     assert "modal-availability" in modal_runtime

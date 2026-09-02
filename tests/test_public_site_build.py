@@ -49,6 +49,19 @@ def test_modular_build_produces_complete_pages_and_runtime_assets(tmp_path):
     assert public_manifest["public_routes"]["/"] == "index.html"
     assert public_manifest["public_routes"]["/technology"] == "technology/index.html"
     assert public_manifest["public_routes"]["/technology/"] == "technology/index.html"
+    assert len(home.select(".capability-tile[data-modal]")) == 9
+    assert home.select_one("#quickstart") is not None
+    assert len(home.select("#quickstart [data-copy-command]")) == 6
+    assert "本群开关和全局条件必须同时满足" in home.get_text(" ", strip=True)
+    for command in (
+        "#今日直播",
+        "#发言排行 周",
+        "#今日老婆",
+        "#游戏列表",
+        "#nte薄荷排行",
+        "#群设置",
+    ):
+        assert home.find(attrs={"data-copy-command": command}) is not None
     for relative_path in set(public_manifest["public_routes"].values()):
         assert (output / relative_path).is_file()
 
@@ -180,7 +193,27 @@ def test_move_section_can_reorder_within_one_page():
         "portals",
         "marquee",
         "capabilities",
+        "quickstart",
     ]
+
+
+def test_homepage_modal_content_explains_commands_and_global_gates():
+    modal_content = (ROOT / "site-src" / "scripts" / "01-modal-content.js").read_text(
+        encoding="utf-8"
+    )
+    modal_runtime = (ROOT / "site-src" / "scripts" / "03-modal.js").read_text(
+        encoding="utf-8"
+    )
+    clipboard_runtime = (ROOT / "site-src" / "scripts" / "04-clipboard.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "机器人级总控" in modal_content
+    assert "#系统设置" in modal_content
+    assert "#nte薄荷总排行" in modal_content
+    assert "modal-examples" in modal_runtime
+    assert "modal-availability" in modal_runtime
+    assert "[data-copy-command]" in clipboard_runtime
 
 
 def test_update_page_keeps_navigation_route_and_label_in_sync():

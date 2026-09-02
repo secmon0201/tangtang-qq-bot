@@ -28,7 +28,11 @@ MINIMUM_COMPRESSION_BYTES = 512
 MINIMUM_IMAGE_SAVING_RATIO = 0.10
 
 PAGE_BOOTSTRAP = {
-    "home": ("/", "index.html", ["hero", "marquee", "capabilities", "portals"]),
+    "home": (
+        "/",
+        "index.html",
+        ["hero", "marquee", "capabilities", "quickstart", "portals"],
+    ),
     "experience": (
         "/experience/",
         "experience/index.html",

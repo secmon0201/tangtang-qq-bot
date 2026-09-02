@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "style_version": "20260829d",
-  "script_version": "20260829c",
+  "style_version": "20260902a",
+  "script_version": "20260902a",
   "navigation": [
     {
       "route": "/",
@@ -51,7 +51,7 @@
       "route": "/",
       "output": "index.html",
       "title": "糖糖 · QQ 群机器人",
-      "description": "糖糖是面向 QQ 群的独立机器人：枝江资讯、自然聊天、群内互动、群聊游戏与长期记忆。",
+      "description": "糖糖是面向所有 QQ 群的本地社区机器人：枝江与 B 站信号、群聊互动、发言榜、小游戏、NTE 与按群管理。",
       "canonical": "https://tangtang.secmon.cn/",
       "theme_color": "#fffdfd",
       "main_id": "main",
@@ -94,6 +94,10 @@
         {
           "key": "capabilities",
           "source": "pages/home/03-capabilities.html"
+        },
+        {
+          "key": "quickstart",
+          "source": "pages/home/05-quickstart.html"
         },
         {
           "key": "portals",

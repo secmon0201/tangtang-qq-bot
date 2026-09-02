@@ -448,8 +448,12 @@ def test_public_pages_preserve_audience_and_nte_information_architecture(built_p
         built / manifest["static_assets"]["/app.js"].lstrip("/")
     ).read_text(encoding="utf-8")
 
-    assert "糖糖在群里的八种打开方式" in home
-    assert "普通群友而言" in home
+    assert "从一句指令，到一个群自己的日常" in home
+    assert "当前版本 · 九项能力" in home
+    assert "本群开关和全局条件必须同时满足" in home
+    assert "#系统设置 被呼叫会话 状态" in home
+    assert "#发言排行 周" in home
+    assert "#nte薄荷排行" in home
     assert "Python 3.13" not in home
     assert "#nte薄荷排行" in games
     assert "#nte薄荷总排行" in games

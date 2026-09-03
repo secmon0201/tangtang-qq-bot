@@ -213,6 +213,11 @@ if ($null -eq $wavesSettings.PSObject.Properties["HelpExtraModules"]) {
 $wavesSettingsJson = $wavesSettings | ConvertTo-Json -Depth 30
 Write-Utf8NoBom $wavesConfig $wavesSettingsJson
 
+# RoverReminder stays installed for upstream compatibility, but this project
+# does not run its mail scheduler or accept persisted reminder settings.
+& $Python (Join-Path $PSScriptRoot "configure_wuwa_runtime.py") --core-dir $CoreDir
+if ($LASTEXITCODE -ne 0) { throw "Could not disable RoverReminder mail reminders." }
+
 Write-Host "GenshinUID ecosystem installed under: $CoreDir"
 Write-Host "Start Core first with: .\scripts\start_gsuid_core.ps1"
 Write-Host "Then restart the normal QQ bot process."

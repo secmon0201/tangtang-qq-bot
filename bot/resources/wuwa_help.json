@@ -569,7 +569,7 @@
     ]
   },
   "扩展功能": {
-    "desc": "RoverSign、TodayEcho、ScoreEcho、RoverReminder",
+    "desc": "签到、梭哈、评分；邮箱提醒已停用",
     "data": [
       {
         "name": "签到",
@@ -620,25 +620,9 @@
         "need_admin": false
       },
       {
-        "name": "推送邮箱",
-        "desc": "设置体力提醒收件邮箱",
-        "eg": "推送邮箱 123@qq.com",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "体力推送",
-        "desc": "开启或关闭体力阈值提醒",
-        "eg": "开启体力推送",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "推送阈值",
-        "desc": "设置 120 至 240 的提醒阈值",
-        "eg": "推送阈值 180",
+        "name": "邮箱体力提醒",
+        "desc": "该功能已关闭，不保存设置也不发送邮件",
+        "eg": "推送邮箱",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false

@@ -19,7 +19,7 @@ EXPECTED = {
     "RoverSign": True,
     "TodayEcho": True,
     "ScoreEcho": True,
-    "RoverReminder": True,
+    "RoverReminder": False,
 }
 
 
@@ -75,6 +75,15 @@ def validate(root: Path) -> list[str]:
             errors.append("XutheringWavesUID.HelpExtraModules must include all")
     except (OSError, json.JSONDecodeError, AttributeError) as exc:
         errors.append(f"invalid XutheringWavesUID config: {exc}")
+
+    reminder_config_path = root / "GsUID.Core" / "data" / "RoverReminder" / "config.json"
+    try:
+        reminder_config = json.loads(reminder_config_path.read_text(encoding="utf-8-sig"))
+        push_enabled = reminder_config.get("EnableStaminaPush", {}).get("data")
+        if push_enabled is not False:
+            errors.append("RoverReminder.EnableStaminaPush must be false")
+    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        errors.append(f"invalid RoverReminder config: {exc}")
     return errors
 
 
@@ -89,7 +98,8 @@ def main() -> int:
         return 1
     print(
         "Game mode valid: Core=enabled, GenshinUID=disabled, "
-        "NTEUID/XutheringWavesUID and WW extensions enabled, "
+        "NTEUID/XutheringWavesUID and user-facing WW extensions enabled, "
+        "RoverReminder mail disabled, "
         "OneBot gate=NTE/WW with or without #"
     )
     return 0

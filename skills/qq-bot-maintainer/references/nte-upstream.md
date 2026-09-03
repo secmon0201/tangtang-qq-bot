@@ -14,7 +14,8 @@ Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8
 
 - `bot/plugins/wuwa_game_ui.py` intercepts `#ww` help and ranking at priority `-2`; other commands continue upstream.
 - `#ww帮助` is the compact common-user catalog, `#ww完整帮助` contains all upstream, extension, group-admin, and Bot-owner entries, and `#ww原版帮助` is the upstream snapshot. Regenerate checked-in catalogs with `scripts/sync_wuwa_help.py` after an upstream update.
-- RoverSign, TodayEcho, ScoreEcho, and RoverReminder are installed as clean upstream repositories, enabled with the `ww` force prefix, and exposed through `HelpExtraModules=["all"]`. SMTP and other credentials remain operator-managed runtime data.
+- RoverSign, TodayEcho, ScoreEcho, and RoverReminder are installed as clean upstream repositories with the `ww` force prefix and exposed through `HelpExtraModules=["all"]`. RoverSign, TodayEcho, and ScoreEcho are enabled. RoverReminder stays disabled at both plugin-load and internal mail-switch levels; project command policy blocks all of its settings and replies that mail reminders are unavailable.
+- ScoreEcho keeps its upstream API failure response, which already includes HTTP status and server detail for an expired token; do not replace upstream errors unless a future pinned version removes that feedback.
 - Ranking interception is whitelist-based: project-rendered score, phantom, practice, and strongest formats only. Damage and activity rankings continue upstream.
 - Rankings read `wavesbind`, `players/<uid>/charListData.json`, and compressed or plain `rawData.json` read-only. They expose current-group and robot-wide local views only, never an A-Coast view.
 - QQ avatar, display name, group name, and group alias come from project `bot.db`; pages contain up to 100 ranking rows.

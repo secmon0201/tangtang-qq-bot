@@ -77,12 +77,10 @@ EXTENSION_SUMMARY = (
     _entry("梭哈", "TodayEcho 声骸强化模拟", "梭哈10次"),
     _entry("声骸图片评分", "ScoreEcho 识图评分", "评分 卡提1c(生命)"),
     _entry("国际服分析", "查看 ScoreEcho 分析功能", "分析帮助"),
-    _entry("推送邮箱", "设置体力提醒收件邮箱", "推送邮箱 123@qq.com"),
-    _entry("体力推送", "开启或关闭体力阈值提醒", "开启体力推送"),
-    _entry("推送阈值", "设置 120 至 240 的提醒阈值", "推送阈值 180"),
+    _entry("邮箱体力提醒", "该功能已关闭，不保存设置也不发送邮件", "推送邮箱"),
 )
 
-ROVER_REMINDER_ENTRIES = EXTENSION_SUMMARY[-3:]
+ROVER_REMINDER_ENTRIES = EXTENSION_SUMMARY[-1:]
 
 PROJECT_ENTRIES = (
     _entry("角色评分排行", "本群角色综合评分榜", "今汐评分排行"),
@@ -234,7 +232,7 @@ def build_compact_catalog(base: dict[str, Any]) -> dict[str, Any]:
         ),
     )
     catalog["扩展功能"] = _section(
-        "RoverSign、TodayEcho、ScoreEcho、RoverReminder",
+        "签到、梭哈、评分；邮箱提醒已停用",
         EXTENSION_SUMMARY,
     )
     catalog["个人设置"] = _section(
@@ -299,7 +297,7 @@ def build_full_catalog(
     )
     catalog["ScoreEcho 评分分析"] = _section("图片评分与国际服独立面板分析", score_rows)
     catalog["RoverReminder 体力提醒"] = _section(
-        "邮件、推送开关与体力阈值",
+        "插件保留安装，但邮件提醒与全部设置入口均已停用",
         ROVER_REMINDER_ENTRIES,
     )
     catalog["项目排行与帮助"] = _section(

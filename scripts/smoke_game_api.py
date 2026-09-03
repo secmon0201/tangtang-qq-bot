@@ -54,6 +54,7 @@ POSITIVE_COMMANDS = (
     ("#ww练度排行", True, None, 25.0),
     ("#ww今汐评分排行", True, None, 25.0),
     ("#ww抽卡排行", True, None, 25.0),
+    ("#ww推送邮箱", True, None, 15.0),
 )
 
 GROUP_SWITCH_COMMANDS = (
@@ -320,6 +321,14 @@ async def _run_client() -> int:
         print("#ww登录: LOGIN_LINK_MISSING", flush=True)
     else:
         print(f"#ww登录: LOGIN_LINK_OK {wuwa_login_link}", flush=True)
+    if not any(
+        "鸣潮邮箱体力提醒功能已关闭" in text
+        for text in captured_texts.get("#ww推送邮箱", ())
+    ):
+        failures += 1
+        print("#ww推送邮箱: DISABLED_NOTICE_MISSING", flush=True)
+    else:
+        print("#ww推送邮箱: DISABLED_NOTICE_OK", flush=True)
     for command, label in (("#nte帮助", "NTE"), ("#ww帮助", "鸣潮")):
         expected_notice = f"本群已关闭{label}"
         if not any(expected_notice in text for text in captured_texts.get(command, ())):

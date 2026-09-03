@@ -35,10 +35,10 @@ def test_compact_help_contains_all_extensions_without_management_commands():
         "梭哈",
         "声骸图片评分",
         "国际服分析",
-        "推送邮箱",
-        "体力推送",
-        "推送阈值",
+        "邮箱体力提醒",
     } <= names
+    reminder = next(row for row in _entries(compact) if row["name"] == "邮箱体力提醒")
+    assert "已关闭" in reminder["desc"]
     assert all(not bool(row.get("need_admin")) for row in _entries(compact))
 
 

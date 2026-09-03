@@ -11,6 +11,10 @@ from nonebot.rule import Rule
 from bot.config import ROOT, settings
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
+from bot.services.wuwa_command_policy import (
+    ROVER_REMINDER_DISABLED_MESSAGE,
+    is_disabled_rover_reminder_command,
+)
 from bot.services.wuwa_help_render import WuwaFullHelpRenderer, WuwaHelpRenderer
 from bot.services.wuwa_rank_data import (
     WuwaRankDataError,
@@ -45,7 +49,11 @@ def is_wuwa_ui_message(event: MessageEvent) -> bool:
     if not isinstance(event, GroupMessageEvent):
         return False
     text = event.get_plaintext().strip()
-    return is_wuwa_help_command(text) or parse_wuwa_rank_command(text) is not None
+    return (
+        is_wuwa_help_command(text)
+        or parse_wuwa_rank_command(text) is not None
+        or is_disabled_rover_reminder_command(text)
+    )
 
 
 wuwa_game_ui = on_message(rule=Rule(is_wuwa_ui_message), priority=-2, block=True)
@@ -54,6 +62,9 @@ wuwa_game_ui = on_message(rule=Rule(is_wuwa_ui_message), priority=-2, block=True
 @wuwa_game_ui.handle()
 async def _(event: GroupMessageEvent) -> None:
     text = event.get_plaintext().strip()
+    if is_disabled_rover_reminder_command(text):
+        await wuwa_game_ui.finish(ROVER_REMINDER_DISABLED_MESSAGE)
+        return
     if is_wuwa_help_command(text):
         await _send_help(text)
         return

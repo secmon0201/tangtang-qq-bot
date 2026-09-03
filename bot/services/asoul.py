@@ -771,8 +771,29 @@ class ASoulService:
                 return item
         return None
 
-    async def fetch_latest_comments(self, resource: dict[str, str]) -> list[dict[str, str]]:
-        """Read one recent comment page and filter authors by the comment target set."""
+    @staticmethod
+    def _comment_like_count(row: dict[str, Any]) -> int:
+        try:
+            return max(0, int(row.get("like") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _hot_page_comment_rows(cls, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return hot-page roots plus the highest-liked inline reply from each root."""
+        rows: list[dict[str, Any]] = []
+        roots = [*(payload.get("top_replies") or []), *(payload.get("replies") or [])]
+        for root in roots:
+            if not isinstance(root, dict):
+                continue
+            rows.append(root)
+            nested = [row for row in (root.get("replies") or []) if isinstance(row, dict)]
+            if nested:
+                rows.append(max(nested, key=cls._comment_like_count))
+        return rows
+
+    async def fetch_hot_comments(self, resource: dict[str, str]) -> list[dict[str, str]]:
+        """Read the first hot page and parse content only for watched authors."""
         self._require_bilibili_api()
         watched = set(settings.asoul_bili_comment_target_uids)
         if not watched:
@@ -786,39 +807,41 @@ class ASoulService:
             oid,
             resource_type,
             page_index=1,
-            order=comment.OrderType.TIME,
+            order=comment.OrderType.LIKE,
             credential=self._credential(),
         )
         observed: list[dict[str, str]] = []
         seen_reply_ids: set[str] = set()
-        roots = [*(payload.get("top_replies") or []), *(payload.get("replies") or [])]
-        for root in roots:
-            for row in (root, *(root.get("replies") or [])):
-                member = row.get("member") or {}
-                author_uid = str(member.get("mid") or "")
-                if author_uid not in watched:
-                    continue
-                reply_id = str(row.get("rpid") or "")
-                if not reply_id or reply_id in seen_reply_ids:
-                    continue
-                content = row.get("content") or {}
-                text, rich_nodes = self._comment_content(
-                    str(content.get("message") or ""),
-                    content.get("emote"),
+        for row in self._hot_page_comment_rows(payload):
+            member = row.get("member")
+            if not isinstance(member, dict):
+                continue
+            author_uid = str(member.get("mid") or "")
+            if author_uid not in watched:
+                continue
+            reply_id = str(row.get("rpid") or "")
+            if not reply_id or reply_id in seen_reply_ids:
+                continue
+            content = row.get("content")
+            if not isinstance(content, dict):
+                continue
+            text, rich_nodes = self._comment_content(
+                str(content.get("message") or ""),
+                content.get("emote"),
+            )
+            if text:
+                seen_reply_ids.add(reply_id)
+                observed.append(
+                    {
+                        "id": reply_id,
+                        "author_uid": author_uid,
+                        "author": str(member.get("uname") or author_uid),
+                        "avatar_url": str(member.get("avatar") or ""),
+                        "profile": str(member.get("sign") or ""),
+                        "text": text,
+                        "rich_nodes": rich_nodes,
+                    }
                 )
-                if text:
-                    seen_reply_ids.add(reply_id)
-                    observed.append(
-                        {
-                            "id": reply_id,
-                            "author_uid": author_uid,
-                            "author": str(member.get("uname") or author_uid),
-                            "avatar_url": str(member.get("avatar") or ""),
-                            "profile": str(member.get("sign") or ""),
-                            "text": text,
-                            "rich_nodes": rich_nodes,
-                        }
-                    )
         return [row for row in observed if row["id"]]
 
     @classmethod
@@ -895,20 +918,24 @@ class ASoulService:
         if resource is None:
             entry.pop("comment_monitor", None)
             return []
-        replies = await self.fetch_latest_comments(resource)
+        replies = await self.fetch_hot_comments(resource)
         current_ids = [row["id"] for row in replies]
         monitor = entry.get("comment_monitor")
         if not isinstance(monitor, dict) or monitor.get("resource_id") != resource["id"]:
             entry["comment_monitor"] = {
                 "resource_id": resource["id"],
-                "reply_ids": current_ids[:COMMENT_SEEN_LIMIT],
+                "seen_reply_ids": current_ids[:COMMENT_SEEN_LIMIT],
                 "initialized": True,
                 "last_scanned_at": observed_at,
             }
             return []
-        known_ids = {str(value) for value in monitor.get("reply_ids", []) if str(value)}
+        stored_ids = monitor.get("seen_reply_ids", monitor.get("reply_ids", []))
+        known_ids = {str(value) for value in stored_ids if str(value)}
         unseen = [row for row in replies if row["id"] not in known_ids]
-        monitor["reply_ids"] = list(dict.fromkeys(current_ids + list(known_ids)))[:COMMENT_SEEN_LIMIT]
+        monitor["seen_reply_ids"] = list(
+            dict.fromkeys(current_ids + list(known_ids))
+        )[:COMMENT_SEEN_LIMIT]
+        monitor.pop("reply_ids", None)
         monitor["last_scanned_at"] = observed_at
         messages: list[str] = []
         context = self._comment_context(resource)
@@ -1221,7 +1248,7 @@ class ASoulService:
             f"轮询：每 {settings.asoul_bili_poll_interval_seconds} 秒",
             f"普通/转发/预约动态 / 动态视频 / 开播下播 / 评论：{'开' if settings.asoul_bili_push_dynamic else '关'} / {'开' if settings.asoul_bili_push_video else '关'} / {'开' if settings.asoul_bili_push_live else '关'} / {'开' if settings.asoul_bili_push_comment else '关'}",
             "独立视频轮询：已停用（投稿视频由动态接口识别）",
-            f"评论范围：每轮最多 {COMMENT_SCAN_TARGETS_PER_POLL} 个账号，仅最新且发布未满 6 小时的动态",
+            f"评论范围：每轮最多 {COMMENT_SCAN_TARGETS_PER_POLL} 个账号，仅最新且发布未满 6 小时动态的热门第一页与每楼最高赞楼中楼",
             f"图片卡片：{'开' if settings.asoul_bili_render_cards else '关'}",
             f"登录状态：{'已登录' if self.credential_available() else '未登录'}",
             f"游标状态：{'已建立，不会回放历史内容' if initialized else '首次成功轮询时建立基线'}",

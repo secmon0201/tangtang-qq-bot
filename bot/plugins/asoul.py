@@ -398,7 +398,7 @@ async def _recent_comment_rows(uid: str) -> list[dict[str, str]]:
     resource = service.latest_comment_resource(dynamics)
     if resource is None:
         return []
-    return await service.fetch_latest_comments(resource)
+    return await service.fetch_hot_comments(resource)
 
 
 async def _bilibili_card_payload(message: str) -> Any:
@@ -559,7 +559,7 @@ async def _(event: MessageEvent, args=CommandArg()):
         logger.warning("Bilibili comment test failed for uid %s: %s", uid, type(exc).__name__)
         await bili_test_comment.finish("评论区测试失败，请稍后重试。")
     if not rows:
-        await bili_test_comment.finish("最新 6 小时动态的当前评论页中没有目标账号回复。")
+        await bili_test_comment.finish("最新 6 小时动态的热门第一页中没有目标账号回复。")
     lines = ["【B站评论区测试】"]
     lines.extend(f"{row['author']}：{row['text']}" for row in rows[:5])
     await bili_test_comment.finish("\n".join(lines))
@@ -587,7 +587,7 @@ async def _(event: MessageEvent, args=CommandArg()):
         except Exception as exc:
             replies.append(f"comment：查询失败（{type(exc).__name__}）")
         else:
-            replies.append(f"comment：可用，当前页命中 {len(comment_rows)} 条目标账号回复")
+            replies.append(f"comment：可用，热门第一页命中 {len(comment_rows)} 条目标账号回复")
     else:
         replies.append("comment：该 UID 不在评论目标范围")
     await bili_test_all.finish("【B站综合测试】\n" + "\n".join(replies))

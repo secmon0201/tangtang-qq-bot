@@ -782,14 +782,14 @@ def test_polling_pushes_new_target_reply_from_latest_six_hour_dynamic_once(tmp_p
     async def live_statuses(_: tuple[str, ...]):
         return {}
 
-    async def latest_comments(resource):
+    async def hot_comments(resource):
         assert resource["id"] == "d1"
         return list(replies)
 
     service.fetch_dynamics = dynamics  # type: ignore[method-assign]
     service.fetch_videos = videos  # type: ignore[method-assign]
     service.fetch_live_statuses = live_statuses  # type: ignore[method-assign]
-    service.fetch_latest_comments = latest_comments  # type: ignore[method-assign]
+    service.fetch_hot_comments = hot_comments  # type: ignore[method-assign]
 
     assert asyncio.run(service.poll_updates()) == []
     replies.append({"id": "r2", "author_uid": "100", "author": "测试UP", "text": "新增回复"})
@@ -799,6 +799,46 @@ def test_polling_pushes_new_target_reply_from_latest_six_hour_dynamic_once(tmp_p
         "【B站评论区回复】测试UP\n在测试UP的动态底下的回复\n新增回复\nhttps://t.bilibili.com/d1"
     ]
     assert asyncio.run(service.poll_updates()) == []
+    replies[:] = [replies[0]]
+    assert asyncio.run(service.poll_updates()) == []
+    replies[:] = [
+        {"id": "r2", "author_uid": "100", "author": "测试UP", "text": "新增回复"},
+        replies[0],
+    ]
+    assert asyncio.run(service.poll_updates()) == []
+
+
+def test_comment_monitor_migrates_legacy_reply_ids_without_replaying(tmp_path):
+    service = ASoulService(Database(tmp_path / "bot.db"))
+    resource = {
+        "id": "d1",
+        "uid": "100",
+        "author": "测试UP",
+        "text": "最近动态",
+        "url": "https://t.bilibili.com/d1",
+        "notification_kind": "dynamic",
+        "published_at": "1799999940",
+        "comment_oid": "9001",
+        "comment_type": "17",
+    }
+    entry = {
+        "comment_monitor": {
+            "resource_id": "d1",
+            "reply_ids": ["r1"],
+            "initialized": True,
+        }
+    }
+
+    async def hot_comments(_resource):
+        return [{"id": "r1", "author_uid": "100", "author": "测试UP", "text": "旧回复"}]
+
+    service.fetch_hot_comments = hot_comments  # type: ignore[method-assign]
+
+    updates = asyncio.run(service._poll_latest_comment_updates([resource], entry, 1_800_000_000))
+
+    assert updates == []
+    assert entry["comment_monitor"]["seen_reply_ids"] == ["r1"]
+    assert "reply_ids" not in entry["comment_monitor"]
 
 
 def test_latest_comment_resource_requires_latest_eligible_item_within_six_hours(tmp_path):
@@ -830,7 +870,9 @@ def test_latest_comment_resource_requires_latest_eligible_item_within_six_hours(
     assert service.latest_comment_resource([old], now) is None
 
 
-def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkeypatch):
+def test_hot_comment_page_filters_uid_before_content_and_keeps_only_hottest_nested_reply(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(
         asoul_module,
         "settings",
@@ -841,22 +883,33 @@ def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkey
     )
     service = ASoulService(Database(tmp_path / "bot.db"))
 
+    class UnreadableContent:
+        def get(self, *_args, **_kwargs):
+            raise AssertionError("content must not be read for an unmatched UID")
+
     async def comments(oid, resource_type, **kwargs):
         assert oid == 9001
         assert resource_type == asoul_module.comment.CommentResourceType.DYNAMIC
-        assert kwargs["order"] == asoul_module.comment.OrderType.TIME
+        assert kwargs["order"] == asoul_module.comment.OrderType.LIKE
         return {
             "replies": [
                 {
                     "rpid": 1,
                     "member": {"mid": "999", "uname": "普通用户"},
-                    "content": {"message": "普通评论"},
+                    "content": UnreadableContent(),
                     "replies": [
                         {
                             "rpid": 2,
                             "member": {"mid": "100", "uname": "嘉然"},
-                            "content": {"message": "跨账号楼中楼回复"},
-                        }
+                            "like": 5,
+                            "content": {"message": "较低赞楼中楼"},
+                        },
+                        {
+                            "rpid": 5,
+                            "member": {"mid": "100", "uname": "嘉然"},
+                            "like": 50,
+                            "content": {"message": "最高赞楼中楼"},
+                        },
                     ],
                 },
                 {
@@ -890,12 +943,12 @@ def test_comment_page_filters_authors_by_the_five_account_scope(tmp_path, monkey
     monkeypatch.setattr(asoul_module.comment, "get_comments", comments)
 
     rows = asyncio.run(
-        service.fetch_latest_comments({"comment_oid": "9001", "comment_type": "17"})
+        service.fetch_hot_comments({"comment_oid": "9001", "comment_type": "17"})
     )
 
     assert [(row["id"], row["author_uid"], row["text"]) for row in rows] == [
         ("4", "100", "[暗中观察]置顶回复"),
-        ("2", "100", "跨账号楼中楼回复"),
+        ("5", "100", "最高赞楼中楼"),
         ("3", "200", "一级回复"),
     ]
     assert rows[0]["avatar_url"] == "https://example.test/avatar.jpg"
@@ -941,12 +994,12 @@ def test_comment_polling_rotates_two_targets_per_cycle(tmp_path, monkeypatch):
     async def live_statuses(_):
         return {}
 
-    async def latest_comments(_):
+    async def hot_comments(_):
         return []
 
     service.fetch_dynamics = dynamics  # type: ignore[method-assign]
     service.fetch_live_statuses = live_statuses  # type: ignore[method-assign]
-    service.fetch_latest_comments = latest_comments  # type: ignore[method-assign]
+    service.fetch_hot_comments = hot_comments  # type: ignore[method-assign]
 
     cycles: list[set[str]] = []
     for _ in range(3):

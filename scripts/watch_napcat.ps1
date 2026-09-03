@@ -4,7 +4,9 @@ param(
     [ValidateRange(2, 10)][int]$MissingChecksBeforeRecovery = 3,
     [ValidateRange(300, 86400)][int]$NapCatRecoveryCooldownSeconds = 900,
     [ValidateRange(60, 3600)][int]$BotRecoveryCooldownSeconds = 300,
-    [ValidateRange(300, 86400)][int]$NteTunnelRecoveryCooldownSeconds = 900
+    [ValidateRange(300, 86400)][int]$NteTunnelRecoveryCooldownSeconds = 900,
+    [ValidateRange(30, 300)][int]$RecoveryProcessTimeoutSeconds = 120,
+    [switch]$LibraryOnly
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +43,8 @@ function Get-WatchdogState {
             last_nte_tunnel_recovery_at = ""
             last_status = ""
             last_nte_tunnel_status = ""
+            last_check_started_at = ""
+            last_check_completed_at = ""
         }
     }
     try {
@@ -52,7 +56,9 @@ function Get-WatchdogState {
             "last_bot_recovery_at",
             "last_nte_tunnel_recovery_at",
             "last_status",
-            "last_nte_tunnel_status"
+            "last_nte_tunnel_status",
+            "last_check_started_at",
+            "last_check_completed_at"
         )) {
             if ($state.PSObject.Properties.Name -notcontains $name) {
                 $state | Add-Member -NotePropertyName $name -NotePropertyValue $(if ($name -like "missing_*") { 0 } else { "" })
@@ -69,6 +75,8 @@ function Get-WatchdogState {
             last_nte_tunnel_recovery_at = ""
             last_status = ""
             last_nte_tunnel_status = ""
+            last_check_started_at = ""
+            last_check_completed_at = ""
         }
     }
 }
@@ -106,6 +114,49 @@ function Test-RecoveryCooldown {
         return ((Get-Date).ToUniversalTime() - [DateTime]::Parse($Timestamp).ToUniversalTime()).TotalSeconds -ge $CooldownSeconds
     } catch {
         return $true
+    }
+}
+
+function Invoke-BoundedPowerShellScript {
+    param(
+        [Parameter(Mandatory)][string]$ScriptPath,
+        [ValidateRange(1, 600)][int]$TimeoutSeconds = 120,
+        [string[]]$ScriptArguments = @()
+    )
+
+    $engineArgs = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        $ScriptPath
+    ) + $ScriptArguments
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $engineArgs `
+        -WindowStyle Hidden -PassThru
+
+    try {
+        Wait-Process -Id $process.Id -Timeout $TimeoutSeconds -ErrorAction Stop
+    } catch {
+        $stillRunning = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+        if ($null -ne $stillRunning) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Wait-Process -Id $process.Id -Timeout 10 -ErrorAction SilentlyContinue
+            return [pscustomobject]@{
+                Outcome = "timed_out"
+                ExitCode = $null
+                ProcessId = $process.Id
+            }
+        }
+        throw
+    }
+
+    $process.Refresh()
+    return [pscustomobject]@{
+        Outcome = $(if ($process.ExitCode -eq 0) { "completed" } else { "failed" })
+        ExitCode = $process.ExitCode
+        ProcessId = $process.Id
     }
 }
 
@@ -290,18 +341,32 @@ function Invoke-NteTunnelCheck {
         } else {
             Join-Path $PSScriptRoot 'start_nte_tunnel.ps1'
         }
-        Start-Process -FilePath "powershell.exe" `
-            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $startScript) `
-            -WindowStyle Hidden -Wait | Out-Null
+        $scriptArguments = @()
+        if (Test-Path -LiteralPath $namedConfig) {
+            $scriptArguments = @("-SkipCoreRestart")
+        }
+        $recovery = Invoke-BoundedPowerShellScript `
+            -ScriptPath $startScript `
+            -TimeoutSeconds $RecoveryProcessTimeoutSeconds `
+            -ScriptArguments $scriptArguments
         $State.last_nte_tunnel_recovery_at = [DateTime]::UtcNow.ToString("o")
+        if ($recovery.Outcome -eq "timed_out") {
+            Write-WatchdogLog -Event "nte_tunnel_recovery_timed_out" -Detail "timeout_seconds=$RecoveryProcessTimeoutSeconds"
+        } elseif ($recovery.Outcome -eq "failed") {
+            Write-WatchdogLog -Event "nte_tunnel_recovery_process_failed" -Detail "exit_code=$($recovery.ExitCode)"
+        }
         if (Test-NteTunnelHealthy) {
             Write-WatchdogLog -Event "nte_tunnel_recovery_succeeded"
             return [pscustomobject]@{ Status = "nte_tunnel_recovered"; Healthy = $true }
         }
-        Write-WatchdogLog -Event "nte_tunnel_recovery_failed"
+        Write-WatchdogLog -Event "nte_tunnel_recovery_failed" -Detail "outcome=$($recovery.Outcome)"
         return [pscustomobject]@{ Status = "nte_tunnel_recovery_failed"; Healthy = $false }
     }
     return [pscustomobject]@{ Status = "nte_tunnel_unhealthy"; Healthy = $false }
+}
+
+if ($LibraryOnly) {
+    return
 }
 
 $settings = Get-BotLaunchSettings -Root $Root
@@ -328,6 +393,8 @@ Write-WatchdogLog -Event "watchdog_started" -Detail "interval_seconds=$CheckInte
 try {
     while ($true) {
         $state = Get-WatchdogState
+        $state.last_check_started_at = [DateTime]::UtcNow.ToString("o")
+        Save-WatchdogState -State $state
         try {
             [void](Invoke-WatchdogCheck -Settings $settings -State $state -AllowRecovery)
             $tunnel = Invoke-NteTunnelCheck -State $state -AllowRecovery
@@ -335,9 +402,11 @@ try {
                 Write-WatchdogLog -Event ("nte_tunnel_status=" + $tunnel.Status)
                 $State.last_nte_tunnel_status = [string]$tunnel.Status
             }
-            Save-WatchdogState -State $state
         } catch {
             Write-WatchdogLog -Event "watchdog_check_failed" -Detail "error=$($_.Exception.GetType().Name)"
+        } finally {
+            $state.last_check_completed_at = [DateTime]::UtcNow.ToString("o")
+            Save-WatchdogState -State $state
         }
         Start-Sleep -Seconds $CheckIntervalSeconds
     }

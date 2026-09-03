@@ -164,6 +164,12 @@ def test_named_tunnel_starts_gateway_with_bounded_resource_limits():
     assert "'--client-timeout-seconds', $GatewayClientTimeoutSeconds" in script
     assert "'--max-request-mb', $GatewayMaxRequestMB" in script
     assert "Gateway limits must be positive integers" in script
+    assert "'set_wuwa_login_url.ps1'" in script
+    assert "'GsUID.Core\\data\\XutheringWavesUID\\config.json'" in script
+
+    wuwa_setter = source("scripts/set_wuwa_login_url.ps1")
+    assert "$config.WavesLoginUrl.data = $url" in wuwa_setter
+    assert "$config.WavesLoginUrlSelf.data = $true" in wuwa_setter
 
     configure = source("scripts/configure_tangtang_named_tunnel.ps1")
     assert "[string]$ShortHostname = 's.secmon.cn'" in configure

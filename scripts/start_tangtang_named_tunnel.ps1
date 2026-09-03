@@ -75,17 +75,24 @@ foreach ($relativePath in @(
     [IO.File]::WriteAllText($path, $publicUrl, $utf8)
 }
 
+$coreConfigChanged = $false
 $nteConfig = Join-Path $Root 'GsUID.Core\data\NTEUID\config.json'
 if (Test-Path -LiteralPath $nteConfig) {
     & (Join-Path $PSScriptRoot 'set_nte_login_url.ps1') -PublicBaseUrl $publicUrl
-    if (-not $SkipCoreRestart) {
-        & (Join-Path $PSScriptRoot 'stop_gsuid_core.ps1')
-        Start-Sleep -Seconds 2
-        & (Join-Path $PSScriptRoot 'start_gsuid_core.ps1') -Background
-    }
+    $coreConfigChanged = $true
+}
+$wuwaConfig = Join-Path $Root 'GsUID.Core\data\XutheringWavesUID\config.json'
+if (Test-Path -LiteralPath $wuwaConfig) {
+    & (Join-Path $PSScriptRoot 'set_wuwa_login_url.ps1') -PublicBaseUrl $publicUrl
+    $coreConfigChanged = $true
+}
+if ($coreConfigChanged -and -not $SkipCoreRestart) {
+    & (Join-Path $PSScriptRoot 'stop_gsuid_core.ps1')
+    Start-Sleep -Seconds 2
+    & (Join-Path $PSScriptRoot 'start_gsuid_core.ps1') -Background
 }
 Remove-Item -LiteralPath (Join-Path $Root 'data\nte_tunnel_disabled.flag') -Force -ErrorAction SilentlyContinue
 Write-Output "Tangtang named web tunnel ready: $publicUrl"
 Write-Output 'Public homepage: / (static site)'
 Write-Output 'Short links: s.secmon.cn/r, s.secmon.cn/h'
-Write-Output 'Bot feature paths: /live/*, /ranking/<token>/*, /help/*, /notice/*, /duplicate/*, /nte/*'
+Write-Output 'Bot feature paths: /live/*, /ranking/<token>/*, /help/*, /notice/*, /duplicate/*, /nte/*, /waves/i/*'

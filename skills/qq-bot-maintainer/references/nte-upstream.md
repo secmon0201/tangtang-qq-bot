@@ -16,6 +16,7 @@ Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8
 - Rankings read `wavesbind`, `players/<uid>/charListData.json`, and compressed or plain `rawData.json` read-only. They expose current-group and robot-wide local views only, never an A-Coast view.
 - QQ avatar, display name, group name, and group alias come from project `bot.db`; pages contain up to 100 ranking rows.
 - `scripts/import_wuwa_data.py` is dry-run by default. `--apply` is permitted only after its A-Coast five-group boundary check and backups succeed. Never print cookies, tokens, or login payloads.
+- `#ww登录` uses `WavesLoginUrl=https://tangtang.secmon.cn` with `WavesLoginUrlSelf=true`. The shared gateway forwards only the temporary `/waves/i/*` page and its approved login submission endpoints; panel editing, gacha pages, fonts, external-login service endpoints, `/ws/*`, and `/api/*` stay private.
 
 ## Upstream update flow
 

@@ -82,6 +82,16 @@ def test_public_routes_are_explicit_and_rewritten():
     assert gateway.route_public_target("/operations/api/token/state") is None
     assert gateway.route_public_target("/duplicate/api/token/scan").upstream_target == "/operator/api/duplicate/token/scan"
     assert gateway.route_public_target("/nte/i/token").upstream_target == "/nte/i/token"
+    assert gateway.route_public_target("/waves/i/token").upstream_target == "/waves/i/token"
+    for path in (
+        "/waves/login",
+        "/waves/l/login",
+        "/waves/l/bind",
+        "/waves/c/sendCode",
+        "/waves/c/login",
+        "/waves/add_token",
+    ):
+        assert gateway.route_public_target(path).upstream_target == path
     assert gateway.route_public_target("/live/?view=tomorrow").upstream_target == "/asoul-live/?view=tomorrow"
     assert gateway.route_public_target("/live/api/schedule?view=week").upstream_target == "/asoul-live/api/schedule?view=week"
     assert gateway.route_public_target("/ranking/token/?scope=week").upstream_target == "/ranking/token/?scope=week"
@@ -93,7 +103,21 @@ def test_public_routes_are_explicit_and_rewritten():
 def test_private_and_unknown_routes_are_blocked():
     gateway = load_gateway()
 
-    for path in ("/", "/api/send_msg", "/ws/QQLocalDataBot", "/internal/codex", "/notice", "/operator/token"):
+    for path in (
+        "/",
+        "/api/send_msg",
+        "/ws/QQLocalDataBot",
+        "/internal/codex",
+        "/notice",
+        "/operator/token",
+        "/waves",
+        "/waves/i/",
+        "/waves/panel-edit/",
+        "/waves/gacha/token",
+        "/waves/fonts/fonts.css",
+        "/waves/token",
+        "/waves/get",
+    ):
         assert gateway.route_public_target(path) is None
 
 

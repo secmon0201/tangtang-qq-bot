@@ -33,6 +33,17 @@ DEFAULT_MAX_CONCURRENCY = 32
 DEFAULT_CLIENT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_REQUEST_BYTES = 32 * 1024 * 1024
 OPERATOR_KINDS = frozenset({"duplicate"})
+WUWA_LOGIN_EXACT_PATHS = frozenset(
+    {
+        "/waves/login",
+        "/waves/l/login",
+        "/waves/l/bind",
+        "/waves/c/sendCode",
+        "/waves/c/login",
+        "/waves/add_token",
+    }
+)
+WUWA_LOGIN_INDEX_PATTERN = re.compile(r"^/waves/i/[^/]+$")
 SHORT_LINK_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "public-short-links.json"
 SITE_ROOT = (Path(__file__).resolve().parents[1] / "site").resolve()
 PUBLIC_SITE_RELEASES_ROOT = (
@@ -293,6 +304,11 @@ def route_public_target(raw_target: str) -> Route | None:
         return Route(public_area, 8080, urlunsplit(("", "", upstream, query, "")))
     if public_area == "nte" and remainder:
         return Route("nte", 8765, urlunsplit(("", "", parsed.path, parsed.query, "")))
+    if public_area == "waves" and (
+        parsed.path in WUWA_LOGIN_EXACT_PATHS
+        or WUWA_LOGIN_INDEX_PATTERN.fullmatch(parsed.path)
+    ):
+        return Route("waves-login", 8765, urlunsplit(("", "", parsed.path, parsed.query, "")))
     if public_area == "live":
         upstream = "/asoul-live/" + remainder
         return Route("live", 8080, urlunsplit(("", "", upstream, parsed.query, "")))
@@ -533,7 +549,7 @@ def main() -> int:
         f"tangtang web gateway listening on http://127.0.0.1:{args.port} "
         f"with max_concurrency={args.max_concurrency}, "
         f"client_timeout={args.client_timeout_seconds}s, max_request={args.max_request_mb}MiB "
-        "-> short links, site, live, token ranking, help, notice, duplicate, nte",
+        "-> short links, site, live, token ranking, help, notice, duplicate, nte, waves login",
         flush=True,
     )
     server.serve_forever()

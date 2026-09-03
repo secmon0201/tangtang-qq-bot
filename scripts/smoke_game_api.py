@@ -49,6 +49,7 @@ POSITIVE_COMMANDS = (
     ("#ww帮助", True, None, 45.0),
     ("WW帮助", True, None, 45.0),
     ("#ww原版帮助", True, None, 25.0),
+    ("#ww登录", True, None, 30.0),
     ("#ww练度排行", True, None, 25.0),
     ("#ww抽卡排行", True, None, 25.0),
 )
@@ -291,7 +292,7 @@ async def _run_client() -> int:
             failures += 1
         status = "PASS" if ok else ("NO_OUTPUT" if expect_output else "UNEXPECTED_OUTPUT")
         print(f"{command}: {status}; output={','.join(outputs) or 'none'}", flush=True)
-    login_link = next(
+    nte_login_link = next(
         (
             text
             for text in captured_texts.get("#nte登录", ())
@@ -299,11 +300,24 @@ async def _run_client() -> int:
         ),
         None,
     )
-    if login_link is None:
+    if nte_login_link is None:
         failures += 1
         print("#nte登录: LOGIN_LINK_MISSING", flush=True)
     else:
-        print(f"#nte登录: LOGIN_LINK_OK {login_link}", flush=True)
+        print(f"#nte登录: LOGIN_LINK_OK {nte_login_link}", flush=True)
+    wuwa_login_link = next(
+        (
+            text
+            for text in captured_texts.get("#ww登录", ())
+            if "tangtang.secmon.cn/waves/i/" in text
+        ),
+        None,
+    )
+    if wuwa_login_link is None:
+        failures += 1
+        print("#ww登录: LOGIN_LINK_MISSING", flush=True)
+    else:
+        print(f"#ww登录: LOGIN_LINK_OK {wuwa_login_link}", flush=True)
     for command, label in (("#nte帮助", "NTE"), ("#ww帮助", "鸣潮")):
         expected_notice = f"本群已关闭{label}"
         if not any(expected_notice in text for text in captured_texts.get(command, ())):

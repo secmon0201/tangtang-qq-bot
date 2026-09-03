@@ -6,7 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from PIL import Image, ImageColor
+from PIL import Image, ImageColor, ImageDraw
 
 from bot.services.nte_help_render import NTEHelpRenderer
 from bot.services.nte_rank_data import (
@@ -221,6 +221,23 @@ def test_help_image_has_prefix_compatibility_footer(tmp_path: Path):
         assert image.mode == "RGBA"
         assert image.getpixel((0, 0))[3] == 0
         assert image.getpixel((34, 34))[3] == 255
+
+
+def test_help_background_scales_once_across_width_before_vertical_tiling(monkeypatch):
+    renderer = NTEHelpRenderer()
+    renderer.WIDTH = 8
+    texture = Image.new("RGBA", (4, 2), "#ff0000")
+    ImageDraw.Draw(texture).rectangle((2, 0, 3, 1), fill="#0000ff")
+    monkeypatch.setattr(renderer, "_open_image", lambda _path: texture.copy())
+
+    background = renderer._background(9)
+
+    assert background.size == (8, 9)
+    for y in (0, 3, 4, 7, 8):
+        left = background.getpixel((0, y))
+        right = background.getpixel((7, y))
+        assert left[0] > left[2]
+        assert right[2] > right[0]
 
 
 def test_rank_renderer_grows_with_rows(tmp_path: Path):

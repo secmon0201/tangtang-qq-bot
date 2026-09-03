@@ -12,7 +12,7 @@ from bot.config import RESOURCE_DIR, ROOT, settings
 from bot.services.image_style import transparent_rounded_corners
 
 
-HELP_VERSION = "v9"
+HELP_VERSION = "v10"
 HELP_PATH = ROOT / "bot" / "resources" / "nte_help.json"
 UPSTREAM_HELP_DIR = ROOT / "GsUID.Core" / "gsuid_core" / "plugins" / "NTEUID" / "NTEUID" / "nte_help"
 TEXTURE_DIR = UPSTREAM_HELP_DIR / "texture2d"
@@ -176,10 +176,20 @@ class NTEHelpRenderer:
         texture = self._open_image(self.TEXTURE_DIR / "bg.jpg")
         if texture is None:
             return Image.new("RGBA", (self.WIDTH, height), "#111111")
+        tile_height = max(1, round(texture.height * self.WIDTH / texture.width))
+        try:
+            tile = texture.resize(
+                (self.WIDTH, tile_height),
+                Image.Resampling.LANCZOS,
+            )
+        finally:
+            texture.close()
         canvas = Image.new("RGBA", (self.WIDTH, height))
-        for y in range(0, height, texture.height):
-            for x in range(0, self.WIDTH, texture.width):
-                canvas.paste(texture, (x, y))
+        try:
+            for y in range(0, height, tile.height):
+                canvas.paste(tile, (0, y))
+        finally:
+            tile.close()
         return canvas
 
     @staticmethod

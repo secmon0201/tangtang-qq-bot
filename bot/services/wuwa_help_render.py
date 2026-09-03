@@ -23,7 +23,7 @@ WUWA_HELP_TEXTURE_DIR = (
 
 class WuwaHelpRenderer(NTEHelpRenderer):
     HELP_PATH = WUWA_HELP_PATH
-    HELP_VERSION = "v2"
+    HELP_VERSION = "v3"
     CACHE_PREFIX = "wuwa_help"
     TEXTURE_DIR = WUWA_HELP_TEXTURE_DIR
     PREFIX = "#ww"
@@ -41,7 +41,7 @@ class WuwaHelpRenderer(NTEHelpRenderer):
 
 class WuwaFullHelpRenderer(WuwaHelpRenderer):
     HELP_PATH = WUWA_FULL_HELP_PATH
-    HELP_VERSION = "v1"
+    HELP_VERSION = "v2"
     CACHE_PREFIX = "wuwa_help_full"
     TITLE = "XutheringWavesUID 完整帮助"
     TITLE_FONT_SIZE = 52

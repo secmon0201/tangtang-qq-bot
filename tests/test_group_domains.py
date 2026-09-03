@@ -55,6 +55,36 @@ def test_cluster_members_start_with_every_feature_enabled(tmp_path):
     )
 
 
+def test_nte_and_wuwa_group_switches_are_independent(tmp_path):
+    _database, service = _service(tmp_path)
+    service.ensure_group(9001)
+
+    service.set_feature(9001, "ww", False)
+    assert service.feature_enabled(9001, "nte")
+    assert not service.feature_enabled(9001, "ww")
+
+    service.set_feature(9001, "nte", False)
+    service.set_feature(9001, "ww", True)
+    assert not service.feature_enabled(9001, "nte")
+    assert service.feature_enabled(9001, "ww")
+
+
+def test_bootstrap_adds_missing_wuwa_switch_enabled_without_changing_nte(tmp_path):
+    database, service = _service(tmp_path)
+    service.ensure_group(9001)
+    service.set_feature(9001, "nte", False)
+    with database.connect() as connection:
+        connection.execute(
+            "DELETE FROM group_features WHERE group_id=? AND feature_key='ww'",
+            (9001,),
+        )
+
+    service.bootstrap()
+
+    assert not service.feature_enabled(9001, "nte")
+    assert service.feature_enabled(9001, "ww")
+
+
 def test_live_guard_effective_state_depends_on_mini_games(tmp_path):
     _database, service = _service(tmp_path)
     service.ensure_group(9001)

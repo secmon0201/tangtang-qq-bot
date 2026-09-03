@@ -23,6 +23,7 @@ def group_domains() -> GroupDomainService:
             "duplicate": settings.duplicate_group_ids,
             "mini_games": settings.game_group_ids or settings.managed_group_ids,
             "nte": settings.game_api_group_ids or settings.managed_group_ids,
+            "ww": settings.game_api_group_ids or settings.managed_group_ids,
             "today_wife": settings.managed_group_ids,
             "passive_interaction": settings.random_reaction_group_ids,
             "hourly": settings.hourly_announcement_group_ids,

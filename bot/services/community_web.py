@@ -61,6 +61,15 @@ HELP_GROUP_SPECS = (
         "actions": (),
     },
     {
+        "key": "wuwa",
+        "label": "鸣潮",
+        "title": "鸣潮查询与本地排行",
+        "description": "鸣潮默认看当前群；写出“总排行”才会读取本机器人保存的全部本地数据。",
+        "tone": "pink",
+        "sources": ("鸣潮查询与排行",),
+        "actions": (),
+    },
+    {
         "key": "live",
         "label": "直播日程",
         "title": "枝江直播与日程",
@@ -194,6 +203,16 @@ def public_help_categories(
             ],
         ),
         (
+            "鸣潮查询与排行",
+            "排行只读取本机绑定和面板缓存，不调用上游公共总榜。",
+            [
+                ("鸣潮帮助", f"{prefix}ww帮助 / ww帮助", "查看项目重构帮助图；WW 前缀大小写不敏感，可带或不带 #。"),
+                ("登录与查询", f"{prefix}ww登录 / {prefix}ww刷新面板 / {prefix}ww体力", "登录与普通查询继续交给 XutheringWavesUID。"),
+                ("当前群排行", f"{prefix}ww今汐排行 / {prefix}ww今汐声骸排行 / {prefix}ww练度排行", "按本群鸣潮绑定生成项目榜单，每页 100 条。"),
+                ("机器人总排行", f"{prefix}ww今汐总排行 / {prefix}ww今汐声骸总排行 / {prefix}ww练度总排行", "显式写出总排行时，才查看本机器人全部本地绑定。"),
+            ],
+        ),
+        (
             "直播与日程",
             "本功能由爱驼提供技术支持",
             [
@@ -249,7 +268,7 @@ def public_help_categories(
                 "仅本群群主和 QQ 群管理员可修改；普通群友可查看已开放功能。",
                 [
                     ("本群功能状态", f"{prefix}群设置 / {prefix}本群设置", "普通群友可查看当前已开放功能；群管理员会看到可维护的本群开关。"),
-                    ("本群功能开关", f"{prefix}群设置 <功能> 开|关\n{prefix}开关小游戏 / {prefix}开关今日老婆 / {prefix}开关准时报点\n{prefix}开关被呼叫会话 / {prefix}开关B站推送 / {prefix}开关被动互动 / {prefix}开关NTE", "这些开关只影响当前群，不改变其他群，也不改变集群统计成员关系。"),
+                    ("本群功能开关", f"{prefix}群设置 <功能> 开|关\n{prefix}开关小游戏 / {prefix}开关今日老婆 / {prefix}开关准时报点\n{prefix}开关被呼叫会话 / {prefix}开关B站推送 / {prefix}开关被动互动\n{prefix}开关NTE / {prefix}开关鸣潮", "这些开关只影响当前群，不改变其他群，也不改变集群统计成员关系。"),
                     ("本群代称与过滤", f"{prefix}群设置 代称 <名称>\n{prefix}群设置 过滤 列表\n{prefix}群设置 过滤 添加 QQ号\n{prefix}群设置 过滤 移除 QQ号", "群代称用于当前群展示；本群过滤名单只作用于当前群。"),
                 ],
             ),

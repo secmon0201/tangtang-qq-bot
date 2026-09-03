@@ -28,7 +28,8 @@ class FeatureSpec:
 FEATURE_SPECS = (
     FeatureSpec("speech_ranking", "发言榜查询", True, ("发言榜", "发言排行")),
     FeatureSpec("speech_ranking_push", "23:50 发言榜推送", False, ("发言榜推送", "榜单推送")),
-    FeatureSpec("nte", "NTE", True, ("异环", "游戏接口")),
+    FeatureSpec("nte", "NTE", True, ("异环", "异环接口")),
+    FeatureSpec("ww", "鸣潮", True, ("WW", "鸣潮接口")),
     FeatureSpec("zhijiang_calendar", "枝江日历", True, ("直播日历", "直播日程")),
     FeatureSpec("mini_games", "小游戏", True, ("游戏",)),
     FeatureSpec("today_wife", "今日老婆", True, ("今日缘分", "缘分")),

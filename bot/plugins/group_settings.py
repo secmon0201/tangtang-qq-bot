@@ -29,6 +29,7 @@ group_settings = on_command(
         "开关B站推送",
         "开关被动互动",
         "开关NTE",
+        "开关鸣潮",
     },
     priority=3,
     block=True,
@@ -54,6 +55,8 @@ def _feature_status(group_id: int, *, admin: bool) -> str:
         feature_key: passive.is_chat_globally_enabled(feature_key)
         for feature_key in ("mention_chat", "proactive_chat")
     }
+    game_api_enabled = passive.is_game_api_enabled()
+    global_states.update({"nte": game_api_enabled, "ww": game_api_enabled})
     visible = [
         row
         for row in rows
@@ -143,12 +146,15 @@ def _percent(value: str, maximum: float) -> float | None:
 
 def _feature_update_text(feature_key: str, enabled: bool) -> str:
     label = FEATURES[feature_key].label
-    if (
-        enabled
-        and feature_key in {"mention_chat", "proactive_chat"}
-        and not passive.is_chat_globally_enabled(feature_key)
-    ):
-        return f"{label}本群开关已开启；全局条件关闭，当前仍不生效。"
+    if enabled:
+        if feature_key in {"mention_chat", "proactive_chat"}:
+            global_enabled = passive.is_chat_globally_enabled(feature_key)
+        elif feature_key in {"nte", "ww"}:
+            global_enabled = passive.is_game_api_enabled()
+        else:
+            global_enabled = True
+        if not global_enabled:
+            return f"{label}本群开关已开启；全局条件关闭，当前仍不生效。"
     return f"{label}已{'开启' if enabled else '关闭'}。"
 
 
@@ -231,7 +237,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
         await system_settings.finish(
             "系统设置：\n"
             "#系统设置 集群 列表|创建|邀请|移除|解散\n"
-            "#系统设置 NTE 状态|开|关\n"
+            "#系统设置 游戏接口 状态|开|关\n"
             "#系统设置 小游戏 全局 状态|开|关\n"
             "#系统设置 被呼叫会话 状态|开|关\n"
             "#系统设置 糖糖主动聊天 状态|开|关\n"
@@ -240,18 +246,18 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
             "#系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM"
         )
 
-    if tokens[0].casefold() == "nte":
+    if tokens[0].casefold() in {"nte", "鸣潮", "ww", "游戏接口"}:
         action = tokens[1] if len(tokens) == 2 else "状态"
         if action in {"状态", "status"}:
             await system_settings.finish(
-                f"NTE 全局运行条件：{'开' if passive.is_game_api_enabled() else '关'}。"
+                f"NTE/鸣潮全局运行条件：{'开' if passive.is_game_api_enabled() else '关'}。"
             )
         enabled = _switch(action)
         if enabled is None:
-            await system_settings.finish("用法：#系统设置 NTE 状态|开|关")
+            await system_settings.finish("用法：#系统设置 游戏接口 状态|开|关")
         passive.set_game_api_enabled(enabled)
         await system_settings.finish(
-            f"NTE 全局运行条件已{'开启' if enabled else '关闭'}；各群开关保持不变。"
+            f"NTE/鸣潮全局运行条件已{'开启' if enabled else '关闭'}；各群开关保持不变。"
         )
 
     chat_targets = {

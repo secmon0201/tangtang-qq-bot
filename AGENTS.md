@@ -22,11 +22,13 @@
 
 `GsUID.Core`, its UID plugins, NapCat, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
 
-## NTE Ownership
+## Game Interface Ownership
 
-- NTE is the only enabled game interface and uses `#nte`.
+- NTE and Wuthering Waves are the only enabled game interfaces and use `#nte` and `#ww`.
 - Ranking, help rendering, command takeover, and compatibility code are project-owned and stay under `bot`.
-- Never modify `GsUID.Core` or NTEUID source. Read `GsData.db` in read-only mode and keep upstream repositories clean.
+- Never modify `GsUID.Core`, NTEUID, or XutheringWavesUID source. Read `GsData.db` and game caches in read-only mode and keep upstream repositories clean.
+- Wuthering Waves rankings expose only current-group and robot-wide local views. Never add an A-Coast Wuthering Waves board. Render 100 rows per page.
+- Existing Wuthering Waves data may be imported only through the scoped dry-run-first tool and only for the fixed A-Coast five groups.
 - Update upstream pins through `config/upstream-lock.json` and validate compatibility after every upstream update.
 
 ## Required Checks

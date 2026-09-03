@@ -209,6 +209,10 @@ def test_homepage_modal_content_keeps_private_super_admin_commands_out():
     assert "机器人级运行条件" in modal_content
     assert "#系统设置" not in modal_content
     assert "#nte薄荷总排行" in modal_content
+    assert "#ww练度总排行" in modal_content
+    assert "鸣潮角色/练度排行" in (
+        ROOT / "site-src" / "scripts" / "05-ranking-scope.js"
+    ).read_text(encoding="utf-8")
     assert "modal-examples" in modal_runtime
     assert "modal-availability" in modal_runtime
     assert "[data-copy-command]" in clipboard_runtime

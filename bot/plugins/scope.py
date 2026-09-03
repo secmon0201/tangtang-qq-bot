@@ -57,6 +57,7 @@ FEATURE_COMMAND_PATTERNS = (
         ),
     ),
     ("nte", re.compile(r"^#?\s*nte(?:\s|$|[\u4e00-\u9fff])", re.IGNORECASE)),
+    ("ww", re.compile(r"^#?\s*ww(?:\s|$|[\u4e00-\u9fff])", re.IGNORECASE)),
     ("zhijiang_calendar", re.compile(r"^#\s*(?:枝江直播|直播日程|本周直播|今日直播|明日直播)(?:\s|$)")),
     ("mini_games", MINI_GAME_COMMAND_RE),
     ("today_wife", re.compile(r"^#\s*(?:今日老婆|今日缘分|强取|我的缘分|群缘分|离婚|清缘)(?:\s|$)")),

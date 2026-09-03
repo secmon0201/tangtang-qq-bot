@@ -35,7 +35,13 @@ function Sync-Repository {
             throw "Local changes found in upstream repository $Path. Keep adapters in the QQ bot repository before updating."
         }
 
-        & git -C $Path pull --ff-only
+        $currentBranch = (git -C $Path branch --show-current).Trim()
+        if ($Branch -and $currentBranch -ne $Branch) {
+            throw "Upstream repository $Path is on branch $currentBranch; expected $Branch."
+        }
+
+        $targetBranch = if ($Branch) { $Branch } else { $currentBranch }
+        & git -C $Path pull --ff-only origin $targetBranch
         $pullExitCode = $LASTEXITCODE
         if ($pullExitCode -ne 0) {
             throw "Could not fast-forward $Path (exit code $pullExitCode)."
@@ -59,10 +65,10 @@ function Sync-Repository {
 }
 
 if (-not $SkipRepositorySync) {
-    Sync-Repository "https://github.com/Genshin-bots/gsuid_core.git" $CoreDir
-    Sync-Repository "https://github.com/KimigaiiWuyi/GenshinUID.git" (Join-Path $PluginsDir "GenshinUID")
-    Sync-Repository "https://github.com/Loping151/XutheringWavesUID.git" (Join-Path $PluginsDir "XutheringWavesUID")
-    Sync-Repository "https://github.com/tyql688/NTEUID.git" (Join-Path $PluginsDir "NTEUID")
+    Sync-Repository "https://github.com/Genshin-bots/gsuid_core.git" $CoreDir "master"
+    Sync-Repository "https://github.com/KimigaiiWuyi/GenshinUID.git" (Join-Path $PluginsDir "GenshinUID") "v4"
+    Sync-Repository "https://github.com/Loping151/XutheringWavesUID.git" (Join-Path $PluginsDir "XutheringWavesUID") "main"
+    Sync-Repository "https://github.com/tyql688/NTEUID.git" (Join-Path $PluginsDir "NTEUID") "main"
     & $Python (Join-Path $PSScriptRoot "validate_upstream_lock.py") --write
     if ($LASTEXITCODE -ne 0) { throw "Could not refresh the upstream lock file." }
 }

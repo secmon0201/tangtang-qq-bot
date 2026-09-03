@@ -1,10 +1,7 @@
-"""Validate that the local game runtime is configured for NTEUID only.
+"""Validate the local NTEUID and XutheringWavesUID runtime mode.
 
-The NoneBot side is the effective command boundary and recognizes the ``nte``
-prefix with or without ``#`` (case-insensitive). Core must retain ``nte`` and
-``NTE`` as force prefixes so both forms reach the upstream connector. Legacy
-Core aliases, when present, cannot be reached through the project-owned
-OneBot gate.
+The NoneBot side is the effective command boundary and recognizes ``nte`` and
+``ww`` with or without ``#`` (case-insensitive). GenshinUID stays disabled.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ from pathlib import Path
 
 EXPECTED = {
     "GenshinUID": False,
-    "XutheringWavesUID": False,
+    "XutheringWavesUID": True,
     "NTEUID": True,
 }
 
@@ -53,10 +50,11 @@ def validate(root: Path) -> list[str]:
             errors.append(
                 f"{plugin}.enabled={config.get('enabled')!r}; expected {expected_enabled}"
             )
-        if plugin == "NTEUID":
+        if plugin in {"NTEUID", "XutheringWavesUID"}:
             prefixes = {str(value).lower() for value in config.get("force_prefix", [])}
-            if "nte" not in prefixes:
-                errors.append("NTEUID.force_prefix must include nte/NTE")
+            expected_prefix = "nte" if plugin == "NTEUID" else "ww"
+            if expected_prefix not in prefixes:
+                errors.append(f"{plugin}.force_prefix must include {expected_prefix}")
     return errors
 
 
@@ -70,8 +68,8 @@ def main() -> int:
             print(f"invalid: {error}", file=sys.stderr)
         return 1
     print(
-        "NTE-only game mode valid: Core=enabled, GenshinUID=disabled, "
-        "XutheringWavesUID=disabled, NTEUID=enabled, OneBot gate=NTE with or without #"
+        "Game mode valid: Core=enabled, GenshinUID=disabled, "
+        "NTEUID=enabled, XutheringWavesUID=enabled, OneBot gate=NTE/WW with or without #"
     )
     return 0
 

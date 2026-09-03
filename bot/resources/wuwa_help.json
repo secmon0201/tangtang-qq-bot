@@ -1,0 +1,101 @@
+{
+  "账号绑定": {
+    "desc": "绑定鸣潮 UID 与登录信息",
+    "data": [
+      {"name": "绑定特征码", "desc": "绑定 9 位鸣潮 UID", "eg": "绑定123456789", "sticker_group": "贝拉"},
+      {"name": "切换特征码", "desc": "切换默认 UID", "eg": "切换123456789", "sticker_group": "贝拉"},
+      {"name": "特征码列表", "desc": "查看已绑定 UID", "eg": "特征码列表", "sticker_group": "贝拉"},
+      {"name": "删除特征码", "desc": "删除一个绑定 UID", "eg": "删除123456789", "sticker_group": "贝拉"},
+      {"name": "登录", "desc": "打开库街区登录页", "eg": "登录", "sticker_group": "贝拉"},
+      {"name": "国际服登录", "desc": "绑定国际服账号", "eg": "国际服登录", "sticker_group": "贝拉"},
+      {"name": "添加 Token", "desc": "添加库街区 Token", "eg": "添加token", "sticker_group": "贝拉"},
+      {"name": "删除 Token", "desc": "删除库街区 Token", "eg": "删除token", "sticker_group": "贝拉"}
+    ]
+  },
+  "面板查询": {
+    "desc": "更新并查看本机鸣潮面板缓存",
+    "data": [
+      {"name": "刷新面板", "desc": "刷新鸣潮角色面板", "eg": "刷新面板", "sticker_group": "嘉然"},
+      {"name": "练度统计", "desc": "生成账号练度统计", "eg": "练度统计", "sticker_group": "嘉然"},
+      {"name": "基本信息", "desc": "查看账号基本信息", "eg": "基本信息", "sticker_group": "嘉然"},
+      {"name": "角色面板", "desc": "查询指定角色面板", "eg": "今汐面板", "sticker_group": "嘉然"},
+      {"name": "角色伤害", "desc": "查询指定角色伤害", "eg": "今汐伤害", "sticker_group": "嘉然"},
+      {"name": "优化建议", "desc": "查看角色优化建议", "eg": "今汐优化", "sticker_group": "嘉然"},
+      {"name": "面板 PK", "desc": "对比角色面板", "eg": "面板PK", "sticker_group": "嘉然"},
+      {"name": "体力", "desc": "查看结晶波片", "eg": "体力", "sticker_group": "嘉然"},
+      {"name": "探索度", "desc": "查看大世界探索进度", "eg": "探索度", "sticker_group": "嘉然"},
+      {"name": "日历", "desc": "查看活动日历", "eg": "日历", "sticker_group": "嘉然"},
+      {"name": "兑换码", "desc": "查看并使用兑换码", "eg": "兑换码", "sticker_group": "嘉然"},
+      {"name": "角色持有率", "desc": "查看本地样本持有率", "eg": "角色持有率", "sticker_group": "嘉然"}
+    ]
+  },
+  "定制排行": {
+    "desc": "仅本群或本机器人本地数据，每页 100 条",
+    "data": [
+      {"name": "角色排行", "desc": "指定角色本群排行", "eg": "今汐排行", "sticker_group": "向晚"},
+      {"name": "角色总排行", "desc": "指定角色机器人总榜", "eg": "今汐总排行", "sticker_group": "向晚"},
+      {"name": "角色声骸排行", "desc": "指定角色本群声骸排行", "eg": "今汐声骸排行", "sticker_group": "向晚"},
+      {"name": "角色声骸总排行", "desc": "指定角色机器人声骸总榜", "eg": "今汐声骸总排行", "sticker_group": "向晚"},
+      {"name": "练度排行", "desc": "本群账号总练度排行", "eg": "练度排行", "sticker_group": "向晚"},
+      {"name": "练度总排行", "desc": "机器人账号总练度排行", "eg": "练度总排行", "sticker_group": "向晚"},
+      {"name": "最强排行", "desc": "本群每角色最高记录", "eg": "最强排行", "sticker_group": "向晚"},
+      {"name": "最强总排行", "desc": "机器人每角色最高记录", "eg": "最强总排行", "sticker_group": "向晚"}
+    ]
+  },
+  "玩法战绩": {
+    "desc": "深塔、海墟与矩阵战绩",
+    "data": [
+      {"name": "深塔", "desc": "查看逆境深塔战绩", "eg": "深塔", "sticker_group": "乃琳"},
+      {"name": "全息战略", "desc": "查看全息战略战绩", "eg": "全息战略", "sticker_group": "乃琳"},
+      {"name": "深塔出场率", "desc": "查看深塔角色数据", "eg": "深塔出场率", "sticker_group": "乃琳"},
+      {"name": "冥歌海墟", "desc": "查看冥歌海墟战绩", "eg": "冥歌海墟", "sticker_group": "乃琳"},
+      {"name": "海墟出场率", "desc": "查看海墟角色数据", "eg": "海墟出场率", "sticker_group": "乃琳"},
+      {"name": "终焉矩阵", "desc": "查看终焉矩阵战绩", "eg": "终焉矩阵", "sticker_group": "乃琳"},
+      {"name": "矩阵出场率", "desc": "查看矩阵角色数据", "eg": "矩阵出场率", "sticker_group": "乃琳"}
+    ]
+  },
+  "抽卡记录": {
+    "desc": "导入、查询与导出抽卡历史",
+    "data": [
+      {"name": "抽卡帮助", "desc": "查看抽卡导入方法", "eg": "抽卡帮助", "sticker_group": "珈乐"},
+      {"name": "抽卡登录", "desc": "打开抽卡登录页", "eg": "抽卡登录", "sticker_group": "珈乐"},
+      {"name": "更新抽卡记录", "desc": "从登录信息更新记录", "eg": "更新抽卡记录", "sticker_group": "珈乐"},
+      {"name": "导入抽卡链接", "desc": "从链接导入抽卡记录", "eg": "导入抽卡链接", "sticker_group": "珈乐"},
+      {"name": "抽卡记录", "desc": "查看抽卡统计", "eg": "抽卡记录", "sticker_group": "珈乐"},
+      {"name": "导出抽卡记录", "desc": "导出本地抽卡数据", "eg": "导出抽卡记录", "sticker_group": "珈乐"},
+      {"name": "抽卡排行", "desc": "查看抽卡排行", "eg": "抽卡排行", "sticker_group": "珈乐"},
+      {"name": "删除抽卡记录", "desc": "删除个人抽卡记录", "eg": "删除抽卡记录", "sticker_group": "珈乐"}
+    ]
+  },
+  "攻略资料": {
+    "desc": "角色、武器、声骸与公告资料",
+    "data": [
+      {"name": "角色攻略", "desc": "查询角色攻略", "eg": "今汐攻略", "sticker_group": "贝拉"},
+      {"name": "共鸣链", "desc": "查询角色共鸣链", "eg": "今汐共鸣链", "sticker_group": "贝拉"},
+      {"name": "角色技能", "desc": "查询角色技能", "eg": "今汐技能", "sticker_group": "贝拉"},
+      {"name": "角色机制", "desc": "查询角色机制", "eg": "今汐机制", "sticker_group": "贝拉"},
+      {"name": "武器介绍", "desc": "查询武器资料", "eg": "时和岁稔", "sticker_group": "贝拉"},
+      {"name": "声骸介绍", "desc": "查询声骸资料", "eg": "角介绍", "sticker_group": "贝拉"},
+      {"name": "武器列表", "desc": "查看武器列表", "eg": "武器列表", "sticker_group": "贝拉"},
+      {"name": "套装效果", "desc": "查询合鸣套装", "eg": "套装效果", "sticker_group": "贝拉"},
+      {"name": "游戏公告", "desc": "查看鸣潮公告", "eg": "游戏公告", "sticker_group": "贝拉"},
+      {"name": "评分说明", "desc": "查看综合评分规则", "eg": "评分说明", "sticker_group": "贝拉"}
+    ]
+  },
+  "个人服务": {
+    "desc": "个人显示与语言选项",
+    "data": [
+      {"name": "体力背景", "desc": "设置体力卡背景", "eg": "设置体力背景", "sticker_group": "思诺"},
+      {"name": "角色面板图", "desc": "设置角色面板图", "eg": "设置角色面板图", "sticker_group": "思诺"},
+      {"name": "设置语言", "desc": "设置插件显示语言", "eg": "设置语言", "sticker_group": "思诺"},
+      {"name": "隐藏 UID", "desc": "开关个人 UID 显示", "eg": "隐藏UID", "sticker_group": "思诺"}
+    ]
+  },
+  "其他": {
+    "desc": "帮助与说明",
+    "data": [
+      {"name": "帮助", "desc": "查看项目接管帮助", "eg": "帮助", "sticker_group": "思诺"},
+      {"name": "原版帮助", "desc": "查看上游帮助快照", "eg": "原版帮助", "sticker_group": "思诺"}
+    ]
+  }
+}

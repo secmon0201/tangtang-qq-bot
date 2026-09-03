@@ -9,7 +9,7 @@ from time import monotonic, time
 from typing import Any, Iterator
 
 from bot.config import settings
-from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
+from bot.services.game_api_gate import GAME_COMMAND_RE
 
 
 _api_lock = asyncio.Lock()
@@ -57,7 +57,7 @@ def _current_response() -> OutboundResponse | None:
         return None
     text = _event_text(event)
     return OutboundResponse(
-        "command" if text.startswith(settings.command_prefix) or NTE_GAME_COMMAND_RE.match(text) else "passive",
+        "command" if text.startswith(settings.command_prefix) or GAME_COMMAND_RE.match(text) else "passive",
         event,
     )
 

@@ -51,7 +51,7 @@
       "route": "/",
       "output": "index.html",
       "title": "糖糖 · QQ 群机器人",
-      "description": "糖糖是面向所有 QQ 群的本地社区机器人：枝江与 B 站信号、群聊互动、发言榜、小游戏、NTE 与本群管理。",
+      "description": "糖糖是面向所有 QQ 群的本地社区机器人：枝江与 B 站信号、群聊互动、发言榜、小游戏、NTE/鸣潮与本群管理。",
       "canonical": "https://tangtang.secmon.cn/",
       "theme_color": "#fffdfd",
       "main_id": "main",
@@ -165,7 +165,7 @@
       "route": "/games/",
       "output": "games/index.html",
       "title": "游戏世界 · 糖糖",
-      "description": "糖糖的游戏世界：群聊小游戏与独立的 NTE 查询、帮助和社区排行榜。",
+      "description": "糖糖的游戏世界：群聊小游戏，以及独立的 NTE 与鸣潮查询、帮助和本地排行榜。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",
@@ -174,7 +174,7 @@
       "dialog": true,
       "toast": true,
       "footer": {
-        "subtitle": "群聊小游戏与 NTE 社区增强",
+        "subtitle": "群聊小游戏与 NTE/鸣潮社区增强",
         "links": [
           {
             "route": "/experience/",
@@ -190,7 +190,7 @@
           }
         ],
         "location": "tangtang.secmon.cn/games",
-        "note": "NTE 数据只读，项目增强独立维护"
+        "note": "NTE/鸣潮数据只读，项目增强独立维护"
       },
       "sections": [
         {

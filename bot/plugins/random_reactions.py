@@ -8,7 +8,7 @@ from nonebot import logger, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 
 from bot.config import settings
-from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
+from bot.services.game_api_gate import GAME_COMMAND_RE
 from bot.services.qq_platform import qq_platform
 from bot.services.runtime import database, passive_settings
 from bot.services.reactions import (
@@ -48,7 +48,7 @@ def is_passive_reaction_event(event: MessageEvent) -> bool:
         and passive.is_group_enabled(int(event.group_id))
         and not is_stale_passive_event(event)
         and not event.get_plaintext().lstrip().startswith(settings.command_prefix)
-        and not NTE_GAME_COMMAND_RE.match(event.get_plaintext().strip())
+        and not GAME_COMMAND_RE.match(event.get_plaintext().strip())
         and not CODEX_COMMAND_RE.match(event.get_plaintext().strip())
         and not MINI_GAME_COMMAND_RE.match(event.get_plaintext().strip())
         and not RETIRED_DICE_COMMAND_RE.match(event.get_plaintext().strip())

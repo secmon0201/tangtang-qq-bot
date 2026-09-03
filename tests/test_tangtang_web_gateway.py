@@ -454,10 +454,13 @@ def test_public_pages_preserve_audience_and_nte_information_architecture(built_p
     assert "#系统设置" not in home
     assert "#发言排行 周" in home
     assert "#nte薄荷排行" in home
+    assert "#ww练度排行" in home
     assert "Python 3.13" not in home
     assert "#nte薄荷排行" in games
     assert "#nte薄荷总排行" in games
     assert "#nte最强总排行" in games
+    assert "#ww练度排行" in games
+    assert "#ww练度总排行" in games
     assert 'data-scope="total"' in games
     assert "机器人总排行" in app_script
     assert "只管理当前群，不碰全局开关" in operator

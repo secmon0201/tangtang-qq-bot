@@ -38,6 +38,16 @@ class NTEHelpRenderer:
     MUTED = "#d2d2d2"
     FOOTER_HEIGHT = 128
     COMPATIBILITY_NOTE = "兼容识别：#NTE、NTE、#nte、nte 均可识别"
+    HELP_PATH = HELP_PATH
+    HELP_VERSION = HELP_VERSION
+    CACHE_PREFIX = "nte_help"
+    TEXTURE_DIR = TEXTURE_DIR
+    PREFIX = "#nte"
+    TITLE = "NTEUID 帮助"
+    SUBTITLE = "一切正常，就是异常。"
+    FOOTER = "Created by GsCore & Copyright by 异环"
+    TITLE_FONT_SIZE = 70
+    EXPECTED_CATEGORIES = ("登录绑定", "信息查询", "定制排行", "配队攻略", "签到服务", "抽卡记录", "其他")
 
     def __init__(self, output_dir: Path | None = None, font_path: Path | None = None) -> None:
         self.output_dir = output_dir or (ROOT / "data" / "nte_help_cache")
@@ -45,12 +55,12 @@ class NTEHelpRenderer:
         self._font_cache: dict[tuple[int, bool], ImageFont.ImageFont] = {}
         self._stickers: dict[str, tuple[Path, ...]] = {}
 
-    @staticmethod
-    def load_data(path: Path = HELP_PATH) -> dict[str, Any]:
+    @classmethod
+    def load_data(cls, path: Path | None = None) -> dict[str, Any]:
+        path = path or cls.HELP_PATH
         data = json.loads(path.read_text(encoding="utf-8"))
-        expected_categories = ("登录绑定", "信息查询", "定制排行", "配队攻略", "签到服务", "抽卡记录", "其他")
-        if not isinstance(data, dict) or tuple(data) != expected_categories:
-            raise ValueError("nte_help.json 必须包含且只包含七个固定分类")
+        if not isinstance(data, dict) or tuple(data) != cls.EXPECTED_CATEGORIES:
+            raise ValueError(f"{path.name} 的帮助分类不符合渲染器约定")
         for category, value in data.items():
             if not isinstance(value, dict) or not isinstance(value.get("data"), list) or not value["data"]:
                 raise ValueError(f"帮助分类无有效命令：{category}")
@@ -62,7 +72,7 @@ class NTEHelpRenderer:
         return data
 
     def render(self, *, force: bool = False) -> Path:
-        cached = self.output_dir / f"nte_help_{HELP_VERSION}.png"
+        cached = self.output_dir / f"{self.CACHE_PREFIX}_{self.HELP_VERSION}.png"
         if cached.exists() and not force:
             return cached
         data = self.load_data()
@@ -82,13 +92,13 @@ class NTEHelpRenderer:
             icon_index += len(section["data"])
             y += self.SECTION_HEIGHT + count * self.CARD_HEIGHT + max(0, count - 1) * 26 + self.SECTION_GAP
         draw.text((self.WIDTH // 2, height - 78), self.COMPATIBILITY_NOTE, font=self._font(26, True), fill=self.TEXT, anchor="mm")
-        draw.text((self.WIDTH // 2, height - 32), "Created by GsCore & Copyright by 异环", font=self._font(22), fill=self.MUTED, anchor="mm")
+        draw.text((self.WIDTH // 2, height - 32), self.FOOTER, font=self._font(22), fill=self.MUTED, anchor="mm")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         transparent_rounded_corners(image).save(cached, format="PNG", optimize=True)
         return cached
 
     def _draw_banner(self, image: Image.Image, draw: ImageDraw.ImageDraw) -> None:
-        banner = self._open_image(TEXTURE_DIR / "banner_bg.jpg")
+        banner = self._open_image(self.TEXTURE_DIR / "banner_bg.jpg")
         if banner is not None:
             image.paste(ImageOps.fit(banner, (self.WIDTH, self.BANNER_HEIGHT), method=Image.Resampling.LANCZOS), (0, 0))
         else:
@@ -101,13 +111,16 @@ class NTEHelpRenderer:
             ImageDraw.Draw(mask).ellipse((0, 0, icon.width - 1, icon.height - 1), fill=255)
             image.paste(icon, (self.MARGIN + 40, 450), mask)
             draw.ellipse((self.MARGIN + 40, 450, self.MARGIN + 181, 591), outline="#ffffff", width=3)
-        draw.text((self.MARGIN + 210, 465), "NTEUID 帮助", font=self._font(70, True), fill=self.TEXT)
-        draw.rounded_rectangle((self.MARGIN + 660, 470, self.MARGIN + 855, 542), radius=24, fill="#ff3d4c")
-        draw.text((self.MARGIN + 758, 506), "糖糖接管", font=self._font(30, True), fill=self.TEXT, anchor="mm")
-        draw.text((self.MARGIN + 210, 568), "一切正常，就是异常。", font=self._font(42, True), fill=self.MUTED)
+        title_left = self.MARGIN + 210
+        title_font = self._font(self.TITLE_FONT_SIZE, True)
+        draw.text((title_left, 465), self.TITLE, font=title_font, fill=self.TEXT)
+        badge_left = min(self.WIDTH - 250, title_left + self._text_width(self.TITLE, title_font) + 42)
+        draw.rounded_rectangle((badge_left, 470, badge_left + 195, 542), radius=24, fill="#ff3d4c")
+        draw.text((badge_left + 98, 506), "糖糖接管", font=self._font(30, True), fill=self.TEXT, anchor="mm")
+        draw.text((self.MARGIN + 210, 568), self.SUBTITLE, font=self._font(42, True), fill=self.MUTED)
 
     def _draw_section(self, image: Image.Image, draw: ImageDraw.ImageDraw, top: int, category: str, desc: str, entries: list[dict[str, str]], icon_index: int) -> None:
-        strip = self._open_image(TEXTURE_DIR / "cag_bg.png")
+        strip = self._open_image(self.TEXTURE_DIR / "cag_bg.png")
         if strip is not None:
             image.paste(ImageOps.fit(strip, (self.WIDTH - self.MARGIN * 2, self.SECTION_HEIGHT), method=Image.Resampling.LANCZOS), (self.MARGIN, top))
         else:
@@ -125,7 +138,7 @@ class NTEHelpRenderer:
             self._draw_card(image, draw, left, card_top, entry, icon_index + index)
 
     def _draw_card(self, image: Image.Image, draw: ImageDraw.ImageDraw, left: int, top: int, entry: dict[str, str], icon_index: int) -> None:
-        item = self._open_image(TEXTURE_DIR / "item.png")
+        item = self._open_image(self.TEXTURE_DIR / "item.png")
         if item is not None:
             card = ImageOps.fit(item, (self.CARD_WIDTH, self.CARD_HEIGHT), method=Image.Resampling.LANCZOS)
             image.paste(card, (left, top), card)
@@ -141,7 +154,7 @@ class NTEHelpRenderer:
         text_left = left + 172
         text_width = self.CARD_WIDTH - 192
         draw.text((text_left, top + 30), self._ellipsize(entry["name"], self._font(30, True), text_width), font=self._font(30, True), fill=self.TEXT)
-        draw.text((text_left, top + 84), self._ellipsize("#nte" + entry["eg"], self._font(22, True), text_width), font=self._font(22, True), fill=self.MUTED)
+        draw.text((text_left, top + 84), self._ellipsize(self.PREFIX + entry["eg"], self._font(22, True), text_width), font=self._font(22, True), fill=self.MUTED)
 
     def _sticker(self, group: str, index: int) -> Image.Image | None:
         if group:
@@ -159,7 +172,7 @@ class NTEHelpRenderer:
         return self._open_image(paths[(index - 155) % len(paths)])
 
     def _background(self, height: int) -> Image.Image:
-        texture = self._open_image(TEXTURE_DIR / "bg.jpg")
+        texture = self._open_image(self.TEXTURE_DIR / "bg.jpg")
         if texture is None:
             return Image.new("RGBA", (self.WIDTH, height), "#111111")
         canvas = Image.new("RGBA", (self.WIDTH, height))

@@ -26,6 +26,7 @@ def test_new_solo_group_uses_passive_command_defaults(tmp_path):
         "speech_ranking": True,
         "speech_ranking_push": False,
         "nte": True,
+        "ww": True,
         "zhijiang_calendar": True,
         "mini_games": True,
         "today_wife": True,

@@ -186,6 +186,9 @@ def user_help_text() -> str:
         f"{prefix}今日直播", f"{prefix}明日直播", f"{prefix}本周直播",
         f"{prefix}nte帮助", "nte帮助", f"{prefix}nte登录", f"{prefix}nte查询", f"{prefix}nte刷新面板",
         f"{prefix}nte薄荷排行", f"{prefix}nte薄荷总排行", f"{prefix}nte最强排行", f"{prefix}nte最强总排行",
+        f"{prefix}ww帮助", "ww帮助", f"{prefix}ww登录", f"{prefix}ww刷新面板", f"{prefix}ww体力",
+        f"{prefix}ww今汐排行", f"{prefix}ww今汐总排行", f"{prefix}ww今汐声骸排行", f"{prefix}ww今汐声骸总排行",
+        f"{prefix}ww练度排行", f"{prefix}ww练度总排行", f"{prefix}ww最强排行", f"{prefix}ww最强总排行",
         f"{prefix}游戏列表", f"{prefix}小游戏列表", f"{prefix}装填", f"{prefix}开枪",
         f"{prefix}装弹", f"{prefix}丢给 @成员", f"{prefix}装弹成语 [专业/娱乐] [60-600]",
         f"四字词 {prefix}丢给 @成员", f"{prefix}骰子", f"{prefix}猜数", f"{prefix}猜 <0-999>",
@@ -197,7 +200,7 @@ def user_help_text() -> str:
         f"{prefix}猜数榜", f"{prefix}猜数总榜", f"{prefix}猜数字榜单", f"{prefix}猜数字总榜单",
         f"{prefix}群设置", f"{prefix}本群设置", f"{prefix}群设置 <功能> 开|关",
         f"{prefix}开关小游戏", f"{prefix}开关今日老婆", f"{prefix}开关准时报点",
-        f"{prefix}开关被呼叫会话", f"{prefix}开关B站推送", f"{prefix}开关被动互动", f"{prefix}开关NTE",
+        f"{prefix}开关被呼叫会话", f"{prefix}开关B站推送", f"{prefix}开关被动互动", f"{prefix}开关NTE", f"{prefix}开关鸣潮",
         f"{prefix}群设置 代称 <名称>", f"{prefix}群设置 过滤 列表",
         f"{prefix}群设置 过滤 添加 QQ号", f"{prefix}群设置 过滤 移除 QQ号",
     ]
@@ -746,7 +749,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "功能开关",
-                    f"{prefix}开关小游戏\n{prefix}开关今日老婆\n{prefix}开关准时报点\n{prefix}开关被呼叫会话\n{prefix}开关B站推送\n{prefix}开关被动互动\n{prefix}开关NTE",
+                    f"{prefix}开关小游戏\n{prefix}开关今日老婆\n{prefix}开关准时报点\n{prefix}开关被呼叫会话\n{prefix}开关B站推送\n{prefix}开关被动互动\n{prefix}开关NTE\n{prefix}开关鸣潮",
                     "新独群默认开启被动指令能力，主动推送默认关闭；加入集群时全部功能开启，之后仍由本群管理员分别开关。",
                 ),
                 (
@@ -767,7 +770,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "全局运行条件",
-                    f"{prefix}系统设置 NTE 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 被呼叫会话 状态|开|关\n{prefix}系统设置 糖糖主动聊天 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
+                    f"{prefix}系统设置 游戏接口 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 被呼叫会话 状态|开|关\n{prefix}系统设置 糖糖主动聊天 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
                     "全局运行条件不会改写各群已保存的开关意图；重新开启后，各群按原状态恢复。",
                 ),
                 (
@@ -778,7 +781,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
             ],
         ),
         (
-            "超级管理员手册 3/4｜统计与 NTE",
+            "超级管理员手册 3/4｜统计与游戏接口",
             "当前群、当前集群与机器人总榜的明确边界",
             [
                 (
@@ -795,6 +798,11 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                     "NTE 排行",
                     f"{prefix}nte薄荷排行\n{prefix}nte薄荷总排行\n{prefix}nte最强排行\n{prefix}nte最强总排行",
                     "默认排行只看当前群；只有显式写出“总排行”才查看机器人记录到的全部群。关闭本群 NTE 只阻止本群主动调用，不改写上游数据。",
+                ),
+                (
+                    "鸣潮排行",
+                    f"{prefix}ww今汐排行\n{prefix}ww今汐总排行\n{prefix}ww练度排行\n{prefix}ww练度总排行",
+                    "默认只看当前群；总排行只读取当前机器人本地鸣潮绑定与面板缓存，不新增 A 海岸榜。",
                 ),
             ],
         ),
@@ -1144,7 +1152,10 @@ async def send_robot_status(matcher: object, event: MessageEvent) -> None:
     )
     lines.append("功能范围：详见上方群信息卡片")
     if settings.gsuid_enabled:
-        lines.append("游戏接口：异环 NTEUID（NTE 前缀可带或不带 #，大小写不敏感，独立 GsUID Core 进程）")
+        lines.append(
+            "游戏接口：异环 NTEUID 与鸣潮 XutheringWavesUID（NTE/WW 前缀可带或不带 #，"
+            "大小写不敏感，共用独立 GsUID Core 进程）"
+        )
     else:
         lines.append("游戏接口：未启用，请设置 GSUID_ENABLED=true")
     fallback = "\n".join(lines)

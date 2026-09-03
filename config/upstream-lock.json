@@ -6,7 +6,7 @@
       "path": "GsUID.Core",
       "url": "https://github.com/Genshin-bots/gsuid_core.git",
       "branch": "master",
-      "commit": "5e9b4044fd4b14104aa169576e8fe18301ae30d7"
+      "commit": "21ad940a00a36cc70fd9220aba5ad3dfc9ce71d0"
     },
     {
       "name": "GenshinUID connector",
@@ -20,14 +20,14 @@
       "path": "GsUID.Core/gsuid_core/plugins/NTEUID",
       "url": "https://github.com/tyql688/NTEUID.git",
       "branch": "main",
-      "commit": "f8f6070177164b55f29a44935b48c5ddff94d883"
+      "commit": "ba7790e13e39f9a825090853498848b51a06c3c9"
     },
     {
       "name": "XutheringWavesUID",
       "path": "GsUID.Core/gsuid_core/plugins/XutheringWavesUID",
       "url": "https://github.com/Loping151/XutheringWavesUID.git",
       "branch": "main",
-      "commit": "d3e750ae4d4f7fd7f33358da9637c9b5d07ccb63"
+      "commit": "96a2702fd443e8e3da6071611ebab80143643605"
     }
   ]
 }

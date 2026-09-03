@@ -47,6 +47,21 @@ def test_external_game_commands_are_not_gated_by_the_mini_game_switch():
     assert not scope.is_disabled_game_command(GroupEvent())
 
 
+def test_enabled_game_commands_use_independent_group_feature_switches(monkeypatch):
+    import bot.plugins.scope as scope
+
+    class Domains:
+        @staticmethod
+        def effective_feature_enabled(group_id, feature):
+            assert group_id == 9001
+            return feature != "ww"
+
+    monkeypatch.setattr(scope, "group_domains", lambda: Domains())
+
+    assert disabled_feature_for("#nte帮助", 9001) is None
+    assert disabled_feature_for("ww帮助", 9001) == "ww"
+
+
 def test_game_menu_remains_available_while_gameplay_is_paused(monkeypatch):
     import bot.plugins.scope as scope
 

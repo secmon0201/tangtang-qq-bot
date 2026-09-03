@@ -175,7 +175,7 @@ def test_help_payload_preserves_every_source_item_once_and_groups_local_games():
     assert [section["title"] for section in games["sections"]] == ["小游戏", "小游戏榜单"]
     assert games["item_count"] == 8
     assert [group["key"] for group in payload["groups"]] == [
-        "start", "chat", "nte", "live", "fate", "games", "stats", "group-admin"
+        "start", "chat", "nte", "wuwa", "live", "fate", "games", "stats", "group-admin"
     ]
     nte = next(group for group in payload["groups"] if group["key"] == "nte")
     group_admin = next(group for group in payload["groups"] if group["key"] == "group-admin")

@@ -46,27 +46,27 @@ POSITIVE_COMMANDS = (
     ("#nte查看", True, None, 25.0),
     ("#nte登录", True, None, 30.0),
     ("#nte退出登录", True, None, 25.0),
+    ("#ww帮助", True, None, 45.0),
+    ("WW帮助", True, None, 45.0),
+    ("#ww原版帮助", True, None, 25.0),
+    ("#ww练度排行", True, None, 25.0),
+    ("#ww抽卡排行", True, None, 25.0),
 )
 
-ADMIN_COMMANDS = (
-    ("#游戏接口 状态", True, None, 15.0),
-    ("#游戏接口 关闭", True, None, 15.0),
-    ("#nte帮助", False, None, 10.0),
-    ("#游戏接口 开启", True, None, 15.0),
-    ("#游戏接口 状态", True, None, 15.0),
-)
-
-SCOPE_COMMANDS = (
-    ("#功能范围 游戏接口 移除 {group}", True, None, 20.0),
-    ("#nte帮助", False, None, 10.0),
-    ("#功能范围 游戏接口 添加 {group}", True, None, 20.0),
+GROUP_SWITCH_COMMANDS = (
+    ("#群设置 NTE 关", True, None, 15.0),
+    ("#nte帮助", True, None, 10.0),
+    ("#群设置 NTE 开", True, None, 15.0),
     ("#nte帮助", True, None, 45.0),
+    ("#群设置 鸣潮 关", True, None, 15.0),
+    ("#ww帮助", True, None, 10.0),
+    ("#群设置 鸣潮 开", True, None, 15.0),
+    ("#ww帮助", True, None, 45.0),
 )
 
 NEGATIVE_COMMANDS = (
     ("#yh帮助", False, None, 10.0),
     ("#gs帮助", False, None, 10.0),
-    ("#ww帮助", False, None, 10.0),
     ("#ntext", False, None, 10.0),
 )
 
@@ -110,6 +110,8 @@ def _run_server() -> int:
         "bot.plugins.scope",
         "bot.plugins.game_api",
         "bot.plugins.nte_game_ui",
+        "bot.plugins.wuwa_game_ui",
+        "bot.plugins.group_settings",
         "bot.plugins.commands",
         "GenshinUID",
     ):
@@ -119,7 +121,9 @@ def _run_server() -> int:
     return 0
 
 
-def _response_data(action: str, user_id: int) -> object:
+def _response_data(action: str, user_id: int, group_id: int) -> object:
+    if action == "get_group_list":
+        return [{"group_id": group_id, "group_name": "smoke-game-api-group"}]
     if action == "get_group_member_info":
         return {"role": "owner", "nickname": "smoke-game-api", "card": ""}
     if action == "get_group_member_list":
@@ -210,7 +214,7 @@ async def _run_command(
                 {
                     "status": "ok",
                     "retcode": 0,
-                    "data": _response_data(action, user_id),
+                    "data": _response_data(action, user_id, group_id),
                     "echo": data.get("echo"),
                 }
             )
@@ -264,7 +268,7 @@ async def _run_client() -> int:
         )
         await asyncio.sleep(3)
         message_id = 990100
-        for phase in (POSITIVE_COMMANDS, ADMIN_COMMANDS, NEGATIVE_COMMANDS):
+        for phase in (POSITIVE_COMMANDS, GROUP_SWITCH_COMMANDS, NEGATIVE_COMMANDS):
             for command, expect_output, _, timeout in phase:
                 actions, texts = await _run_command(
                     websocket,
@@ -280,28 +284,6 @@ async def _run_client() -> int:
                 all_results.append((command, expect_output, _output_actions(actions)))
                 captured_texts.setdefault(command, ())
                 captured_texts[command] = (*captured_texts[command], *texts)
-        for command, expect_output, _, timeout in SCOPE_COMMANDS:
-            text = command.format(group=group_id)
-            actions, texts = await _run_command(
-                websocket,
-                self_id,
-                text,
-                message_id,
-                user_id,
-                group_id,
-                timeout,
-                15.0 if expect_output else 4.0,
-            )
-            message_id += 1
-            all_results.append((text, expect_output, _output_actions(actions)))
-            captured_texts.setdefault(command, ())
-            captured_texts[command] = (*captured_texts[command], *texts)
-        # Out-of-managed-scope group must stay silent.
-        actions, _texts = await _run_command(
-            websocket, self_id, "#nte帮助", message_id, user_id, 999999999, 10.0, 4.0
-        )
-        all_results.append(("#nte帮助@999999999", False, _output_actions(actions)))
-
     failures = 0
     for command, expect_output, outputs in all_results:
         ok = bool(outputs) if expect_output else not outputs
@@ -322,6 +304,13 @@ async def _run_client() -> int:
         print("#nte登录: LOGIN_LINK_MISSING", flush=True)
     else:
         print(f"#nte登录: LOGIN_LINK_OK {login_link}", flush=True)
+    for command, label in (("#nte帮助", "NTE"), ("#ww帮助", "鸣潮")):
+        expected_notice = f"本群已关闭{label}"
+        if not any(expected_notice in text for text in captured_texts.get(command, ())):
+            failures += 1
+            print(f"{command}: GROUP_SWITCH_NOTICE_MISSING", flush=True)
+        else:
+            print(f"{command}: GROUP_SWITCH_NOTICE_OK", flush=True)
     if failures:
         print(f"FAILED={failures}")
         return 1

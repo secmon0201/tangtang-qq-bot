@@ -15,7 +15,7 @@ from bot.application.local_features import (
     run_feature_call,
 )
 from bot.services.runtime import database, group_domains, passive_settings
-from bot.services.game_api_gate import NTE_GAME_COMMAND_RE
+from bot.services.game_api_gate import GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
     TangtangService,
@@ -114,7 +114,7 @@ def is_call_event(event: MessageEvent) -> bool:
         return bool(event.is_tome())
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
-    if _GAME_CODE_RE.match(text) or NTE_GAME_COMMAND_RE.match(text):
+    if _GAME_CODE_RE.match(text) or GAME_COMMAND_RE.match(text):
         return False
     if event.is_tome():
         return True
@@ -143,7 +143,7 @@ def is_proactive_event(event: MessageEvent) -> bool:
         return False
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
-    if _GAME_CODE_RE.match(text) or NTE_GAME_COMMAND_RE.match(text):
+    if _GAME_CODE_RE.match(text) or GAME_COMMAND_RE.match(text):
         return False
     if is_call_event(event):
         return False

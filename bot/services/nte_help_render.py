@@ -46,6 +46,7 @@ class NTEHelpRenderer:
     TITLE = "NTEUID 帮助"
     SUBTITLE = "一切正常，就是异常。"
     FOOTER = "Created by GsCore & Copyright by 异环"
+    BADGE_TEXT = "糖糖接管"
     TITLE_FONT_SIZE = 70
     EXPECTED_CATEGORIES = ("登录绑定", "信息查询", "定制排行", "配队攻略", "签到服务", "抽卡记录", "其他")
 
@@ -116,7 +117,7 @@ class NTEHelpRenderer:
         draw.text((title_left, 465), self.TITLE, font=title_font, fill=self.TEXT)
         badge_left = min(self.WIDTH - 250, title_left + self._text_width(self.TITLE, title_font) + 42)
         draw.rounded_rectangle((badge_left, 470, badge_left + 195, 542), radius=24, fill="#ff3d4c")
-        draw.text((badge_left + 98, 506), "糖糖接管", font=self._font(30, True), fill=self.TEXT, anchor="mm")
+        draw.text((badge_left + 98, 506), self.BADGE_TEXT, font=self._font(30, True), fill=self.TEXT, anchor="mm")
         draw.text((self.MARGIN + 210, 568), self.SUBTITLE, font=self._font(42, True), fill=self.MUTED)
 
     def _draw_section(self, image: Image.Image, draw: ImageDraw.ImageDraw, top: int, category: str, desc: str, entries: list[dict[str, str]], icon_index: int) -> None:

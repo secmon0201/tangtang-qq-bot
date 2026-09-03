@@ -68,6 +68,10 @@ if (-not $SkipRepositorySync) {
     Sync-Repository "https://github.com/Genshin-bots/gsuid_core.git" $CoreDir "master"
     Sync-Repository "https://github.com/KimigaiiWuyi/GenshinUID.git" (Join-Path $PluginsDir "GenshinUID") "v4"
     Sync-Repository "https://github.com/Loping151/XutheringWavesUID.git" (Join-Path $PluginsDir "XutheringWavesUID") "main"
+    Sync-Repository "https://github.com/Loping151/RoverSign.git" (Join-Path $PluginsDir "RoverSign") "main"
+    Sync-Repository "https://github.com/Loping151/TodayEcho.git" (Join-Path $PluginsDir "TodayEcho") "main"
+    Sync-Repository "https://github.com/Loping151/ScoreEcho.git" (Join-Path $PluginsDir "ScoreEcho") "main"
+    Sync-Repository "https://github.com/Loping151/RoverReminder.git" (Join-Path $PluginsDir "RoverReminder") "main"
     Sync-Repository "https://github.com/tyql688/NTEUID.git" (Join-Path $PluginsDir "NTEUID") "main"
     & $Python (Join-Path $PSScriptRoot "validate_upstream_lock.py") --write
     if ($LASTEXITCODE -ne 0) { throw "Could not refresh the upstream lock file." }
@@ -182,6 +186,32 @@ $coreRunner = Join-Path $Root "scripts\run_gsuid_core.py"
 $restartConfig["restart_command"].data = '"' + $Python + '" -u "' + $coreRunner + '"'
 $restartJson = $restartConfig | ConvertTo-Json -Depth 20
 Write-Utf8NoBom $corePluginConfig $restartJson
+
+# XutheringWavesUID owns the combined upstream help switch. Seed the single
+# typed value on a fresh install; Core reconciles the remaining defaults.
+$wavesConfigDir = Join-Path $coreData "XutheringWavesUID"
+$wavesConfig = Join-Path $wavesConfigDir "config.json"
+New-Item -ItemType Directory -Force -Path $wavesConfigDir | Out-Null
+if (Test-Path -LiteralPath $wavesConfig) {
+    $wavesSettings = Get-Content -LiteralPath $wavesConfig -Raw -Encoding UTF8 | ConvertFrom-Json
+} else {
+    $wavesSettings = [pscustomobject]@{}
+}
+$helpExtraModules = [pscustomobject][ordered]@{
+    type = "GsListStrConfig"
+    title = "帮助显示额外模块（重载生效）"
+    desc = "显示已安装的鸣潮扩展模块"
+    data = @("all")
+    options = @("roversign", "todayecho", "scoreecho", "roverreminder", "all")
+    secret = $false
+}
+if ($null -eq $wavesSettings.PSObject.Properties["HelpExtraModules"]) {
+    $wavesSettings | Add-Member -NotePropertyName "HelpExtraModules" -NotePropertyValue $helpExtraModules
+} else {
+    $wavesSettings.HelpExtraModules.data = @("all")
+}
+$wavesSettingsJson = $wavesSettings | ConvertTo-Json -Depth 30
+Write-Utf8NoBom $wavesConfig $wavesSettingsJson
 
 Write-Host "GenshinUID ecosystem installed under: $CoreDir"
 Write-Host "Start Core first with: .\scripts\start_gsuid_core.ps1"

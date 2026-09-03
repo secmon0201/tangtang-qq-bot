@@ -19,7 +19,8 @@ def test_user_help_text_contains_only_copyable_public_commands():
     assert "#nte薄荷排行" in text
     assert "#nte薄荷总排行" in text
     assert "#ww帮助" in text
-    assert "#ww今汐总排行" in text
+    assert "#ww完整帮助" in text
+    assert "#ww今汐评分总排行" in text
     assert "#群设置" in text
     assert "#开关NTE" in text
     assert "#开关鸣潮" in text
@@ -111,8 +112,9 @@ def test_user_help_merges_equivalent_commands_and_game_rankings():
     assert nte_entries["异环帮助"] == "#nte帮助 / nte帮助"
     assert nte_entries["当前群排行"] == "#nte薄荷排行 / #nte最强排行"
     assert nte_entries["机器人总排行"] == "#nte薄荷总排行 / #nte最强总排行"
-    assert wuwa_entries["鸣潮帮助"] == "#ww帮助 / ww帮助"
+    assert wuwa_entries["鸣潮帮助"] == "#ww帮助 / #ww完整帮助"
     assert "#ww练度排行" in wuwa_entries["当前群排行"]
+    assert "#ww今汐评分排行" in wuwa_entries["当前群排行"]
     assert "#ww练度总排行" in wuwa_entries["机器人总排行"]
     assert ranking_entries["群游戏榜单"] == "#转盘榜 / #炸弹榜 / #骰子榜 / #猜数榜"
     assert ranking_entries["域游戏榜单"] == "#转盘总榜 / #炸弹总榜 / #骰子总榜 / #猜数总榜"

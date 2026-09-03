@@ -28,6 +28,34 @@
       "url": "https://github.com/Loping151/XutheringWavesUID.git",
       "branch": "main",
       "commit": "96a2702fd443e8e3da6071611ebab80143643605"
+    },
+    {
+      "name": "RoverSign",
+      "path": "GsUID.Core/gsuid_core/plugins/RoverSign",
+      "url": "https://github.com/Loping151/RoverSign.git",
+      "branch": "main",
+      "commit": "7a4d8a970d460d44234d3815a66abbf5911debfa"
+    },
+    {
+      "name": "TodayEcho",
+      "path": "GsUID.Core/gsuid_core/plugins/TodayEcho",
+      "url": "https://github.com/Loping151/TodayEcho.git",
+      "branch": "main",
+      "commit": "2acdfa4b6a8b44c311a2fc5a3c1f9e73a0257de1"
+    },
+    {
+      "name": "ScoreEcho",
+      "path": "GsUID.Core/gsuid_core/plugins/ScoreEcho",
+      "url": "https://github.com/Loping151/ScoreEcho.git",
+      "branch": "main",
+      "commit": "611addb18f0d2dabc9d9058e9b9adf7c81bbae84"
+    },
+    {
+      "name": "RoverReminder",
+      "path": "GsUID.Core/gsuid_core/plugins/RoverReminder",
+      "url": "https://github.com/Loping151/RoverReminder.git",
+      "branch": "main",
+      "commit": "05c100179ee33feae54779fea44a131535addb31"
     }
   ]
 }

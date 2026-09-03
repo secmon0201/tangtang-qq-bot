@@ -48,9 +48,11 @@ POSITIVE_COMMANDS = (
     ("#nte退出登录", True, None, 25.0),
     ("#ww帮助", True, None, 45.0),
     ("WW帮助", True, None, 45.0),
+    ("#ww完整帮助", True, None, 45.0),
     ("#ww原版帮助", True, None, 25.0),
     ("#ww登录", True, None, 30.0),
     ("#ww练度排行", True, None, 25.0),
+    ("#ww今汐评分排行", True, None, 25.0),
     ("#ww抽卡排行", True, None, 25.0),
 )
 

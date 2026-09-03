@@ -15,6 +15,10 @@ def test_upstream_lock_schema_and_paths_are_valid():
         "GenshinUID connector",
         "NTEUID",
         "XutheringWavesUID",
+        "RoverSign",
+        "TodayEcho",
+        "ScoreEcho",
+        "RoverReminder",
     }
     assert validate_lock(root, payload) == []
 

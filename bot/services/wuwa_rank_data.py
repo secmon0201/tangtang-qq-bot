@@ -19,12 +19,12 @@ PAGE_SIZE = 100
 WUWA_BOT_ID = "onebot"
 _COMMAND_RE = re.compile(r"^#?\s*ww\s*(?P<body>.+?)\s*$", re.IGNORECASE)
 _PAGE_RE = re.compile(r"^(?P<body>.+?)(?:\s*页|\s*第)(?P<page>[1-9]\d*)页?$", re.IGNORECASE)
+_TRAILING_PAGE_RE = re.compile(r"^(?P<body>.+?排行)(?P<page>[1-9]\d*)$", re.IGNORECASE)
 _PRACTICE_RE = re.compile(r"^(?P<scope>群|总|bot)?练度(?P<trailing>群|总|bot)?排行$", re.IGNORECASE)
 _STRONGEST_RE = re.compile(r"^(?P<scope>群|总|bot)?最强(?P<trailing>群|总|bot)?排行$", re.IGNORECASE)
 _PHANTOM_RE = re.compile(r"^(?P<char>.+?)声骸(?P<scope>群|总|bot)?排行$", re.IGNORECASE)
-_ROLE_RE = re.compile(r"^(?P<char>.+?)(?P<scope>群|总|bot)?排行$", re.IGNORECASE)
-_UPSTREAM_NON_ROLE_RANK_RE = re.compile(
-    r"^群?(?:抽卡|无尽|冥海|冥歌海墟|矩阵(?:单队|队伍)?)(?:群|总)?(?:排行|排行榜|排名)$",
+_ROLE_SCORE_RE = re.compile(
+    r"^(?P<char>.+?)(?:综合)?评分(?P<scope>群|总|bot)?排行$",
     re.IGNORECASE,
 )
 
@@ -80,11 +80,11 @@ def parse_wuwa_rank_command(text: str) -> WuwaRankRequest | None:
     body = match.group("body").strip()
     page = 1
     page_match = _PAGE_RE.fullmatch(body)
+    if page_match is None:
+        page_match = _TRAILING_PAGE_RE.fullmatch(body)
     if page_match is not None:
         body = page_match.group("body").strip()
         page = int(page_match.group("page"))
-    if _UPSTREAM_NON_ROLE_RANK_RE.fullmatch(body):
-        return None
     for pattern, kind in ((_PRACTICE_RE, "practice"), (_STRONGEST_RE, "strongest")):
         special = pattern.fullmatch(body)
         if special is not None:
@@ -97,7 +97,7 @@ def parse_wuwa_rank_command(text: str) -> WuwaRankRequest | None:
     phantom = _PHANTOM_RE.fullmatch(body)
     if phantom is not None:
         return WuwaRankRequest("phantom", phantom.group("char").strip(), _scope(phantom.group("scope")), page)
-    role = _ROLE_RE.fullmatch(body)
+    role = _ROLE_SCORE_RE.fullmatch(body)
     if role is None or not role.group("char").strip():
         return None
     return WuwaRankRequest("role", role.group("char").strip(), _scope(role.group("scope")), page)
@@ -105,7 +105,13 @@ def parse_wuwa_rank_command(text: str) -> WuwaRankRequest | None:
 
 def is_wuwa_help_command(text: str) -> bool:
     body = _wuwa_body(text)
-    return body is not None and body.casefold() in {"帮助", "原版帮助", "help"}
+    return body is not None and body.casefold() in {
+        "帮助",
+        "完整帮助",
+        "原版帮助",
+        "help",
+        "fullhelp",
+    }
 
 
 def is_new_wuwa_help_command(text: str) -> bool:
@@ -116,6 +122,11 @@ def is_new_wuwa_help_command(text: str) -> bool:
 def is_original_wuwa_help_command(text: str) -> bool:
     body = _wuwa_body(text)
     return body is not None and body.casefold() == "原版帮助"
+
+
+def is_full_wuwa_help_command(text: str) -> bool:
+    body = _wuwa_body(text)
+    return body is not None and body.casefold() in {"完整帮助", "fullhelp"}
 
 
 def _wuwa_body(text: str) -> str | None:
@@ -414,6 +425,7 @@ __all__ = [
     "WuwaRankResult",
     "WuwaRankRow",
     "default_wuwa_rank_service",
+    "is_full_wuwa_help_command",
     "is_new_wuwa_help_command",
     "is_original_wuwa_help_command",
     "is_wuwa_help_command",

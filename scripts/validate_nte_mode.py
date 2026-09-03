@@ -16,6 +16,10 @@ EXPECTED = {
     "GenshinUID": False,
     "XutheringWavesUID": True,
     "NTEUID": True,
+    "RoverSign": True,
+    "TodayEcho": True,
+    "ScoreEcho": True,
+    "RoverReminder": True,
 }
 
 
@@ -50,11 +54,27 @@ def validate(root: Path) -> list[str]:
             errors.append(
                 f"{plugin}.enabled={config.get('enabled')!r}; expected {expected_enabled}"
             )
-        if plugin in {"NTEUID", "XutheringWavesUID"}:
+        if plugin in {
+            "NTEUID",
+            "XutheringWavesUID",
+            "RoverSign",
+            "TodayEcho",
+            "ScoreEcho",
+            "RoverReminder",
+        }:
             prefixes = {str(value).lower() for value in config.get("force_prefix", [])}
             expected_prefix = "nte" if plugin == "NTEUID" else "ww"
             if expected_prefix not in prefixes:
                 errors.append(f"{plugin}.force_prefix must include {expected_prefix}")
+
+    waves_config_path = root / "GsUID.Core" / "data" / "XutheringWavesUID" / "config.json"
+    try:
+        waves_config = json.loads(waves_config_path.read_text(encoding="utf-8-sig"))
+        extra_modules = waves_config.get("HelpExtraModules", {}).get("data", [])
+        if "all" not in {str(value).lower() for value in extra_modules}:
+            errors.append("XutheringWavesUID.HelpExtraModules must include all")
+    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        errors.append(f"invalid XutheringWavesUID config: {exc}")
     return errors
 
 
@@ -69,7 +89,8 @@ def main() -> int:
         return 1
     print(
         "Game mode valid: Core=enabled, GenshinUID=disabled, "
-        "NTEUID=enabled, XutheringWavesUID=enabled, OneBot gate=NTE/WW with or without #"
+        "NTEUID/XutheringWavesUID and WW extensions enabled, "
+        "OneBot gate=NTE/WW with or without #"
     )
     return 0
 

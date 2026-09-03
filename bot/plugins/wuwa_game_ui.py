@@ -11,10 +11,11 @@ from nonebot.rule import Rule
 from bot.config import ROOT, settings
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
-from bot.services.wuwa_help_render import WuwaHelpRenderer
+from bot.services.wuwa_help_render import WuwaFullHelpRenderer, WuwaHelpRenderer
 from bot.services.wuwa_rank_data import (
     WuwaRankDataError,
     default_wuwa_rank_service,
+    is_full_wuwa_help_command,
     is_new_wuwa_help_command,
     is_original_wuwa_help_command,
     is_wuwa_help_command,
@@ -27,6 +28,7 @@ ORIGINAL_HELP_PATH = ROOT / "data" / "wuwa_original_help.png"
 rank_service = default_wuwa_rank_service()
 rank_renderer = WuwaRankRenderer()
 help_renderer = WuwaHelpRenderer()
+full_help_renderer = WuwaFullHelpRenderer()
 avatar_service = AvatarService(
     settings.avatar_cache_dir,
     settings.avatar_base_url,
@@ -86,6 +88,14 @@ async def _send_help(text: str) -> None:
             )
             return
         await wuwa_game_ui.finish(local_image_segment(ORIGINAL_HELP_PATH))
+    if is_full_wuwa_help_command(text):
+        try:
+            image_path = await asyncio.to_thread(full_help_renderer.render)
+        except Exception:
+            logger.exception("Wuthering Waves full help render failed")
+            await wuwa_game_ui.finish("鸣潮完整帮助图生成失败，请稍后重试。")
+            return
+        await wuwa_game_ui.finish(local_image_segment(image_path))
     if is_new_wuwa_help_command(text):
         try:
             image_path = await asyncio.to_thread(help_renderer.render)

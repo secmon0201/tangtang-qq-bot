@@ -7,8 +7,15 @@ from pathlib import Path
 
 from PIL import Image
 
-from bot.services.wuwa_help_render import WuwaHelpRenderer
-from bot.services.wuwa_rank_data import PAGE_SIZE, WuwaRankDataService, WuwaRankRequest, parse_wuwa_rank_command
+from bot.services.wuwa_help_render import WuwaFullHelpRenderer, WuwaHelpRenderer
+from bot.services.wuwa_rank_data import (
+    PAGE_SIZE,
+    WuwaRankDataService,
+    WuwaRankRequest,
+    is_full_wuwa_help_command,
+    is_wuwa_help_command,
+    parse_wuwa_rank_command,
+)
 from bot.services.wuwa_rank_render import WuwaRankRenderer
 
 
@@ -50,12 +57,13 @@ def _player(root: Path, uid: str, score: float, *, compressed: bool = False) -> 
 
 
 def test_wuwa_rank_parser_supports_local_and_total_boards():
-    assert parse_wuwa_rank_command("#ww今汐排行") == WuwaRankRequest("role", "今汐", None, 1)
+    assert parse_wuwa_rank_command("#ww今汐评分排行") == WuwaRankRequest("role", "今汐", None, 1)
+    assert parse_wuwa_rank_command("#ww今汐综合评分排行2") == WuwaRankRequest("role", "今汐", None, 2)
     assert parse_wuwa_rank_command("WW 今汐声骸总排行 页2") == WuwaRankRequest("phantom", "今汐", "bot", 2)
-    assert parse_wuwa_rank_command("ww今汐排行页3") == WuwaRankRequest("role", "今汐", None, 3)
+    assert parse_wuwa_rank_command("ww今汐评分排行页3") == WuwaRankRequest("role", "今汐", None, 3)
     assert parse_wuwa_rank_command("ww练度排行") == WuwaRankRequest("practice", None, None, 1)
+    assert parse_wuwa_rank_command("ww练度排行3") == WuwaRankRequest("practice", None, None, 3)
     assert parse_wuwa_rank_command("#ww最强总排行") == WuwaRankRequest("strongest", None, "bot", 1)
-    assert parse_wuwa_rank_command("#ww深塔排行") == WuwaRankRequest("role", "深塔", None, 1)
 
 
 def test_wuwa_rank_parser_leaves_upstream_activity_rankings_untouched():
@@ -67,8 +75,20 @@ def test_wuwa_rank_parser_leaves_upstream_activity_rankings_untouched():
         "#ww冥海总排行",
         "#ww矩阵排行",
         "#ww矩阵单队总排行",
+        "#ww长离排行",
+        "#ww长离排行2",
+        "#ww长离伤害排行",
+        "#ww长离伤害排行2",
+        "#ww深塔排行",
+        "#ww长离评分排行ss2",
     ):
         assert parse_wuwa_rank_command(command) is None
+
+
+def test_wuwa_full_help_aliases_are_intercepted():
+    for command in ("#ww完整帮助", "ww 完整帮助", "WW fullhelp"):
+        assert is_wuwa_help_command(command)
+        assert is_full_wuwa_help_command(command)
 
 
 def test_wuwa_rank_reads_group_binding_compressed_cache_and_project_identity(tmp_path: Path):
@@ -120,6 +140,9 @@ def test_wuwa_help_and_rank_render_are_dynamic_rgba_images(tmp_path: Path):
     with Image.open(help_path) as image:
         assert image.mode == "RGBA"
         assert image.width == WuwaHelpRenderer.WIDTH
+    full_data = WuwaFullHelpRenderer.load_data()
+    assert "群管理员功能" in full_data
+    assert "Bot 主人功能" in full_data
     result = type("Result", (), {})
     core = tmp_path / "GsData.db"
     players = tmp_path / "players"

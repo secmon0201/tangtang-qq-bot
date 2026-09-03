@@ -1,6 +1,6 @@
 {
-  "账号与登录": {
-    "desc": "绑定 UID，登录国服或国际服账号",
+  "绑定账号": {
+    "desc": "在执行查询之前请绑定账号",
     "data": [
       {
         "name": "绑定特征码",
@@ -41,7 +41,12 @@
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
-      },
+      }
+    ]
+  },
+  "库街区登录": {
+    "desc": "在执行查询之前请库街区登录",
+    "data": [
       {
         "name": "推荐->登录页登录",
         "desc": "进入库街区登录页流程绑定 cookie。Bot 会回复登录链接，用户在浏览器完成登录后回填。这是国服推荐方式。",
@@ -84,8 +89,8 @@
       }
     ]
   },
-  "面板与日常": {
-    "desc": "面板、养成、体力和日常查询",
+  "信息查询": {
+    "desc": "在执行查询之前请绑定账号",
     "data": [
       {
         "name": "鸣潮面板更新",
@@ -160,6 +165,22 @@
         "need_admin": false
       },
       {
+        "name": "窥视(:",
+        "desc": "查别人的角色面板（不需要对方绑定）。格式：`<对方9位UID><角色名>面板`，例 `123456789长离面板`。",
+        "eg": "123456789椿面板",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "面板PK",
+        "desc": "两人同角色面板对比图。格式：`(可选 uid)<角色名>面板pk(@群友)`。需要 @ 群友功能配合，AI 路径下不可用。",
+        "eg": "(uid)椿面板pk(@群友)",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
         "name": "体力",
         "desc": "查询自己的鸣潮每日实时状态：结晶波片体力数值 / 满体力剩余时间 / 每日任务进度 / 周本完成情况 / 训练塔进度。命令字：`体力` / `每日` / `mr` / `便笺` / `便签` / `实时便笺`。",
         "eg": "mr/每日",
@@ -192,6 +213,14 @@
         "need_admin": false
       },
       {
+        "name": "面板替换帮助",
+        "desc": "面板图自定义替换说明：如何上传/查看/删除自己的角色背景图。",
+        "eg": "替换帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
         "name": "兑换码",
         "desc": "列出当前所有可用的鸣潮兑换码 + 各码奖励内容 + 过期时间。",
         "eg": "兑换码",
@@ -208,6 +237,30 @@
         "need_admin": false
       },
       {
+        "name": "星声统计",
+        "desc": "查询账号星声（鸣潮原石）收入支出统计。可选时间范围：版本号 / 本月 / 上周。格式：`星声<范围>`，例 `星声2.3版本`、`星声本月`、`星声上周`。无参数则统计全部。",
+        "eg": "星声(2.3版本/本月/上周)",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "打牌",
+        "desc": "群内多人卡牌小游戏。命令 `poker` 启动。这是多轮交互游戏，AI 路径下不可用。",
+        "eg": "poker",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "卡池倒计时",
+        "desc": "查询当前/下期卡池倒计时图。可指定类型：`未复刻角色` / `未复刻武器`；可附带星级：5 / 4。例：`未复刻角色5` 看 5 星未复刻角色倒计时。",
+        "eg": "未复刻角色/武器(5/4)",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
         "name": "角色持有率",
         "desc": "查询角色持有率统计（按 plugin 范围 / 群范围 / 全局范围）。格式：`(群)角色持有率(up/all)`。`up` = 仅 UP 池角色；`all` = 全角色。加 `群` = 本群范围。例：`群角色持有率up`。",
         "eg": "(群)角色持有率(up/all)",
@@ -217,8 +270,8 @@
       }
     ]
   },
-  "玩法与排行": {
-    "desc": "战绩查询；项目榜单每页 100 条",
+  "深塔查询": {
+    "desc": "深塔数据查询",
     "data": [
       {
         "name": "深塔",
@@ -275,6 +328,75 @@
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
+      }
+    ]
+  },
+  "排行查询": {
+    "desc": "排行查询",
+    "data": [
+      {
+        "name": "群伤害排行",
+        "desc": "本群某角色的伤害排行（按角色伤害数值从高到低），每页20条。格式：`<角色名>排行<页码>`。例：`长离排行`、`椿排行2`。",
+        "eg": "长离排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "群评分排行",
+        "desc": "本群某角色的声骸/综合评分排行，每页20条。格式：`<角色名>评分排行<页码>`；加「综合」前缀按综合评分（个性化估算，仅供参考、非公平对比，需登录并刷新单角色面板），如 `长离综合评分排行2`。",
+        "eg": "长离(综合)评分排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "群声骸排行",
+        "desc": "本群某角色的单声骸分数排行（该角色装备的全部声骸逐颗排序，评级与声骸评分一致），每页20条。格式：`<角色名>声骸排行<页码>`（同义：`声骸排名` / `声骸榜` / `shph` / `shpm`）。例：`长离声骸排行2`。",
+        "eg": "长离声骸排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "全体伤害排行",
+        "desc": "全体某角色的伤害排行（跨群）。格式：`<角色名>总排行<页码>`。N 是页码（1/2/3...）。例：`长离总排行1`。",
+        "eg": "长离总排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "全体评分排行",
+        "desc": "全体某角色的声骸/综合评分排行（跨群）。格式：`<角色名>评分总排行<页码>`，页码 1-50；加「综合」按综合评分（个性化估算，仅供参考）。例：`长离评分总排行1`、`长离综合评分总排行`。",
+        "eg": "长离(综合)评分总排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "<角色名>声骸总排行",
+        "desc": "全体某角色的单声骸分数排行，跨群；具备有效套装的角色刷新面板后参与，展示前1000名，每页20条、最多50页。格式：`<角色名>声骸总排行<页码>`（同义：`<角色名>声骸总榜` / `<角色名>shzph` / `<角色名>shzpm`）。例：`卡提希娅声骸总排行`。",
+        "eg": "卡提希娅声骸总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度排行",
+        "desc": "本群按练度评级筛选的排行，每页20条。评级 a / s / ss 三档（a 一般、s 较好、ss 顶级）。格式：`练度排行<评级><页码>`。例：`练度排行s`、`练度排行ss2`。",
+        "eg": "练度排行ss2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度总排行",
+        "desc": "全体练度总排行（按账号综合练度评分）。格式：`练度总排行<页码>`。例：`练度总排行1`。",
+        "eg": "练度总排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
       },
       {
         "name": "海墟无尽排行",
@@ -309,65 +431,17 @@
         "need_admin": false
       },
       {
-        "name": "角色评分排行",
-        "desc": "本群角色综合评分榜",
-        "eg": "今汐评分排行",
+        "name": "矩阵单队群排行",
+        "desc": "本群终焉矩阵单队积分排行，每页20条。格式：`矩阵单队排行<页码>`，也可使用 `矩阵队伍排行`。可指定队伍：跟三个角色名（空格/逗号/顿号分隔），或三字首字缩写（如 `爱达千` = 爱弥斯 达妮娅 千咲），只排该队伍，顺序无关、buff 不限；页码放命令后或末尾都行。未保存单队记录的账号不会上榜。",
+        "eg": "矩阵单队排行 爱达千",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
       },
       {
-        "name": "角色评分总排行",
-        "desc": "机器人角色综合评分总榜",
-        "eg": "今汐评分总排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "角色声骸排行",
-        "desc": "本群角色声骸评分榜",
-        "eg": "今汐声骸排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "角色声骸总排行",
-        "desc": "机器人角色声骸评分总榜",
-        "eg": "今汐声骸总排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "练度排行",
-        "desc": "本群账号练度榜",
-        "eg": "练度排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "练度总排行",
-        "desc": "机器人账号练度总榜",
-        "eg": "练度总排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "最强排行",
-        "desc": "本群每个角色最高评分",
-        "eg": "最强排行",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "最强总排行",
-        "desc": "机器人每个角色最高评分",
-        "eg": "最强总排行",
+        "name": "矩阵单队总排行",
+        "desc": "全体终焉矩阵单队积分排行。格式：`矩阵单队总排行<页码>`，也可使用 `矩阵队伍总排行`。可指定队伍：跟三个角色名（空格/逗号/顿号分隔），或三字首字缩写（如 `爱达千` = 爱弥斯 达妮娅 千咲），只排该队伍，顺序无关、buff 不限；页码放命令后或末尾都行。",
+        "eg": "矩阵单队总排行 爱达千",
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
@@ -375,7 +449,7 @@
     ]
   },
   "抽卡记录": {
-    "desc": "导入、查询、排行、导出与删除记录",
+    "desc": "抽卡记录",
     "data": [
       {
         "name": "抽卡帮助",
@@ -459,8 +533,21 @@
       }
     ]
   },
-  "攻略资料": {
-    "desc": "角色、武器、声骸和游戏公告",
+  "面板图查询": {
+    "desc": "面板图帮助",
+    "data": [
+      {
+        "name": "查看角色面板/背景图",
+        "desc": "查看已上传的某角色面板/背景图。格式：`提取面板图<面板图编号>`。",
+        "eg": "提取面板图+[面板图]",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "WIKI": {
+    "desc": "获取游戏信息&攻略",
     "data": [
       {
         "name": "角色攻略",
@@ -568,85 +655,8 @@
       }
     ]
   },
-  "扩展功能": {
-    "desc": "RoverSign、TodayEcho、ScoreEcho、RoverReminder",
-    "data": [
-      {
-        "name": "签到",
-        "desc": "RoverSign 每日签到",
-        "eg": "签到",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "签到日历",
-        "desc": "查看当月签到日历",
-        "eg": "签到日历",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "自动签到",
-        "desc": "开启或关闭每日自动签到",
-        "eg": "开启自动签到",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "梭哈",
-        "desc": "TodayEcho 声骸强化模拟",
-        "eg": "梭哈10次",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "声骸图片评分",
-        "desc": "ScoreEcho 识图评分",
-        "eg": "评分 卡提1c(生命)",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "国际服分析",
-        "desc": "查看 ScoreEcho 分析功能",
-        "eg": "分析帮助",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "推送邮箱",
-        "desc": "设置体力提醒收件邮箱",
-        "eg": "推送邮箱 123@qq.com",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "体力推送",
-        "desc": "开启或关闭体力阈值提醒",
-        "eg": "开启体力推送",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      },
-      {
-        "name": "推送阈值",
-        "desc": "设置 120 至 240 的提醒阈值",
-        "eg": "推送阈值 180",
-        "need_ck": false,
-        "need_sk": false,
-        "need_admin": false
-      }
-    ]
-  },
-  "个人设置": {
-    "desc": "背景、面板图、语言与 UID 显示",
+  "个人服务": {
+    "desc": "该配置项仅针对个人使用",
     "data": [
       {
         "name": "设置体力背景",
@@ -682,9 +692,277 @@
       }
     ]
   },
-  "帮助": {
-    "desc": "简约版、完整版与上游快照",
+  "RoverSign 签到": {
+    "desc": "签到、签到日历与自动签到",
     "data": [
+      {
+        "name": "签到",
+        "desc": "鸣潮签到",
+        "eg": "签到",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "签到日历",
+        "desc": "查看当月签到日历",
+        "eg": "签到日历",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "开启自动签到",
+        "desc": "开启每天的自动签到功能",
+        "eg": "开启(鸣潮/战双)自动签到",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "TodayEcho 梭哈": {
+    "desc": "声骸强化模拟与历史结果",
+    "data": [
+      {
+        "name": "梭哈",
+        "desc": "梭哈",
+        "eg": "梭哈n次",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "列表",
+        "desc": "列表",
+        "eg": "梭哈结果/梭哈列表",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看",
+        "desc": "查看",
+        "eg": "梭哈第n次",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "ScoreEcho 评分分析": {
+    "desc": "图片评分与国际服独立面板分析",
+    "data": [
+      {
+        "name": "声骸图片评分",
+        "desc": "ScoreEcho 识图评分",
+        "eg": "评分 卡提1c(生命)",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "国际服登录",
+        "desc": "国际服账号通过邮箱密码登录(依赖XutheringWavesUID)",
+        "eg": "分析登录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "绑定特征码",
+        "desc": "绑定特征码",
+        "eg": "分析绑定123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "切换特征码",
+        "desc": "切换绑定的账户",
+        "eg": "分析切换123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除特征码",
+        "desc": "删除特征码",
+        "eg": "分析删除123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看特征码列表",
+        "desc": "查看特征码列表",
+        "eg": "分析查看",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置用户名",
+        "desc": "设置用户名",
+        "eg": "分析设置用户名 漂泊者",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置角色信息",
+        "desc": "换角色等级",
+        "eg": "分析设置长离信息 角色满链",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看角色信息",
+        "desc": "查看已设置的角色信息",
+        "eg": "分析查看长离信息",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "获取面板",
+        "desc": "获取面板",
+        "eg": "分析长离 + 图片",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看面板",
+        "desc": "查看面板",
+        "eg": "分析长离面板",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除面板",
+        "desc": "删除已保存的角色面板和评分数据",
+        "eg": "分析删除长离面板",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度统计",
+        "desc": "查询练度统计一览",
+        "eg": "分析练度",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置语言",
+        "desc": "设置面板图片的显示语言",
+        "eg": "分析设置语言en",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "RoverReminder 体力提醒": {
+    "desc": "邮件、推送开关与体力阈值",
+    "data": [
+      {
+        "name": "推送邮箱",
+        "desc": "设置体力提醒收件邮箱",
+        "eg": "推送邮箱 123@qq.com",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "体力推送",
+        "desc": "开启或关闭体力阈值提醒",
+        "eg": "开启体力推送",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "推送阈值",
+        "desc": "设置 120 至 240 的提醒阈值",
+        "eg": "推送阈值 180",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "项目排行与帮助": {
+    "desc": "只改变排行图片和帮助页；其他命令继续由上游处理",
+    "data": [
+      {
+        "name": "角色评分排行",
+        "desc": "本群角色综合评分榜",
+        "eg": "今汐评分排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色评分总排行",
+        "desc": "机器人角色综合评分总榜",
+        "eg": "今汐评分总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色声骸排行",
+        "desc": "本群角色声骸评分榜",
+        "eg": "今汐声骸排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色声骸总排行",
+        "desc": "机器人角色声骸评分总榜",
+        "eg": "今汐声骸总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度排行",
+        "desc": "本群账号练度榜",
+        "eg": "练度排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度总排行",
+        "desc": "机器人账号练度总榜",
+        "eg": "练度总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "最强排行",
+        "desc": "本群每个角色最高评分",
+        "eg": "最强排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "最强总排行",
+        "desc": "机器人每个角色最高评分",
+        "eg": "最强总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
       {
         "name": "简约帮助",
         "desc": "普通用户常用功能与扩展",
@@ -708,6 +986,213 @@
         "need_ck": false,
         "need_sk": false,
         "need_admin": false
+      }
+    ]
+  },
+  "受限面板图管理": {
+    "desc": "需要上游权限校验的面板图管理命令",
+    "data": [
+      {
+        "name": "上传角色面板图",
+        "desc": "上传自定义角色面板背景图。格式：`上传<角色名>面板` 或 `上传<角色名>背景图`，发完命令后跟着发图片。",
+        "eg": "上传椿面板/背景图",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "面板图列表",
+        "desc": "查看某角色已上传的面板/背景/体力/卡片图列表。格式：`<角色名><面板|面包|🍞|card|体力|每日|mr|背景|bg>图列表`。",
+        "eg": "椿面板图列表",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除面板图",
+        "desc": "删除某角色的指定编号面板图。格式：`删除<角色名>面板图<编号>`。",
+        "eg": "删除椿面板图123",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除全部面板图",
+        "desc": "删除某角色的全部面板图（破坏性，按类型）。格式：`删除全部<角色名><面板|背景|体力|...>图`。",
+        "eg": "删除全部椿面板图",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      }
+    ]
+  },
+  "群管理员功能": {
+    "desc": "仅当前群群主或管理员可执行",
+    "data": [
+      {
+        "name": "订阅鸣潮公告",
+        "desc": "本群订阅鸣潮游戏官方公告推送（新公告会自动转发到本群）。",
+        "eg": "订阅公告",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "取消订阅鸣潮公告",
+        "desc": "取消本群公告订阅。",
+        "eg": "取消订阅公告",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "排行条件-无限制",
+        "desc": "设置本群排行计入条件为「无限制」（任何绑定 UID 即可上榜，不要求登录 cookie）。",
+        "eg": "设置群排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "排行条件-登录",
+        "desc": "设置本群排行计入条件为「需登录」（必须有 cookie 才能上榜，过滤纯绑定 UID 的用户）。",
+        "eg": "设置群排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "排除攻略提供方",
+        "desc": "本群屏蔽指定攻略作者，攻略图不再出现这些作者。多个用中文逗号分隔。格式：`设置排除攻略 作者1，作者2`。",
+        "eg": "设置排除攻略 作者1，作者2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "设置抽卡条件",
+        "desc": "设置本群抽卡排行最低抽数门槛，低于这个数不参与群排行。格式：`设置抽卡条件 <数字>`。",
+        "eg": "设置抽卡条件 1200",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除单个群成员",
+        "desc": "强制解绑本群某 UID（破坏性，群管理员操作）。格式：`删除群成员uid<UID>`。",
+        "eg": "删除群成员uid123456789",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除不活跃群成员",
+        "desc": "一键清理本群超过 30 天未活跃的绑定（破坏性）。",
+        "eg": "删除不活跃群成员",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      }
+    ]
+  },
+  "Bot 主人功能": {
+    "desc": "仅 Core 配置的 Bot 主人可执行",
+    "data": [
+      {
+        "name": "git更新记录",
+        "desc": "查看插件最近的 git 提交记录。",
+        "eg": "更新记录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "下载全部资源",
+        "desc": "从小维服务器补充下载鸣潮插件所需的角色/武器/声骸/攻略图等资源（首次安装或资源损坏时用）。耗时较长。使用强制下载全部资源 可清除旧的构建、评分资源完全重新下载。",
+        "eg": "下载全部资源",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除无效token",
+        "desc": "扫描全部已绑定 cookie，清理失效的 token。",
+        "eg": "删除无效token",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "清理缓存",
+        "desc": "清理过期的公告和日历图片缓存以释放磁盘。",
+        "eg": "清理缓存",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "压缩面板图",
+        "desc": "把上传的面板/背景/体力/卡片图批量压缩存储以节省磁盘。",
+        "eg": "压缩面板图",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "重新计算特征",
+        "desc": "重新计算所有面板/背景/体力图的 ORB 特征缓存，并自动清理无对应图片的孤儿缓存。",
+        "eg": "重新计算特征",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "查看重复面板图",
+        "desc": "扫描已上传的面板图，按 ORB 相似度阈值找出疑似重复的图。格式：`查看重复面板图<阈值>`，阈值 0~1 之间（越接近 1 越严格）。",
+        "eg": "查看重复面板图0.8",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "联系主人",
+        "desc": "通过 bot 给主人发消息（请求出问题时发，同时作为用户上传面板图审核用）。",
+        "eg": "联系主人",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "添加/删除角色别名",
+        "desc": "为某角色添加/删除自定义别名。格式：`添加<角色>别名<新别名>` / `删除<角色>别名<别名>`。例：`添加椿别名花女`。",
+        "eg": "添加油壶别名杂鱼",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "删除导入记录",
+        "desc": "删除全部抽卡导入历史（清理 bot 端记录用）。",
+        "eg": "删除导入记录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "全部重新签到",
+        "desc": "全部重新签到所有人",
+        "eg": "全部签到",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
+      },
+      {
+        "name": "订阅自动签到结果",
+        "desc": "订阅自动签到结果",
+        "eg": "订阅签到结果",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": true
       }
     ]
   }

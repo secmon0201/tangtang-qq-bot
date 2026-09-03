@@ -13,6 +13,9 @@ Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8
 ## Wuthering Waves takeover
 
 - `bot/plugins/wuwa_game_ui.py` intercepts `#ww` help and ranking at priority `-2`; other commands continue upstream.
+- `#ww帮助` is the compact common-user catalog, `#ww完整帮助` contains all upstream, extension, group-admin, and Bot-owner entries, and `#ww原版帮助` is the upstream snapshot. Regenerate checked-in catalogs with `scripts/sync_wuwa_help.py` after an upstream update.
+- RoverSign, TodayEcho, ScoreEcho, and RoverReminder are installed as clean upstream repositories, enabled with the `ww` force prefix, and exposed through `HelpExtraModules=["all"]`. SMTP and other credentials remain operator-managed runtime data.
+- Ranking interception is whitelist-based: project-rendered score, phantom, practice, and strongest formats only. Damage and activity rankings continue upstream.
 - Rankings read `wavesbind`, `players/<uid>/charListData.json`, and compressed or plain `rawData.json` read-only. They expose current-group and robot-wide local views only, never an A-Coast view.
 - QQ avatar, display name, group name, and group alias come from project `bot.db`; pages contain up to 100 ranking rows.
 - `scripts/import_wuwa_data.py` is dry-run by default. `--apply` is permitted only after its A-Coast five-group boundary check and backups succeed. Never print cookies, tokens, or login payloads.

@@ -16,6 +16,7 @@ from bot.services.asoul_render import ASoulImageRenderer
 from bot.services.asoul_web_render import ASoulWebRenderer
 from bot.services.mini_game_reports import MiniGameReportRenderer
 from bot.services.reports import ReportRenderer
+from bot.services.wuwa_help_render import WuwaFullHelpRenderer, WuwaHelpRenderer
 from bot.services.zhijiang_live_guard import LiveGuardStatus, LiveSchedule
 from bot.services.zhijiang_live_reports import ZhijiangLiveReportRenderer
 
@@ -117,7 +118,13 @@ def write_game_reports() -> list[Path]:
             {"title": "幸运骰局", "value_label": "胜场", "rows": [{"rank": 1, "user_id": 1, "nickname": "嘉然今天吃什么", "games": 24, "value": 16, "group_ids": (1001, 1002)}, {"rank": 2, "user_id": 2, "nickname": "向晚大魔王", "games": 18, "value": 11, "group_ids": (1002,)}]},
         ],
     }
-    return [renderer.render_menu(), *renderer.render_game_details(), renderer.render_ranking(ranking, {}, {})]
+    return [
+        renderer.render_menu(),
+        *renderer.render_game_details(),
+        renderer.render_ranking(ranking, {}, {}),
+        WuwaHelpRenderer(output_dir=OUTPUT_DIR).render(force=True),
+        WuwaFullHelpRenderer(output_dir=OUTPUT_DIR).render(force=True),
+    ]
 
 
 async def write_asoul_reports() -> list[Path]:

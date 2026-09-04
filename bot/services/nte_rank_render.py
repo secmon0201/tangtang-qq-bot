@@ -23,7 +23,8 @@ CORE_NTE_DIR = ROOT / "GsUID.Core" / "gsuid_core" / "plugins" / "NTEUID" / "NTEU
 RANK_TEX = CORE_NTE_DIR / "nte_role" / "texture2d" / "rank"
 CHAR_TEX = CORE_NTE_DIR / "nte_role" / "texture2d" / "character"
 COMMON_TEX = CORE_NTE_DIR / "utils" / "texture2d"
-CHARACTER_ART_DIR = ROOT / "bot" / "resources" / "nte_rank_characters"
+CHARACTER_ART_DIR = ROOT / "data" / "nte_rank_characters"
+BUNDLED_CHARACTER_ART_DIR = ROOT / "bot" / "resources" / "nte_rank_characters"
 UPSTREAM_CHARACTER_ART_DIR = settings.gsuid_core_dir / "data" / "NTEUID" / "role" / "detail"
 ELEMENT_TEX = settings.gsuid_core_dir / "data" / "NTEUID" / "role" / "element"
 NTE_FONT = CORE_NTE_DIR / "utils" / "fonts" / "nte_fonts.ttf"
@@ -54,11 +55,13 @@ class NTERankRenderer:
         font_path: Path | None = None,
         retention_hours: int | None = None,
         character_art_dir: Path | None = None,
+        bundled_character_art_dir: Path | None = None,
     ) -> None:
         self.output_dir = output_dir or settings.report_dir
         self.font_path = font_path or settings.report_font_path or RESOURCE_DIR / "asoul_stickers" / "font.ttf"
         self.retention_hours = retention_hours or settings.report_retention_hours
         self.character_art_dir = character_art_dir or CHARACTER_ART_DIR
+        self.bundled_character_art_dir = bundled_character_art_dir or BUNDLED_CHARACTER_ART_DIR
         self._font_cache: dict[tuple[int, bool], ImageFont.ImageFont] = {}
 
     async def refresh_character_art(
@@ -255,7 +258,7 @@ class NTERankRenderer:
     def _character_art_path(self, char_id: str) -> Path | None:
         if not char_id:
             return None
-        for directory in (self.character_art_dir, UPSTREAM_CHARACTER_ART_DIR):
+        for directory in (self.character_art_dir, self.bundled_character_art_dir, UPSTREAM_CHARACTER_ART_DIR):
             for suffix in (".png", ".PNG"):
                 candidate = directory / f"{char_id}{suffix}"
                 if candidate.is_file():

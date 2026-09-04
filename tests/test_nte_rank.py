@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PIL import Image, ImageColor, ImageDraw
 
+from bot.config import ROOT
 from bot.services.nte_help_render import NTEHelpRenderer
 from bot.services.nte_rank_data import (
     NTERankDataService,
@@ -262,9 +263,11 @@ def test_rank_renderer_grows_with_rows(tmp_path: Path):
 
 def test_role_header_uses_the_matching_original_character_art():
     renderer = NTERankRenderer()
+    assert renderer.character_art_dir == ROOT / "data" / "nte_rank_characters"
     art_path = renderer._character_art_path("1019")
     assert art_path is not None
     assert art_path.name == "1019.png"
+    assert art_path.parent == ROOT / "bot" / "resources" / "nte_rank_characters"
 
 
 def test_character_art_refresh_overwrites_cache_and_accepts_new_ids(tmp_path: Path):

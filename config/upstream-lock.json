@@ -6,7 +6,7 @@
       "path": "GsUID.Core",
       "url": "https://github.com/Genshin-bots/gsuid_core.git",
       "branch": "master",
-      "commit": "21ad940a00a36cc70fd9220aba5ad3dfc9ce71d0"
+      "commit": "f4389d6571488215423c34759f5df90046c5f586"
     },
     {
       "name": "GenshinUID connector",

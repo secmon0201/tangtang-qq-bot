@@ -261,9 +261,13 @@ def test_rank_renderer_grows_with_rows(tmp_path: Path):
         assert image.getpixel((34, 34))[3] == 255
 
 
-def test_role_header_uses_the_matching_original_character_art():
+def test_default_character_art_cache_stays_outside_project_resources():
     renderer = NTERankRenderer()
     assert renderer.character_art_dir == ROOT / "data" / "nte_rank_characters"
+
+
+def test_role_header_uses_the_matching_original_character_art(tmp_path: Path):
+    renderer = NTERankRenderer(character_art_dir=tmp_path / "character_art")
     art_path = renderer._character_art_path("1019")
     assert art_path is not None
     assert art_path.name == "1019.png"

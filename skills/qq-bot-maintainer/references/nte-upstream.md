@@ -4,6 +4,7 @@ Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8
 
 - NTEUID and XutheringWavesUID are enabled; GenshinUID stays disabled. `scripts/validate_nte_mode.py` enforces the mode and both force prefixes.
 - `bot/plugins/game_api.py` is the local gate. `bot/plugins/nte_game_ui.py` loads after it (registry `after=("game_api",)`) and intercepts rank/help at priority `-2`; other `#nte` commands continue upstream.
+- Takeover is an ingress boundary: match and stop only project-owned commands in NoneBot, then read/transform upstream data or resources. Never replace functions inside Core or a UID plugin; unmatched messages continue through the official connector.
 - Ranking reads `GsUID.Core\data\GsData.db` read-only through `bot/services/nte_rank_data.py`. Validate the schema; never write or repair upstream tables.
 - `#nte薄荷排行` and `#nte最强排行` are current-group views. Only the explicit `#nte薄荷总排行` and `#nte最强总排行` commands read the robot-wide view; closing NTE in one group blocks local invocation without deleting or filtering upstream records.
 - Help and ranking rendering are project-owned in `bot/services/nte_help_render.py` and `bot/services/nte_rank_render.py`; original character art uses the general refresh path, not one-off asset patches.
@@ -25,10 +26,11 @@ Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8
 ## Upstream update flow
 
 1. Stop Core: `scripts\stop_gsuid_core.ps1`
-2. `scripts\install_gsuid.ps1` (refuses when upstream repositories are dirty)
+2. `scripts\install_gsuid.ps1` (reads the lock, repairs tracking metadata, rejects local state/history, and fast-forwards only)
 3. `scripts\validate_upstream_lock.py` then `scripts\validate_nte_mode.py`
 4. Start Core: `scripts\start_gsuid_core.ps1`
 5. Commit `config/upstream-lock.json` together with required bot-side compatibility changes.
 
-- Never stash or patch inside `GsUID.Core`; move compatibility into `bot/integrations` or `bot/services` and keep upstream repositories clean.
+- Every locked checkout must have the declared origin URL and branch, track `origin/<branch>`, contain no tracked/untracked changes or stash, and have no commits outside the remote branch history. A remote-ahead checkout is valid and updateable.
+- Never reset, clean, stash, merge, replay, or patch inside `GsUID.Core` or a UID plugin. Move compatibility into `bot/integrations` or `bot/services`; runtime adapters may change only in-process objects and must fail loudly when upstream APIs drift.
 - Verify compatibility with the full gates plus `scripts/smoke_game_api.py`, `tests/test_nte_rank.py`, and `tests/test_nte_prefix_display.py`.

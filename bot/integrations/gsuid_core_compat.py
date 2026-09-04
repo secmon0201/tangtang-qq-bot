@@ -53,7 +53,7 @@ def windows_atomic_save(
 
 
 def install_preimport_compatibility(fileutils: ModuleType | None = None) -> None:
-    """Patch the shared writer before GsUID Core imports it into its modules."""
+    """Install a process-local writer adapter without changing upstream source."""
     if fileutils is None:
         try:
             from boltons import fileutils as imported_fileutils
@@ -70,7 +70,7 @@ def install_preimport_compatibility(fileutils: ModuleType | None = None) -> None
 
 
 def install_plugin_loading_compatibility(server_module: ModuleType) -> None:
-    """Make Core honor each external plugin's enabled flag before import."""
+    """Filter disabled plugins in this process without changing upstream source."""
     required = ("should_load_plugin", "PLUGIN_PATH", "plugin_config_store")
     missing = [name for name in required if not hasattr(server_module, name)]
     if missing:

@@ -5,9 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$CoreDir = Join-Path $Root "GsUID.Core"
-$PluginsDir = Join-Path $CoreDir "gsuid_core\plugins"
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
+$LockPath = Join-Path $Root "config\upstream-lock.json"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Utf8NoBom {
@@ -22,6 +21,31 @@ if (-not (Test-Path -LiteralPath $Python)) {
     throw "The project virtual environment was not found: $Python"
 }
 
+if (-not (Test-Path -LiteralPath $LockPath)) {
+    throw "The upstream lock file was not found: $LockPath"
+}
+
+$UpstreamLock = Get-Content -LiteralPath $LockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($UpstreamLock.schema_version -ne 1 -or $null -eq $UpstreamLock.repositories) {
+    throw "The upstream lock file is malformed or unsupported: $LockPath"
+}
+
+function Resolve-UpstreamPath {
+    param([string]$RelativePath)
+    $candidate = [System.IO.Path]::GetFullPath((Join-Path $Root ($RelativePath -replace '/', '\')))
+    $rootPrefix = $Root.TrimEnd('\') + '\'
+    if (-not $candidate.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unsafe upstream repository path in lock file: $RelativePath"
+    }
+    return $candidate
+}
+
+$CoreEntries = @($UpstreamLock.repositories | Where-Object { $_.name -eq "GsUID Core" })
+if ($CoreEntries.Count -ne 1) {
+    throw "The upstream lock must contain exactly one GsUID Core repository."
+}
+$CoreDir = Resolve-UpstreamPath ([string]$CoreEntries[0].path)
+
 function Sync-Repository {
     param(
         [string]$Url,
@@ -30,17 +54,69 @@ function Sync-Repository {
     )
     if (Test-Path -LiteralPath (Join-Path $Path ".git")) {
         Write-Host "Updating $Path"
-        $dirty = @(git -C $Path status --porcelain --untracked-files=no)
+        $dirty = @(& git -C $Path status --porcelain --untracked-files=all)
+        $statusExitCode = $LASTEXITCODE
+        if ($statusExitCode -ne 0) {
+            throw "Could not inspect upstream repository $Path (exit code $statusExitCode)."
+        }
         if ($dirty.Count -gt 0) {
-            throw "Local changes found in upstream repository $Path. Keep adapters in the QQ bot repository before updating."
+            throw "Local changes or untracked files found in upstream repository $Path. Move adapters into the QQ bot repository before updating."
         }
 
-        $currentBranch = (git -C $Path branch --show-current).Trim()
+        $stashes = @(& git -C $Path stash list)
+        $stashExitCode = $LASTEXITCODE
+        if ($stashExitCode -ne 0) {
+            throw "Could not inspect stashes in upstream repository $Path (exit code $stashExitCode)."
+        }
+        if ($stashes.Count -gt 0) {
+            throw "Stashes found in upstream repository $Path. Upstream repositories must not retain local patches."
+        }
+
+        $actualUrl = (& git -C $Path remote get-url origin).Trim()
+        $urlExitCode = $LASTEXITCODE
+        if ($urlExitCode -ne 0) {
+            throw "Could not read origin URL for upstream repository $Path (exit code $urlExitCode)."
+        }
+        if ($actualUrl -ne $Url) {
+            throw "Upstream repository $Path has origin $actualUrl; expected $Url."
+        }
+
+        $currentBranch = (& git -C $Path branch --show-current).Trim()
+        $branchExitCode = $LASTEXITCODE
+        if ($branchExitCode -ne 0) {
+            throw "Could not read the current branch for upstream repository $Path (exit code $branchExitCode)."
+        }
         if ($Branch -and $currentBranch -ne $Branch) {
             throw "Upstream repository $Path is on branch $currentBranch; expected $Branch."
         }
 
         $targetBranch = if ($Branch) { $Branch } else { $currentBranch }
+        & git -C $Path fetch --prune origin $targetBranch
+        $fetchExitCode = $LASTEXITCODE
+        if ($fetchExitCode -ne 0) {
+            throw "Could not fetch origin/$targetBranch for $Path (exit code $fetchExitCode)."
+        }
+
+        $expectedTracking = "origin/$targetBranch"
+        $tracking = (& git -C $Path rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null)
+        $trackingExitCode = $LASTEXITCODE
+        if ($trackingExitCode -ne 0 -or $tracking.Trim() -ne $expectedTracking) {
+            & git -C $Path branch --set-upstream-to=$expectedTracking $targetBranch
+            $setTrackingExitCode = $LASTEXITCODE
+            if ($setTrackingExitCode -ne 0) {
+                throw "Could not set tracking branch $expectedTracking for $Path (exit code $setTrackingExitCode)."
+            }
+        }
+
+        & git -C $Path merge-base --is-ancestor HEAD "refs/remotes/origin/$targetBranch"
+        $historyExitCode = $LASTEXITCODE
+        if ($historyExitCode -eq 1) {
+            throw "Upstream repository $Path has local-only commits or diverged history. Move project changes out of upstream; no reset, merge, or replay was attempted."
+        }
+        if ($historyExitCode -ne 0) {
+            throw "Could not compare $Path with origin/$targetBranch (exit code $historyExitCode)."
+        }
+
         & git -C $Path pull --ff-only origin $targetBranch
         $pullExitCode = $LASTEXITCODE
         if ($pullExitCode -ne 0) {
@@ -65,14 +141,9 @@ function Sync-Repository {
 }
 
 if (-not $SkipRepositorySync) {
-    Sync-Repository "https://github.com/Genshin-bots/gsuid_core.git" $CoreDir "master"
-    Sync-Repository "https://github.com/KimigaiiWuyi/GenshinUID.git" (Join-Path $PluginsDir "GenshinUID") "v4"
-    Sync-Repository "https://github.com/Loping151/XutheringWavesUID.git" (Join-Path $PluginsDir "XutheringWavesUID") "main"
-    Sync-Repository "https://github.com/Loping151/RoverSign.git" (Join-Path $PluginsDir "RoverSign") "main"
-    Sync-Repository "https://github.com/Loping151/TodayEcho.git" (Join-Path $PluginsDir "TodayEcho") "main"
-    Sync-Repository "https://github.com/Loping151/ScoreEcho.git" (Join-Path $PluginsDir "ScoreEcho") "main"
-    Sync-Repository "https://github.com/Loping151/RoverReminder.git" (Join-Path $PluginsDir "RoverReminder") "main"
-    Sync-Repository "https://github.com/tyql688/NTEUID.git" (Join-Path $PluginsDir "NTEUID") "main"
+    foreach ($repository in $UpstreamLock.repositories) {
+        Sync-Repository ([string]$repository.url) (Resolve-UpstreamPath ([string]$repository.path)) ([string]$repository.branch)
+    }
     & $Python (Join-Path $PSScriptRoot "validate_upstream_lock.py") --write
     if ($LASTEXITCODE -ne 0) { throw "Could not refresh the upstream lock file." }
 }

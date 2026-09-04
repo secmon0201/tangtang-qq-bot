@@ -44,6 +44,8 @@ QQ/NapCat -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUID 
 - 鸣潮总榜只覆盖本机器人本地绑定；没有 A 海岸鸣潮榜。既有数据仅通过 dry-run 优先、五群范围受限的导入工具迁移。
 - Core 通过 `scripts/run_gsuid_core.py` 启动，Windows 写入兼容和禁用插件过滤在内存中安装，不修改上游文件。
 
+接管发生在 NoneBot 消息入口：只有项目明确支持的帮助、排行和管理命令会被截断并由本地实现回复，未命中的消息继续交给官方连接器和 Core。下游可以读取、校验和加工上游数据/资源，但不能改写 UID 插件的函数、配置实现或源码。`bot/integrations/gsuid_core_compat.py` 中的适配只修改当前 Core 进程里的 Python 对象；若上游 API 发生变化会直接启动失败，不会向上游目录落补丁。
+
 ## 更新与提交
 
 日常提交整个主仓库：
@@ -52,7 +54,7 @@ QQ/NapCat -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUID 
 .\.venv\Scripts\python.exe scripts\validate_repository.py
 .\.venv\Scripts\python.exe scripts\validate_architecture.py
 .\.venv\Scripts\python.exe -m pytest
-git add --all
+git add <本次项目自有文件路径>
 git commit
 ```
 
@@ -66,6 +68,10 @@ git commit
 .\scripts\start_gsuid_core.ps1
 ```
 
-安装脚本发现上游仓库有本地改动时会停止。不要 stash 后继续更新；先把必要适配迁回主仓库的 `bot/integrations` 或 `bot/services`，让上游目录恢复干净。
+仓库清单只来自 `config/upstream-lock.json`。安装脚本会核对每个 `origin` URL 和声明分支，获取远程引用，自动建立或修复 `origin/<branch>` tracking，然后只执行 fast-forward。远程领先本地是正常更新状态。
+
+以下状态会在更新前直接停止：已跟踪改动、未跟踪文件、stash、本地独有提交或历史分叉。不要使用界面里的“强制更新”，也不要 reset、clean、stash、merge 或 replay 来绕过检查；先确认内容是否为运行数据，必要的兼容行为迁回 `bot/integrations` 或 `bot/services`，上游源码则恢复为官方仓库本身。校验器允许远程引用领先当前 HEAD，但要求当前 HEAD 位于官方分支历史上，因此日常更新不会再依赖本地合并。
+
+缺少 tracking 不等于合并冲突。当前安装脚本会自动修复 tracking；如果仍失败，应以脚本给出的 URL、分支、工作区、stash 或历史分叉原因处理，不根据错误文本中是否出现 `merge` 猜测原因。
 
 上游更新后，`config/upstream-lock.json` 的 commit 变化应与本地适配和测试一起提交。GitHub 远端应使用私有空仓库；首次推送前只需配置远端 URL，不需要把外部运行目录上传。

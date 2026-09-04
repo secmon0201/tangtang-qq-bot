@@ -44,4 +44,5 @@
 - Commit the complete project-owned QQ bot in one repository; NTE is not a separate repository.
 - Keep `main` buildable and use focused commits. No remote is configured yet: remain local-only until the user supplies a private GitHub URL.
 - Never commit `.env`, `data/`, `logs/`, `GsUID.Core`, NapCat, caches, generated outputs, or retired implementations.
+- Stage only explicit project-owned paths. Upstream checkouts must remain clean, stash-free, on the locked branch, tracking `origin/<branch>`, and without local-only commits; update them only through `scripts\install_gsuid.ps1` fast-forward flow.
 - After deleting anything material, report what was removed and whether it is recoverable.

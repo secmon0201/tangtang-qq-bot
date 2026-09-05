@@ -20,6 +20,7 @@ from bot.services.qq_platform import call_qq_action
 from bot.services.asoul_render import ASoulImageRenderer
 from bot.services.asoul_web_render import (
     ASoulWebRenderer,
+    NotificationMediaUnavailable,
     VALID_SCHEDULE_VIEWS,
     asoul_live_web_url,
     page_html,
@@ -38,6 +39,8 @@ web_renderer = ASoulWebRenderer(
 )
 driver = get_driver()
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
+_MEDIA_RETRY_LIMIT = 10
+_pending_monitor_messages: dict[str, dict[str, Any]] = {}
 
 
 def _admin(event: MessageEvent) -> bool:
@@ -58,54 +61,100 @@ async def _send_monitor_messages() -> None:
     if bot is None:
         return
     messages = await service.poll_updates()
-    if not messages:
+    for message in messages:
+        if message in _pending_monitor_messages:
+            continue
+        _pending_monitor_messages[message] = {
+            "live": service.live_notification_details(message),
+            "dynamic": service.dynamic_notification_details(message),
+            "video": service.video_notification_details(message),
+            "comment": service.comment_notification_details(message),
+            "group_ids": set(target_groups),
+            "media_failures": 0,
+        }
+    if not _pending_monitor_messages:
         return
-    for group_id in sorted(target_groups):
-        for message in messages:
+
+    for message, pending in list(_pending_monitor_messages.items()):
+        live_details = pending.get("live")
+        dynamic_details = pending.get("dynamic")
+        video_details = pending.get("video")
+        comment_details = pending.get("comment")
+        caption = (
+            str(dynamic_details.get("url") or message)
+            if isinstance(dynamic_details, dict)
+            else str(video_details.get("url") or message)
+            if isinstance(video_details, dict)
+            else message
+        )
+        payload: Any = message
+        if settings.asoul_bili_render_cards:
             try:
-                payload: Any = message
-                live_details = service.live_notification_details(message)
-                dynamic_details = service.dynamic_notification_details(message)
-                video_details = service.video_notification_details(message)
-                comment_details = service.comment_notification_details(message)
-                caption = (
-                    str(dynamic_details.get("url") or message)
-                    if dynamic_details is not None
-                    else str(video_details.get("url") or message)
-                    if video_details is not None
-                    else message
+                card = await web_renderer.render_notification(
+                    message,
+                    live=live_details,
+                    dynamic=dynamic_details,
+                    video=video_details,
+                    comment=comment_details,
+                    require_media=True,
                 )
-                if settings.asoul_bili_render_cards:
-                    try:
-                        card = await web_renderer.render_notification(
-                            message,
-                            live=live_details,
-                            dynamic=dynamic_details,
-                            video=video_details,
-                            comment=comment_details,
-                        )
-                        payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
-                    except Exception:
-                        logger.exception("A-SOUL HTML card render failed; trying Pillow fallback")
-                        try:
-                            card = await renderer.render_bilibili_notification(
-                                message,
-                                live=live_details,
-                                dynamic=dynamic_details,
-                                video=video_details,
-                            )
-                            payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
-                        except Exception:
-                            logger.exception("A-SOUL Pillow card render failed; sending text fallback")
-                            payload = caption
-                elif dynamic_details is not None or video_details is not None:
+                payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
+                pending["media_failures"] = 0
+            except NotificationMediaUnavailable as exc:
+                failures = int(pending.get("media_failures") or 0) + 1
+                pending["media_failures"] = failures
+                if failures < _MEDIA_RETRY_LIMIT:
+                    logger.warning(
+                        "A-SOUL card deferred until Bilibili media recovers; attempt={}/{} missing={}",
+                        failures,
+                        _MEDIA_RETRY_LIMIT,
+                        ",".join(exc.fields),
+                    )
+                    continue
+                logger.error(
+                    "A-SOUL card media unavailable after {} attempts; sending text fallback missing={}",
+                    failures,
+                    ",".join(exc.fields),
+                )
+                payload = caption
+            except Exception:
+                logger.exception("A-SOUL HTML card render failed; trying Pillow fallback")
+                try:
+                    card = await renderer.render_bilibili_notification(
+                        message,
+                        live=live_details,
+                        dynamic=dynamic_details,
+                        video=video_details,
+                    )
+                    payload = MessageSegment.image(file=card.resolve().as_uri()) + "\n" + caption
+                except Exception:
+                    logger.exception("A-SOUL Pillow card render failed; sending text fallback")
                     payload = caption
+        elif dynamic_details is not None or video_details is not None:
+            payload = caption
+
+        pending_groups = pending.get("group_ids")
+        if not isinstance(pending_groups, set):
+            pending_groups = set(target_groups)
+            pending["group_ids"] = pending_groups
+        pending_groups.intersection_update(target_groups)
+        for group_id in sorted(pending_groups.copy()):
+            try:
+                group_payload = payload
                 is_live = message.startswith("【开播】")
                 if is_live and await _bot_can_at_all(bot, group_id):
-                    payload = MessageSegment.at("all") + " " + payload
-                await call_qq_action(bot, "send_group_msg", group_id=group_id, message=payload)
+                    group_payload = MessageSegment.at("all") + " " + group_payload
+                await call_qq_action(
+                    bot,
+                    "send_group_msg",
+                    group_id=group_id,
+                    message=group_payload,
+                )
+                pending_groups.discard(group_id)
             except Exception:
                 logger.exception("A-SOUL Bilibili push failed for group=%s", group_id)
+        if not pending_groups:
+            _pending_monitor_messages.pop(message, None)
 
 
 async def _bot_can_at_all(bot: Bot, group_id: int) -> bool:

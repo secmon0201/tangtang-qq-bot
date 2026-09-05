@@ -20,6 +20,14 @@ VALID_SCHEDULE_VIEWS = frozenset({"today", "tomorrow", "week"})
 VIEW_LABELS = {"today": "今日直播", "tomorrow": "明日直播", "week": "本周直播"}
 
 
+class NotificationMediaUnavailable(RuntimeError):
+    """Raised when a notification would hide media declared by Bilibili."""
+
+    def __init__(self, fields: Iterable[str]) -> None:
+        self.fields = tuple(dict.fromkeys(str(field) for field in fields))
+        super().__init__(f"Bilibili notification media unavailable: {', '.join(self.fields)}")
+
+
 def asoul_live_web_url(view: str) -> str | None:
     try:
         payload = json.loads(SHORT_LINK_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -154,6 +162,7 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
         dynamic: Mapping[str, Any] | None = None,
         video: Mapping[str, Any] | None = None,
         comment: Mapping[str, Any] | None = None,
+        require_media: bool = False,
     ) -> Path:
         payload = notification_payload(
             message,
@@ -162,20 +171,43 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
             video=video,
             comment=comment,
         )
-        return await self.render_payload(payload, str(payload["mode"]))
+        return await self.render_payload(
+            payload,
+            str(payload["mode"]),
+            require_media=require_media,
+        )
 
-    async def render_payload(self, payload: Mapping[str, Any], prefix: str) -> Path:
-        localized = await asyncio.to_thread(self._localize_media, payload)
+    async def render_payload(
+        self,
+        payload: Mapping[str, Any],
+        prefix: str,
+        *,
+        require_media: bool = False,
+    ) -> Path:
+        localized = await asyncio.to_thread(
+            self._localize_media,
+            payload,
+            require_media=require_media,
+        )
         return await self.render_html(page_html(localized, capture=True), prefix)
 
-    def _localize_media(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+    def _localize_media(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        require_media: bool = False,
+    ) -> dict[str, Any]:
         localized = dict(payload)
         details = localized.get("details")
         if not isinstance(details, Mapping) or self.media_loader is None:
             return localized
         values = dict(details)
+        missing: list[str] = []
         for key in ("avatar_url", "cover_url"):
-            values[key] = self._data_url(str(values.get(key) or ""))
+            original = str(values.get(key) or "")
+            values[key] = self._data_url(original)
+            if require_media and original and not values[key]:
+                missing.append(key)
         for key in ("image_urls", "quote_image_urls"):
             raw = values.get(key)
             try:
@@ -183,12 +215,19 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
             except json.JSONDecodeError:
                 urls = str(raw or "").split("|")
             if isinstance(urls, list):
-                values[key] = json.dumps(
-                    [data for url in urls if (data := self._data_url(str(url)))],
-                    ensure_ascii=False,
-                )
+                embedded = []
+                for index, url in enumerate(urls):
+                    original = str(url)
+                    data = self._data_url(original)
+                    if data:
+                        embedded.append(data)
+                    elif require_media and original:
+                        missing.append(f"{key}[{index}]")
+                values[key] = json.dumps(embedded, ensure_ascii=False)
         for key in ("rich_nodes", "quote_rich_nodes"):
             values[key] = self._localize_rich_nodes(values.get(key))
+        if missing:
+            raise NotificationMediaUnavailable(missing)
         localized["details"] = values
         return localized
 

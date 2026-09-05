@@ -5,9 +5,11 @@ from datetime import date, datetime
 from types import SimpleNamespace
 
 from PIL import Image
+import pytest
 
 from bot.services.asoul_web_render import (
     ASoulWebRenderer,
+    NotificationMediaUnavailable,
     asoul_live_web_url,
     notification_payload,
     page_html,
@@ -224,6 +226,27 @@ def test_notification_media_localization_embeds_rich_emoji_nodes(tmp_path):
     html = page_html(localized, capture=True)
     assert "function richNodes" in html
     assert 'image(node.url, "inline-emoji")' in html
+
+
+def test_notification_media_localization_rejects_missing_declared_media(tmp_path):
+    source = Image.new("RGBA", (12, 12), "#ef5f8d")
+    renderer = ASoulWebRenderer(
+        tmp_path,
+        media_loader=lambda url: None if "cover" in url else source.copy(),
+    )
+    payload = notification_payload(
+        "开播",
+        live={
+            "phase": "start",
+            "avatar_url": "https://example.test/avatar.png",
+            "cover_url": "https://example.test/cover.png",
+        },
+    )
+
+    with pytest.raises(NotificationMediaUnavailable) as error:
+        renderer._localize_media(payload, require_media=True)
+
+    assert error.value.fields == ("cover_url",)
 
 
 def test_notification_renderer_outputs_all_five_aurora_kinds(tmp_path):

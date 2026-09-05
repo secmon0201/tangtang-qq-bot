@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import random
 from datetime import date
@@ -11,6 +12,7 @@ from typing import Any, Iterable
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from nonebot import logger
 from PIL import Image, ImageDraw, ImageFont
 import qrcode
 
@@ -49,6 +51,7 @@ class ASoulImageRenderer:
         self._fonts: dict[tuple[int, bool], ImageFont.ImageFont] = {}
         self._stickers: dict[str, list[Path]] | None = None
         self._remote_cache: dict[str, Image.Image] = {}
+        self._remote_cache_dir = output_dir / "asoul_media_cache"
 
     async def render_schedule(self, target_day: date, title: str, items: Iterable[Any]) -> Path:
         return await asyncio.to_thread(
@@ -878,6 +881,10 @@ class ASoulImageRenderer:
         cached = self._remote_cache.get(url)
         if cached is not None:
             return cached.copy()
+        cached = self._load_remote_disk_cache(url)
+        if cached is not None:
+            self._remote_cache[url] = cached
+            return cached.copy()
 
         candidates = self._remote_image_candidates(url)
         headers = {
@@ -885,6 +892,7 @@ class ASoulImageRenderer:
             "Referer": "https://www.bilibili.com/",
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         }
+        last_error: Exception | None = None
         for candidate in candidates:
             for attempt in range(3):
                 try:
@@ -893,11 +901,48 @@ class ASoulImageRenderer:
                         with Image.open(BytesIO(response.read())) as source:
                             result = source.convert("RGBA")
                     self._remote_cache[url] = result
+                    self._store_remote_disk_cache(url, result)
                     return result.copy()
-                except Exception:
+                except Exception as exc:
+                    last_error = exc
                     if attempt < 2:
                         sleep(0.25 * (attempt + 1))
+        hostname = urlsplit(url).hostname or "unknown"
+        logger.warning(
+            "Bilibili image download exhausted {} candidate(s) for host={}; last_error={}: {}",
+            len(candidates),
+            hostname,
+            type(last_error).__name__ if last_error is not None else "unknown",
+            last_error or "unknown",
+        )
         return None
+
+    def _load_remote_disk_cache(self, url: str) -> Image.Image | None:
+        path = self._remote_disk_cache_path(url)
+        try:
+            with Image.open(path) as source:
+                return source.convert("RGBA")
+        except (OSError, ValueError):
+            return None
+
+    def _store_remote_disk_cache(self, url: str, image: Image.Image) -> None:
+        path = self._remote_disk_cache_path(url)
+        temporary = path.with_name(f"{path.stem}.{time_ns()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            image.save(temporary, format="PNG", optimize=False)
+            temporary.replace(path)
+        except OSError as exc:
+            logger.warning("Bilibili image disk cache write failed: {}", exc)
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _remote_disk_cache_path(self, url: str) -> Path:
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        return self._remote_cache_dir / f"{digest}.png"
 
     @staticmethod
     def _remote_image_candidates(url: str) -> list[str]:

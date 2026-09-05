@@ -49,6 +49,29 @@ def test_remote_bilibili_image_retries_with_headers_and_caches(monkeypatch, tmp_
     assert calls[0][2] == 10
 
 
+def test_remote_bilibili_image_uses_disk_cache_after_renderer_restart(monkeypatch, tmp_path):
+    calls = []
+
+    def download(request, timeout):
+        calls.append((request.full_url, timeout))
+        return _ImageResponse()
+
+    monkeypatch.setattr("bot.services.asoul_render.urlopen", download)
+    url = "https://i0.hdslb.com/bfs/live/persistent-cover.jpg"
+    first = ASoulImageRenderer(tmp_path)._remote_image(url)
+
+    def unavailable(*_args, **_kwargs):
+        raise AssertionError("disk cache should avoid a second network request")
+
+    monkeypatch.setattr("bot.services.asoul_render.urlopen", unavailable)
+    second = ASoulImageRenderer(tmp_path)._remote_image(url)
+
+    assert first is not None and first.size == (4, 4)
+    assert second is not None and second.size == (4, 4)
+    assert calls == [(url, 10)]
+    assert len(list((tmp_path / "asoul_media_cache").glob("*.png"))) == 1
+
+
 def test_remote_bilibili_image_falls_back_to_a_cdn_mirror(monkeypatch, tmp_path):
     calls = []
 

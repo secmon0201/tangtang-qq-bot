@@ -238,8 +238,16 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
     async def updates():
         return messages
 
-    async def render_notification(message, *, live=None, dynamic=None, video=None, comment=None):
-        rendered.append((message, live, dynamic, video, comment))
+    async def render_notification(
+        message,
+        *,
+        live=None,
+        dynamic=None,
+        video=None,
+        comment=None,
+        require_media=False,
+    ):
+        rendered.append((message, live, dynamic, video, comment, require_media))
         return card
 
     async def call_api(_, action, **params):
@@ -264,7 +272,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
 
     asyncio.run(plugin._send_monitor_messages())
 
-    assert [(dynamic is not None, video is not None, live is not None, comment is not None) for _, live, dynamic, video, comment in rendered] == [
+    assert [(dynamic is not None, video is not None, live is not None, comment is not None) for _, live, dynamic, video, comment, _ in rendered] == [
         (True, False, False, False),
         (False, True, False, False),
         (False, False, True, False),
@@ -272,6 +280,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
     ]
     assert [rendered[index][slot]["likes"] for index, slot in ((0, 2), (1, 3), (2, 1))] == ["100", "101", "102"]
     assert rendered[3][4]["rich_nodes"].startswith('[{"type":"emoji"')
+    assert all(row[5] is True for row in rendered)
     assert [action for action, _ in calls] == [
         "send_group_msg",
         "send_group_msg",
@@ -279,6 +288,109 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
         "send_group_msg",
         "send_group_msg",
     ]
+
+
+def test_monitor_renders_one_card_for_all_target_groups(monkeypatch, tmp_path):
+    bot = FakeBot()
+    calls = []
+    rendered = []
+    groups = (1067772451, 1067772452)
+    enable_bilibili_groups(monkeypatch, *groups)
+    monkeypatch.setattr(plugin, "_pending_monitor_messages", {})
+    card = tmp_path / "shared.png"
+    card.write_bytes(b"png")
+    message = "【B站新视频】测试UP\n视频标题\nhttps://example.test/video"
+    details = {
+        "author": "测试UP",
+        "text": "视频标题",
+        "url": "https://example.test/video",
+        "avatar_url": "https://example.test/avatar.png",
+        "cover_url": "https://example.test/cover.png",
+    }
+
+    async def render_notification(*args, **kwargs):
+        rendered.append((args, kwargs))
+        return card
+
+    async def call_api(_, action, **params):
+        calls.append((action, params))
+        return {"message_id": 1}
+
+    async def updates():
+        return [message]
+
+    monkeypatch.setattr(plugin, "settings", SimpleNamespace(
+        asoul_bili_enabled=True,
+        asoul_bili_render_cards=True,
+    ))
+    monkeypatch.setattr(plugin.service, "poll_updates", updates)
+    monkeypatch.setattr(plugin.service, "dynamic_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.service, "video_notification_details", lambda _: details)
+    monkeypatch.setattr(plugin.service, "live_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.service, "comment_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.web_renderer, "render_notification", render_notification)
+    monkeypatch.setattr(plugin, "get_bots", lambda: {str(bot.self_id): bot})
+    monkeypatch.setattr(plugin, "call_qq_action", call_api)
+
+    asyncio.run(plugin._send_monitor_messages())
+
+    assert len(rendered) == 1
+    assert rendered[0][1]["require_media"] is True
+    assert [params["group_id"] for action, params in calls if action == "send_group_msg"] == list(groups)
+
+
+def test_monitor_defers_incomplete_media_until_a_later_poll(monkeypatch, tmp_path):
+    bot = FakeBot()
+    calls = []
+    attempts = []
+    enable_bilibili_groups(monkeypatch, 1067772451)
+    monkeypatch.setattr(plugin, "_pending_monitor_messages", {})
+    card = tmp_path / "recovered.png"
+    card.write_bytes(b"png")
+    message = "【B站新视频】测试UP\n视频标题\nhttps://example.test/video"
+    details = {
+        "author": "测试UP",
+        "text": "视频标题",
+        "url": "https://example.test/video",
+        "avatar_url": "https://example.test/avatar.png",
+        "cover_url": "https://example.test/cover.png",
+    }
+    update_batches = [[message], []]
+
+    async def updates():
+        return update_batches.pop(0)
+
+    async def render_notification(*_args, **kwargs):
+        attempts.append(kwargs["require_media"])
+        if len(attempts) == 1:
+            raise plugin.NotificationMediaUnavailable(("avatar_url", "cover_url"))
+        return card
+
+    async def call_api(_, action, **params):
+        calls.append((action, params))
+        return {"message_id": 1}
+
+    monkeypatch.setattr(plugin, "settings", SimpleNamespace(
+        asoul_bili_enabled=True,
+        asoul_bili_render_cards=True,
+    ))
+    monkeypatch.setattr(plugin.service, "poll_updates", updates)
+    monkeypatch.setattr(plugin.service, "dynamic_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.service, "video_notification_details", lambda _: details)
+    monkeypatch.setattr(plugin.service, "live_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.service, "comment_notification_details", lambda _: None)
+    monkeypatch.setattr(plugin.web_renderer, "render_notification", render_notification)
+    monkeypatch.setattr(plugin, "get_bots", lambda: {str(bot.self_id): bot})
+    monkeypatch.setattr(plugin, "call_qq_action", call_api)
+
+    asyncio.run(plugin._send_monitor_messages())
+    assert calls == []
+    assert message in plugin._pending_monitor_messages
+
+    asyncio.run(plugin._send_monitor_messages())
+    assert attempts == [True, True]
+    assert [action for action, _ in calls] == ["send_group_msg"]
+    assert plugin._pending_monitor_messages == {}
 
 
 def test_monitor_does_not_poll_before_a_bot_is_connected(monkeypatch):

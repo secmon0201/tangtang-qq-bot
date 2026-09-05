@@ -130,7 +130,7 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
         self,
         output_dir: Path,
         media_loader: Callable[[str], Any] | None = None,
-        sticker_selector: Callable[[Iterable[str]], Path | None] | None = None,
+        sticker_selector: Callable[[Iterable[str]], Iterable[Path]] | None = None,
     ) -> None:
         super().__init__(output_dir, "asoul_html")
         self.media_loader = media_loader
@@ -210,7 +210,7 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
         return json.dumps(localized, ensure_ascii=False, separators=(",", ":"))
 
     def localize_schedule_stickers(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        """Embed one random host-matched PNG per schedule item for web and QQ."""
+        """Embed up to three random host-matched PNGs per schedule item."""
         localized = dict(payload)
         days = []
         for raw_day in payload.get("days", []):
@@ -218,8 +218,14 @@ class ASoulWebRenderer(LocalWebScreenshotRenderer):
             items = []
             for raw_item in raw_day.get("items", []):
                 item = dict(raw_item)
-                sticker = self.sticker_selector(item.get("hosts", ())) if self.sticker_selector else None
-                item["sticker_url"] = self._local_file_data_url(sticker)
+                stickers = (
+                    tuple(self.sticker_selector(item.get("hosts", ())))[:3]
+                    if self.sticker_selector
+                    else ()
+                )
+                sticker_urls = [url for sticker in stickers if (url := self._local_file_data_url(sticker))]
+                item["sticker_urls"] = sticker_urls
+                item["sticker_url"] = sticker_urls[0] if sticker_urls else ""
                 items.append(item)
             day["items"] = items
             days.append(day)

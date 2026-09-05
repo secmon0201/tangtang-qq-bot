@@ -158,6 +158,24 @@ def test_resolve_announcement_sticker_prefers_member_and_falls_back_to_random(tm
     assert plugin._web_sticker("__none__", "__random__", allow_none=True) == (None, "无角色", None)
 
 
+def test_imported_stickers_are_available_to_announcement_picker():
+    plugin = announcement_plugin()
+    expected = {
+        "乃琳": {"啊？", "OI"},
+        "嘉然": {"抱头", "糖糖"},
+        "贝拉": {"抱抱", "智慧"},
+    }
+
+    for member, names in expected.items():
+        available = plugin.sticker_names(member)
+        assert len(available) >= 32
+        assert names <= set(available)
+        for name in names:
+            with Image.open(available[name]) as image:
+                assert image.format == "PNG"
+                assert image.mode == "RGBA"
+
+
 def test_web_preview_post_returns_the_rendered_png(monkeypatch, tmp_path):
     plugin = announcement_plugin()
     poster = tmp_path / "poster.png"

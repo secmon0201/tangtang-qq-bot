@@ -69,7 +69,7 @@ def test_remote_bilibili_image_falls_back_to_a_cdn_mirror(monkeypatch, tmp_path)
     assert calls[3] == "https://i0.hdslb.com/bfs/archive/cover.jpg"
 
 
-def test_schedule_sticker_selection_uses_only_matching_hosts(tmp_path, monkeypatch):
+def test_schedule_sticker_selection_uses_one_per_matching_host_and_caps_at_three(tmp_path, monkeypatch):
     sticker_root = tmp_path / "stickers"
     xinyi = sticker_root / "心宜"
     bella = sticker_root / "贝拉"
@@ -79,9 +79,24 @@ def test_schedule_sticker_selection_uses_only_matching_hosts(tmp_path, monkeypat
     bella_sticker = bella / "bella.png"
     Image.new("RGBA", (16, 16), "#ef5f8d").save(xinyi_sticker)
     Image.new("RGBA", (16, 16), "#18a9c5").save(bella_sticker)
+    jiran = sticker_root / "嘉然"
+    nairin = sticker_root / "乃琳"
+    jiran.mkdir()
+    nairin.mkdir()
+    jiran_sticker = jiran / "jiran.png"
+    nairin_sticker = nairin / "nairin.png"
+    Image.new("RGBA", (16, 16), "#f1a5bc").save(jiran_sticker)
+    Image.new("RGBA", (16, 16), "#9a78c8").save(nairin_sticker)
     renderer = ASoulImageRenderer(tmp_path, sticker_dir=sticker_root)
     monkeypatch.setattr("bot.services.asoul_render.random.choice", lambda candidates: candidates[0])
 
+    assert renderer.select_schedule_stickers(("心宜", "贝拉", "嘉然", "乃琳")) == (
+        xinyi_sticker,
+        bella_sticker,
+        jiran_sticker,
+    )
+    assert renderer.select_schedule_stickers(("心宜", "心宜", "不存在")) == (xinyi_sticker,)
+    assert renderer.select_schedule_stickers(("心宜",), limit=0) == ()
     assert renderer.select_schedule_sticker(("心宜",)) == xinyi_sticker
     assert renderer.select_schedule_sticker(("不存在",)) is None
 

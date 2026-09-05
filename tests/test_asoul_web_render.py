@@ -32,7 +32,6 @@ def test_schedule_payload_is_shared_by_web_and_capture_modes():
         [(date(2026, 8, 30), [_item(20, highlighted=True)])],
         generated_at="2026-08-30 12:00",
     )
-
     assert payload["view"] == "tomorrow"
     assert payload["title"] == "明日直播"
     assert payload["event_count"] == 1
@@ -93,6 +92,12 @@ def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp
         ],
         generated_at="2026-08-30 12:00",
     )
+    sticker_urls = []
+    for index, color in enumerate(("#ef5f8d", "#18a9c5", "#9a78c8")):
+        sticker = tmp_path / f"responsive-sticker-{index}.png"
+        Image.new("RGBA", (48, 48), color).save(sticker)
+        sticker_urls.append(ASoulWebRenderer._local_file_data_url(sticker))
+    payload["days"][0]["items"][0]["sticker_urls"] = sticker_urls
 
     async def inspect_layout():
         renderer = ASoulWebRenderer(tmp_path)
@@ -123,6 +128,12 @@ def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp
                                 return switcher.left >= bar.left && switcher.right <= bar.right;
                             })(),
                             touchTargets: [...document.querySelectorAll('.view-switcher button')].map(node => node.getBoundingClientRect().height),
+                            stickerCount: document.querySelectorAll('.schedule-sticker').length,
+                            stickersInsideRows: [...document.querySelectorAll('.schedule-sticker')].every(node => {
+                                const sticker = node.getBoundingClientRect();
+                                const row = node.closest('.schedule-row').getBoundingClientRect();
+                                return sticker.left >= row.left && sticker.right <= row.right && sticker.bottom <= row.bottom;
+                            }),
                         })"""
                     )
                 )
@@ -137,6 +148,8 @@ def test_public_schedule_layout_is_responsive_at_mobile_and_landscape_widths(tmp
         assert result["barInsideViewport"] is True
         assert result["switcherInsideBar"] is True
         assert min(result["touchTargets"]) >= 44
+        assert result["stickerCount"] == 3
+        assert result["stickersInsideRows"] is True
 
 
 def test_notification_payload_keeps_each_visual_kind_distinct():
@@ -308,14 +321,17 @@ def test_warm_renderer_can_render_consecutive_payloads(tmp_path):
     assert first.read_bytes() != second.read_bytes()
 
 
-def test_schedule_sticker_is_selected_from_hosts_and_embedded_locally(tmp_path):
-    sticker = tmp_path / "xinyi.png"
-    Image.new("RGBA", (48, 48), "#ef5f8d").save(sticker)
+def test_schedule_stickers_are_selected_from_hosts_and_embedded_locally(tmp_path):
+    stickers = []
+    for index, color in enumerate(("#ef5f8d", "#18a9c5", "#9a78c8", "#f1a5bc")):
+        sticker = tmp_path / f"sticker-{index}.png"
+        Image.new("RGBA", (48, 48), color).save(sticker)
+        stickers.append(sticker)
     selected_hosts = []
 
     def select(hosts):
         selected_hosts.append(tuple(hosts))
-        return sticker
+        return stickers
 
     renderer = ASoulWebRenderer(tmp_path, sticker_selector=select)
     payload = schedule_payload(
@@ -327,5 +343,9 @@ def test_schedule_sticker_is_selected_from_hosts_and_embedded_locally(tmp_path):
     localized = renderer.localize_schedule_stickers(payload)
 
     assert selected_hosts == [("心宜", "思诺")]
-    assert localized["days"][0]["items"][0]["sticker_url"].startswith("data:image/png;base64,")
+    item = localized["days"][0]["items"][0]
+    assert len(item["sticker_urls"]) == 3
+    assert all(url.startswith("data:image/png;base64,") for url in item["sticker_urls"])
+    assert item["sticker_url"] == item["sticker_urls"][0]
     assert "sticker_url" not in payload["days"][0]["items"][0]
+    assert "sticker_urls" not in payload["days"][0]["items"][0]

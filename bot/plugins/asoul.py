@@ -34,7 +34,7 @@ renderer = ASoulImageRenderer(settings.report_dir, settings.report_font_path)
 web_renderer = ASoulWebRenderer(
     settings.report_dir,
     renderer._remote_image,
-    renderer.select_schedule_sticker,
+    renderer.select_schedule_stickers,
 )
 driver = get_driver()
 scheduler = AsyncIOScheduler(timezone=settings.timezone)

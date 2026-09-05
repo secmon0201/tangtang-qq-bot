@@ -29,7 +29,7 @@ async def render_web_samples() -> tuple[Path, ...]:
     sticker_renderer = ASoulImageRenderer(OUTPUT_DIR)
     calendar = ASoulWebRenderer(
         OUTPUT_DIR,
-        sticker_selector=sticker_renderer.select_schedule_sticker,
+        sticker_selector=sticker_renderer.select_schedule_stickers,
     )
     ranking = CommunityWebRenderer(OUTPUT_DIR)
     target_day = date(2026, 9, 1)
@@ -42,8 +42,8 @@ async def render_web_samples() -> tuple[Path, ...]:
         ),
         ScheduleItem(
             datetime(2026, 9, 1, 22, 0, tzinfo=ZONE),
-            ("向晚", "贝拉"),
-            "深夜电台特别节目",
+            ("嘉然", "乃琳", "贝拉"),
+            "三人深夜电台特别节目",
             "联动",
         ),
     )

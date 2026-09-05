@@ -159,11 +159,11 @@ class ASoulImageRenderer:
     def _day_layout(self, items: list[Any]) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         for item in items:
-            sticker = self.select_schedule_sticker(getattr(item, "hosts", ()) or ())
-            content_width = 514 if sticker else 704
+            stickers = self.select_schedule_stickers(getattr(item, "hosts", ()) or ())
+            content_width = 514 if stickers else 704
             lines = self._wrap(str(getattr(item, "content", "")), self._font(29), content_width, 2)
             row_height = max(138, 76 + len(lines) * 39)
-            rows.append({"item": item, "sticker": sticker, "lines": lines, "height": row_height})
+            rows.append({"item": item, "stickers": stickers, "lines": lines, "height": row_height})
         if not rows:
             return {"rows": [], "height": 170}
         return {"rows": rows, "height": 76 + sum(row["height"] for row in rows) + 18 * (len(rows) - 1) + 24}
@@ -234,8 +234,15 @@ class ASoulImageRenderer:
         for line in lines:
             draw.text((content_x, line_y), line, font=self._font(29), fill="#352932")
             line_y += 37
-        if row["sticker"]:
-            self._paste_sticker(image, row["sticker"], self.WIDTH - self.RIGHT - 204, y + 12, 160, row_height - 24)
+        if row["stickers"]:
+            self._paste_schedule_stickers(
+                image,
+                row["stickers"],
+                self.WIDTH - self.RIGHT - 204,
+                y + 12,
+                160,
+                row_height - 24,
+            )
 
     def _render_bilibili_notification(
         self,
@@ -971,11 +978,29 @@ class ASoulImageRenderer:
             return f"{number / 10_000:.1f}".rstrip("0").rstrip(".") + "万"
         return str(number)
 
-    def select_schedule_sticker(self, hosts: Iterable[str]) -> Path | None:
-        """Choose one local sticker belonging to the scheduled hosts."""
+    def select_schedule_stickers(self, hosts: Iterable[str], limit: int = 3) -> tuple[Path, ...]:
+        """Choose one local sticker per scheduled host, capped for compact layouts."""
+        if limit <= 0:
+            return ()
         stickers = self._sticker_map()
-        candidates = [path for host in hosts for path in stickers.get(str(host), [])]
-        return random.choice(candidates) if candidates else None
+        selected: list[Path] = []
+        seen_hosts: set[str] = set()
+        for host in hosts:
+            name = str(host)
+            if name in seen_hosts:
+                continue
+            seen_hosts.add(name)
+            candidates = stickers.get(name, [])
+            if candidates:
+                selected.append(random.choice(candidates))
+            if len(selected) >= limit:
+                break
+        return tuple(selected)
+
+    def select_schedule_sticker(self, hosts: Iterable[str]) -> Path | None:
+        """Compatibility helper for callers that still need one sticker."""
+        selected = self.select_schedule_stickers(hosts, limit=1)
+        return selected[0] if selected else None
 
     def _sticker_map(self) -> dict[str, list[Path]]:
         if self._stickers is not None:
@@ -999,6 +1024,35 @@ class ASoulImageRenderer:
                 image.alpha_composite(sticker, (x, y))
         except OSError:
             return
+
+    @classmethod
+    def _paste_schedule_stickers(
+        cls,
+        image: Image.Image,
+        paths: Iterable[Path],
+        left: int,
+        top: int,
+        width: int,
+        height: int,
+    ) -> None:
+        selected = tuple(paths)[:3]
+        if not selected:
+            return
+        if len(selected) == 1:
+            cls._paste_sticker(image, selected[0], left, top, width, height)
+            return
+        gap = 4
+        slot_width = (width - gap * (len(selected) - 1)) // len(selected)
+        sticker_height = min(height, int(height * 0.72))
+        for index, path in enumerate(selected):
+            cls._paste_sticker(
+                image,
+                path,
+                left + index * (slot_width + gap),
+                top + height - sticker_height,
+                slot_width,
+                sticker_height,
+            )
 
     def _font(self, size: int, bold: bool = False) -> ImageFont.ImageFont:
         key = (size, bold)

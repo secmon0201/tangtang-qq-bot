@@ -129,11 +129,11 @@ def write_game_reports() -> list[Path]:
 
 async def write_asoul_reports() -> list[Path]:
     renderer = ASoulImageRenderer(OUTPUT_DIR)
-    web_renderer = ASoulWebRenderer(OUTPUT_DIR, sticker_selector=renderer.select_schedule_sticker)
+    web_renderer = ASoulWebRenderer(OUTPUT_DIR, sticker_selector=renderer.select_schedule_stickers)
     today = date(2026, 7, 28)
     items = [
         ScheduleItem(datetime(2026, 7, 28, 20, 0, tzinfo=ZONE), ("嘉然",), "夏日晚间歌回", "直播"),
-        ScheduleItem(datetime(2026, 7, 28, 22, 0, tzinfo=ZONE), ("向晚", "贝拉"), "深夜电台特别节目", "杂谈"),
+        ScheduleItem(datetime(2026, 7, 28, 22, 0, tzinfo=ZONE), ("嘉然", "乃琳", "贝拉"), "三人深夜电台特别节目", "杂谈"),
     ]
     pillow_paths = [
         await renderer.render_schedule(today, "今日直播", items),

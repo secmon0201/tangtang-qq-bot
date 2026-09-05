@@ -161,14 +161,15 @@ def test_resolve_announcement_sticker_prefers_member_and_falls_back_to_random(tm
 def test_imported_stickers_are_available_to_announcement_picker():
     plugin = announcement_plugin()
     expected = {
-        "乃琳": {"啊？", "OI"},
-        "嘉然": {"抱头", "糖糖"},
-        "贝拉": {"抱抱", "智慧"},
+        "乃琳": {"啊？", "OI", "[乃琳Queen_Wink]"},
+        "嘉然": {"抱头", "糖糖", "[嘉然2.0_小天使]"},
+        "贝拉": {"抱抱", "智慧", "[贝拉个性装扮2.0_剑来]"},
     }
+    minimum_counts = {"乃琳": 90, "嘉然": 110, "贝拉": 90}
 
     for member, names in expected.items():
         available = plugin.sticker_names(member)
-        assert len(available) >= 32
+        assert len(available) >= minimum_counts[member]
         assert names <= set(available)
         for name in names:
             with Image.open(available[name]) as image:

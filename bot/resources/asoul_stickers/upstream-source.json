@@ -1,0 +1,15 @@
+{
+  "source": "https://github.com/LEN5010/astrbot_plugin_asoul",
+  "branch": "master",
+  "verified_head": "5a945f695ecaa434ff71d402a344f8e9e40feab0",
+  "asset_commit": "7be62227335c878e1448de3930f7c773190d0af0",
+  "verified_on": "2026-09-05",
+  "upstream_asset_counts": {
+    "乃琳": 90,
+    "嘉然": 110,
+    "贝拉": 90,
+    "心宜": 10,
+    "思诺": 10
+  },
+  "note": "Exact and visually equivalent local variants are preserved; only previously missing upstream stickers are copied."
+}

@@ -8,6 +8,9 @@ from nonebot import logger
 
 from bot.application.plugin_registry import plugin_specs_for
 from bot.config import settings
+from bot.integrations.genshinuid_connector_compat import (
+    install_genshinuid_connector_compatibility,
+)
 from bot.openapi import configure_official_environment
 from bot.services.nte_prefix_display import patch_upstream_nte_prefix
 
@@ -26,6 +29,7 @@ def main() -> None:
         os.environ.setdefault("gsuid_core_host", settings.gsuid_core_host)
         os.environ.setdefault("gsuid_core_port", str(settings.gsuid_core_port))
         os.environ.setdefault("gsuid_core_botid", settings.gsuid_core_botid)
+        os.environ.setdefault("gsuid_core_repeat", "true")
         if settings.gsuid_core_ws_token:
             os.environ.setdefault("gsuid_core_ws_token", settings.gsuid_core_ws_token)
     nonebot.init()
@@ -74,6 +78,9 @@ def main() -> None:
             )
         elif nonebot.load_plugin("GenshinUID") is None:
             logger.warning("failed to load the GenshinUID Core connector")
+        else:
+            install_genshinuid_connector_compatibility()
+            logger.info("GenshinUID event-path isolation installed")
     nonebot.run()
 
 

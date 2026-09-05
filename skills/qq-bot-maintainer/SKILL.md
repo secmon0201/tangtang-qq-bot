@@ -23,6 +23,7 @@ Maintenance contract for `C:\Users\59586\Documents\通讯程序集成管理机�
 - Windows-local deployment only. Never commit `.env`, databases, logs, caches, or upstream repositories.
 - Locked upstream repositories are pristine vendor checkouts: no tracked/untracked changes, stashes, local-only commits, or diverged history. They track the declared `origin/<branch>` and update only by fast-forward from `config/upstream-lock.json`; never reset, clean, stash, merge, or replay patches there.
 - Local takeover reads and transforms upstream data/resources and stops only owned commands at the NoneBot boundary. Unmatched messages continue upstream. `bot/integrations` adapters are process-local and fail loudly on incompatible upstream APIs; they never write upstream source.
+- Features remain independent through install, removal, invocation, and execution. External dependency checks on a message/event path must be fail-fast; reconnects, retries, and health probes run as bounded single-flight background work with a retry interval or backoff so a failed integration cannot delay unrelated matchers.
 - QQ/NapCat login is user-operated. Never ask for or handle credentials.
 
 ## Workflow

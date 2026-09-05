@@ -17,9 +17,11 @@ Feature flags such as `stats_realtime_enabled` are resolved in the registry with
 
 ## What feature independence means here
 
-Guaranteed by tests and validators: no plugin-to-plugin imports, one-way layer dependencies, no cycles, no substantial duplicated function bodies, unique registry entries, and separable per-feature files.
+Guaranteed by tests and validators: no plugin-to-plugin imports, one-way layer dependencies, no cycles, no substantial duplicated function bodies, unique registry entries, separable per-feature files, and fail-fast event paths when an external dependency is unavailable.
 
 Intentional sharing: settings, SQLite, permission/role checks, QQ platform calls, avatar/media helpers, and report renderers are shared contracts with tests. Changing them is a deliberate cross-cutting change, not accidental coupling.
+
+Runtime independence means a matcher may inspect already-known dependency state but must not connect, reconnect, retry, sleep, or perform an unbounded health probe before unrelated matchers can run. Put that work in a bounded background task, keep retries single-flight with a retry interval or backoff, and return an unavailable result immediately. This is event-path fault isolation inside NoneBot; it does not claim one operating-system process per feature.
 
 ## Group domains
 

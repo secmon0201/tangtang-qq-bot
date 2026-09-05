@@ -32,6 +32,7 @@
 - Update upstream pins through `config/upstream-lock.json` and validate compatibility after every upstream update.
 - Treat every locked upstream checkout as disposable, pristine vendor code: no tracked or untracked source changes, stashes, local-only commits, or diverged history. Each checkout must track its declared `origin/<branch>`; `scripts/install_gsuid.ps1` may repair tracking metadata and fast-forward, but must never reset, clean, stash, merge, or replay patches.
 - Project takeover may inspect/read upstream data and resources, transform responses, and stop owned commands at the NoneBot message boundary. Commands not explicitly intercepted continue upstream. Runtime adapters in `bot/integrations` must be process-local, fail loudly when upstream APIs change, and never write upstream source.
+- Features must be independent during installation, removal, invocation, and execution. A missing, slow, or failed external dependency must fail fast on the event path and must not delay unrelated matchers; connection, retry, and health work belongs in bounded single-flight background tasks with a retry interval or backoff.
 
 ## Required Checks
 

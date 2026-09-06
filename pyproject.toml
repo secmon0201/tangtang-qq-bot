@@ -27,7 +27,6 @@ qq-local-bot = "bot.__main__:main"
 dev = [
     "pytest>=8.0,<9.0",
     "psutil>=6.0,<8.0",
-    "pyinstaller>=6.0,<7.0",
 ]
 gsuid = [
     "nonebot-plugin-apscheduler>=0.3.0,<1.0.0",

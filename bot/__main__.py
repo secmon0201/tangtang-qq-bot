@@ -52,8 +52,7 @@ def main() -> None:
         from nonebot.adapters.onebot.v11 import Adapter
 
         driver.register_adapter(Adapter)
-        # Load by module name so a PyInstaller one-file build does not depend on
-        # raw plugin source files being present in the temporary extraction path.
+        # Keep the registry as the only source of plugin load order.
         plugin_specs = plugin_specs_for(
             settings.transport,
             stats_realtime_enabled=settings.stats_realtime_enabled,

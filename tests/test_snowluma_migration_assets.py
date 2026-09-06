@@ -59,7 +59,6 @@ def test_snowluma_config_is_reverse_ws_only_and_blocks_duplicate_gateways():
 def test_active_transport_contract_contains_no_retired_napcat_path():
     active_paths = (
         "bot/config.py",
-        "manager.py",
         "scripts/qq_transport.ps1",
         "scripts/start_qq_transport.ps1",
         "scripts/stop_qq_transport.ps1",

@@ -9,14 +9,14 @@ from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import CommandArg
 
 from bot.config import settings
-from bot.services.napcat_maintenance import NapCatMaintenanceMonitor
+from bot.services.qq_transport_maintenance import QQTransportMaintenanceMonitor
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database
 
 
 driver = get_driver()
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
-monitor = NapCatMaintenanceMonitor(database())
+monitor = QQTransportMaintenanceMonitor(database())
 
 
 def _current_bot_ids() -> tuple[str, ...]:
@@ -59,7 +59,7 @@ def _incident_text(row: Any) -> str:
 async def _require_admin(matcher: Any, event: MessageEvent) -> bool:
     if is_super_admin(int(event.user_id)):
         return True
-    await matcher.finish("只有超级管理员可以查看 NapCat 本地维护记录。")
+    await matcher.finish("只有超级管理员可以查看 QQ 传输维护记录。")
     return False
 
 
@@ -78,15 +78,15 @@ async def _on_bot_disconnect(bot: Bot) -> None:
 
 
 @driver.on_startup
-async def _start_napcat_maintenance() -> None:
-    if not settings.napcat_maintenance_enabled:
-        logger.info("NapCat local maintenance is disabled")
+async def _start_qq_transport_maintenance() -> None:
+    if not settings.qq_transport_maintenance_enabled:
+        logger.info("QQ transport local maintenance is disabled")
         return
     scheduler.add_job(
         _tick,
         "interval",
-        seconds=settings.napcat_maintenance_interval_seconds,
-        id="napcat-local-maintenance",
+        seconds=settings.qq_transport_maintenance_interval_seconds,
+        id="qq-transport-local-maintenance",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
@@ -94,19 +94,20 @@ async def _start_napcat_maintenance() -> None:
     scheduler.start()
     await _tick()
     logger.info(
-        "NapCat local maintenance started; interval=%ss",
-        settings.napcat_maintenance_interval_seconds,
+        "QQ transport local maintenance started; transport=%s interval=%ss",
+        settings.qq_platform_transport,
+        settings.qq_transport_maintenance_interval_seconds,
     )
 
 
 @driver.on_shutdown
-async def _stop_napcat_maintenance() -> None:
+async def _stop_qq_transport_maintenance() -> None:
     monitor.stop()
     if scheduler.running:
         scheduler.shutdown(wait=False)
 
 
-maintenance_status = on_command("NapCat维护状态", priority=5, block=True)
+maintenance_status = on_command("QQ传输维护状态", priority=5, block=True)
 
 
 @maintenance_status.handle()
@@ -115,8 +116,9 @@ async def _(event: MessageEvent):
         return
     state = monitor.status()
     lines = [
-        "NapCat 本地维护：" + ("开启" if settings.napcat_maintenance_enabled else "关闭"),
-        f"检查间隔：{settings.napcat_maintenance_interval_seconds} 秒",
+        f"QQ 传输：{settings.qq_platform_transport}",
+        "本地维护：" + ("开启" if settings.qq_transport_maintenance_enabled else "关闭"),
+        f"检查间隔：{settings.qq_transport_maintenance_interval_seconds} 秒",
         "OneBot 连接：" + ("在线" if state["connected"] else "离线"),
         f"本次运行最后在线：{_format_time(state['last_connected_at'])}",
     ]
@@ -128,7 +130,7 @@ async def _(event: MessageEvent):
     await maintenance_status.finish("\n".join(lines))
 
 
-offline_records = on_command("NapCat离线记录", priority=5, block=True)
+offline_records = on_command("QQ传输离线记录", priority=5, block=True)
 
 
 @offline_records.handle()
@@ -137,8 +139,8 @@ async def _(event: MessageEvent, args=CommandArg()):
         return
     raw = _text_arg(args)
     if raw and (not raw.isdigit() or not 1 <= int(raw) <= 20):
-        await offline_records.finish("用法：#NapCat离线记录 [1-20]")
-    rows = database().napcat_connection_incidents(int(raw or 10))
+        await offline_records.finish("用法：#QQ传输离线记录 [1-20]")
+    rows = database().qq_transport_connection_incidents(int(raw or 10))
     if not rows:
-        await offline_records.finish("暂无 NapCat 被动离线记录。")
-    await offline_records.finish("【NapCat 离线记录】\n\n" + "\n\n".join(_incident_text(row) for row in rows))
+        await offline_records.finish("暂无 QQ 传输被动离线记录。")
+    await offline_records.finish("【QQ 传输离线记录】\n\n" + "\n\n".join(_incident_text(row) for row in rows))

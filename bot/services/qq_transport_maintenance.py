@@ -21,7 +21,7 @@ def _timestamp() -> str:
 
 
 def _qq_process_snapshot(active_bot_ids: tuple[str, ...], observed_at: str) -> dict[str, Any]:
-    """Collect a small process snapshot without reading NapCat logs or config."""
+    """Collect a small process snapshot without reading gateway logs or config."""
     snapshot: dict[str, Any] = {
         "observed_at": observed_at,
         "onebot_connection_count": len(active_bot_ids),
@@ -61,7 +61,6 @@ def _qq_process_snapshot(active_bot_ids: tuple[str, ...], observed_at: str) -> d
         probe_ok = completed.returncode == 0
     else:
         process_ids = [int(line) for line in completed.stdout.splitlines() if line.isdigit()]
-        # pgrep returns 1 when no process matched; that is a successful probe.
         probe_ok = completed.returncode in {0, 1}
     snapshot["qq_process_count"] = len(process_ids)
     snapshot["qq_process_ids"] = process_ids
@@ -69,7 +68,7 @@ def _qq_process_snapshot(active_bot_ids: tuple[str, ...], observed_at: str) -> d
     return snapshot
 
 
-class NapCatMaintenanceMonitor:
+class QQTransportMaintenanceMonitor:
     """Track OneBot connection edges and persist a single row per outage."""
 
     def __init__(
@@ -90,7 +89,7 @@ class NapCatMaintenanceMonitor:
         self._stopping = True
 
     def reconcile(self, bot_ids: Iterable[str], trigger: str) -> None:
-        """Observe current adapter connections; initial offline startup is not an incident."""
+        """Observe adapter connections; initial offline startup is not an incident."""
         if self._stopping:
             return
         current = {str(bot_id) for bot_id in bot_ids if str(bot_id)}
@@ -114,7 +113,6 @@ class NapCatMaintenanceMonitor:
     def _snapshot(self) -> dict[str, Any]:
         active = tuple(sorted(self._active_bot_ids))
         snapshot = self._snapshot_factory(active, _timestamp())
-        # The storage contract only permits diagnostics we construct locally.
         return {
             "observed_at": str(snapshot.get("observed_at") or _timestamp())[:64],
             "onebot_connection_count": max(0, int(snapshot.get("onebot_connection_count", len(active)))),
@@ -131,8 +129,8 @@ class NapCatMaintenanceMonitor:
         elif snapshot["qq_process_count"] == 0:
             diagnosis = "OneBot 已断开；未发现 QQ 进程"
         else:
-            diagnosis = "OneBot 已断开；QQ 进程仍在运行，等待 NapCat/QQ 恢复或人工登录"
-        incident = self._database.open_napcat_connection_incident(
+            diagnosis = "OneBot 已断开；QQ 进程仍在运行，等待传输网关恢复或人工登录"
+        incident = self._database.open_qq_transport_connection_incident(
             last_connected_at=self._last_connected_at,
             bot_self_id=",".join(sorted(self._last_connected_bot_ids)),
             trigger=trigger,
@@ -140,19 +138,19 @@ class NapCatMaintenanceMonitor:
             snapshot=snapshot,
         )
         logger.warning(
-            "NapCat OneBot outage recorded: incident_id=%s trigger=%s diagnosis=%s",
+            "QQ transport OneBot outage recorded: incident_id=%s trigger=%s diagnosis=%s",
             incident["incident_id"],
             trigger,
             diagnosis,
         )
 
     def _recover_if_needed(self, trigger: str) -> None:
-        incident = self._database.recover_open_napcat_connection_incident(
+        incident = self._database.recover_open_qq_transport_connection_incident(
             recovery_snapshot=self._snapshot()
         )
         if incident is not None:
             logger.warning(
-                "NapCat OneBot connection restored: incident_id=%s trigger=%s duration_seconds=%s",
+                "QQ transport OneBot connection restored: incident_id=%s trigger=%s duration_seconds=%s",
                 incident["incident_id"],
                 trigger,
                 incident["duration_seconds"],
@@ -164,5 +162,5 @@ class NapCatMaintenanceMonitor:
             "active_bot_ids": tuple(sorted(self._active_bot_ids)),
             "last_connected_at": self._last_connected_at,
             "has_connected_in_runtime": self._has_connected_in_runtime,
-            "open_incident": self._database.current_napcat_connection_incident(),
+            "open_incident": self._database.current_qq_transport_connection_incident(),
         }

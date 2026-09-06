@@ -24,7 +24,7 @@ Maintenance contract for `C:\Users\59586\Documents\通讯程序集成管理机�
 - Locked upstream repositories are pristine vendor checkouts: no tracked/untracked changes, stashes, local-only commits, or diverged history. They track the declared `origin/<branch>` and update only by fast-forward from `config/upstream-lock.json`; never reset, clean, stash, merge, or replay patches there.
 - Local takeover reads and transforms upstream data/resources and stops only owned commands at the NoneBot boundary. Unmatched messages continue upstream. `bot/integrations` adapters are process-local and fail loudly on incompatible upstream APIs; they never write upstream source.
 - Features remain independent through install, removal, invocation, and execution. External dependency checks on a message/event path must be fail-fast; reconnects, retries, and health probes run as bounded single-flight background work with a retry interval or backoff so a failed integration cannot delay unrelated matchers.
-- QQ/NapCat login is user-operated. Never ask for or handle credentials.
+- QQ/SnowLuma login is user-operated. Never ask for or handle credentials.
 
 ## Workflow
 
@@ -39,7 +39,7 @@ Maintenance contract for `C:\Users\59586\Documents\通讯程序集成管理机�
 - New `bot/plugins/x.py` without a registry entry or `docs/全部#指令清单.md` rows: registry and command-catalog tests fail.
 - Writing to `GsData.db` outside the reviewed import tool or editing upstream assets: breaks game isolation and future upstream updates.
 - Reimplementing shared avatar/roles/media/report logic inside a plugin: the architecture validator rejects substantial duplicate bodies.
-- Restarting NapCat/QQ for a Python-only change: unnecessary login risk.
+- Restarting SnowLuma/QQ for a Python-only change: unnecessary login risk.
 
 ## Keep this skill current
 

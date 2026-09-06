@@ -4,7 +4,7 @@ setlocal
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 cd /d "%ROOT%"
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\watch_napcat.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\watch_qq_transport.ps1"
 set "exitCode=%ERRORLEVEL%"
 echo.
 if not "%exitCode%"=="0" echo Watchdog reported an error. Review the message above.

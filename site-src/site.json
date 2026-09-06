@@ -267,7 +267,7 @@
       "route": "/technology/",
       "output": "technology/index.html",
       "title": "技术底座 · 糖糖",
-      "description": "糖糖的技术底座：Windows 本地部署、NoneBot2、OneBot v11、NapCat、SQLite、GsUID 隔离与 Cloudflare 固定域名网关。",
+      "description": "糖糖的技术底座：Windows 本地部署、NoneBot2、OneBot v11、SnowLuma、SQLite、GsUID 隔离与 Cloudflare 固定域名网关。",
       "canonical": "",
       "theme_color": "",
       "main_id": "main",
@@ -292,7 +292,7 @@
           }
         ],
         "location": "tangtang.secmon.cn/technology",
-        "note": "NoneBot2 · OneBot v11 · NapCat · SQLite"
+        "note": "NoneBot2 · OneBot v11 · SnowLuma · SQLite"
       },
       "sections": [
         {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 from scripts.validate_architecture import (
     dependency_cycles,
@@ -8,7 +9,7 @@ from scripts.validate_architecture import (
     validate_architecture,
 )
 from scripts.validate_docs import validate_docs
-from scripts.validate_repository import validate_candidates, validate_history_paths
+from scripts.validate_repository import git_candidates, validate_candidates, validate_history_paths
 
 
 def write_module(root: Path, relative: str, source: str) -> None:
@@ -84,6 +85,17 @@ def test_repository_validator_rejects_runtime_data_and_credentials(tmp_path):
 
     assert "forbidden path: data/bot.db" in errors
     assert "credential-like content: token.txt" in errors
+
+
+def test_repository_candidate_scan_excludes_tracked_worktree_deletions(tmp_path):
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "retired.py"
+    tracked.write_text("retired = True\n", encoding="utf-8")
+    subprocess.run(["git", "add", "retired.py"], cwd=tmp_path, check=True)
+    tracked.unlink()
+    (tmp_path / "replacement.py").write_text("active = True\n", encoding="utf-8")
+
+    assert git_candidates(tmp_path) == ["replacement.py"]
 
 
 def test_repository_validator_rejects_forbidden_paths_from_reachable_history():

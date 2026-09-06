@@ -20,7 +20,7 @@ NTE 与鸣潮是主仓库中的两个独立功能边界，不是单独摘出的�
 ## 不进入主仓库的内容
 
 - `GsUID.Core` 及其 `GenshinUID`、`NTEUID`、`XutheringWavesUID` 子仓库。
-- `NapCat.Shell`、Lagrange、`.venv`、构建工具和下载的可执行文件。
+- SnowLuma、Lagrange、`.venv`、构建工具和下载的可执行文件。
 - `.env`、数据库、日志、备份、登录状态、Cookie、Token 和运行时缓存。
 
 这些目录由 `.gitignore` 排除，`scripts/validate_repository.py` 会再次检查当前 Git 候选文件和所有本地分支、标签可达的历史路径。CI 使用完整克隆执行同一检查，避免已经删除的运行数据继续留在可推送历史中。第三方仓库的 URL、分支和当前 commit 记录在 `config/upstream-lock.json`，不复制第三方历史。
@@ -32,7 +32,7 @@ plugins -> application -> services
    |                         |
    +------ integrations -----+
 
-QQ/NapCat -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUID / XutheringWavesUID
+QQ/SnowLuma -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUID / XutheringWavesUID
 ```
 
 插件之间不得直接导入，`services` 和 `application` 也不得反向导入插件。每个 `bot/plugins/*.py` 功能入口必须在 `bot/application/plugin_registry.py` 中恰好注册一次；注册表只保存模块名和启用元数据，不导入插件。`scripts/validate_architecture.py` 和 `tests/test_plugin_registry.py` 会共同检查依赖规则、循环依赖、重复实现、漏注册与重复注册。

@@ -222,9 +222,20 @@ def validate(path: Path) -> tuple[int, int]:
     transport = values.get("BOT_TRANSPORT", "onebot").strip().lower()
     if transport not in {"onebot", "qq_openapi"}:
         raise ValueError("BOT_TRANSPORT must be onebot or qq_openapi")
-    qq_platform_transport = values.get("QQ_PLATFORM_TRANSPORT", "napcat").strip().lower()
-    if qq_platform_transport not in {"napcat", "lagrange"}:
-        raise ValueError("QQ_PLATFORM_TRANSPORT must be napcat or lagrange")
+    configured_qq_transport = values.get("QQ_PLATFORM_TRANSPORT", "").strip().lower()
+    qq_platform_transport = configured_qq_transport or (
+        "napcat"
+        if values.get("NAPCAT_QQ_ID", "").strip() or values.get("NAPCAT_DIR", "").strip()
+        else "snowluma"
+    )
+    if qq_platform_transport not in {"snowluma", "napcat", "lagrange"}:
+        raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma, napcat or lagrange")
+    if qq_platform_transport == "snowluma":
+        if not values.get("SNOWLUMA_DIR", "SnowLuma").strip():
+            raise ValueError("SNOWLUMA_DIR cannot be empty when QQ_PLATFORM_TRANSPORT=snowluma")
+        account_value = values.get("QQ_ACCOUNT_ID", "")
+    else:
+        account_value = values.get("QQ_ACCOUNT_ID", values.get("NAPCAT_QQ_ID", ""))
     if qq_platform_transport == "lagrange" and not values.get("LAGRANGE_DIR", "Lagrange.OneBot").strip():
         raise ValueError("LAGRANGE_DIR cannot be empty when QQ_PLATFORM_TRANSPORT=lagrange")
 
@@ -271,22 +282,53 @@ def validate(path: Path) -> tuple[int, int]:
         values.get("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS", ""),
         "GLOBAL_ANNOUNCEMENT_OPERATOR_IDS",
     )
-    parse_ids(values.get("NAPCAT_QQ_ID", ""), "NAPCAT_QQ_ID", maximum=1)
+    account_ids = parse_ids(account_value, "QQ_ACCOUNT_ID", maximum=1)
+    if transport == "onebot" and len(account_ids) != 1:
+        raise ValueError("QQ_ACCOUNT_ID must contain exactly one account in OneBot mode")
+    parse_bool(
+        values.get(
+            "QQ_TRANSPORT_MAINTENANCE_ENABLED",
+            values.get("NAPCAT_MAINTENANCE_ENABLED", "true"),
+        ),
+        "QQ_TRANSPORT_MAINTENANCE_ENABLED",
+    )
+    try:
+        maintenance_interval = int(
+            values.get(
+                "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
+                values.get("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", "30"),
+            )
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS must be an integer between 10 and 300"
+        ) from exc
+    if not 10 <= maintenance_interval <= 300:
+        raise ValueError(
+            "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS must be between 10 and 300"
+        )
     parse_bool(values.get("A_COAST_PROFILE_ENABLED", "true"), "A_COAST_PROFILE_ENABLED")
     parse_bool(values.get("GAME_API_ENABLED", "true"), "GAME_API_ENABLED")
     parse_bool(values.get("GSUID_ENABLED", "false"), "GSUID_ENABLED")
 
     try:
         port = int(values.get("PORT", "8080"))
+        snowluma_webui_port = int(values.get("SNOWLUMA_WEBUI_PORT", "5099"))
         official_port = int(values.get("QQ_OPENAPI_PORT", "8081"))
         hour = int(values.get("BOT_ROLLUP_HOUR", "1"))
         minute = int(values.get("BOT_ROLLUP_MINUTE", "5"))
     except ValueError as exc:
-        raise ValueError("PORT, QQ_OPENAPI_PORT and rollup time must be integers") from exc
+        raise ValueError(
+            "PORT, SNOWLUMA_WEBUI_PORT, QQ_OPENAPI_PORT and rollup time must be integers"
+        ) from exc
     if not 1 <= port <= 65535:
         raise ValueError("PORT must be between 1 and 65535")
     if not 1 <= official_port <= 65535:
         raise ValueError("QQ_OPENAPI_PORT must be between 1 and 65535")
+    if not 1 <= snowluma_webui_port <= 65535:
+        raise ValueError("SNOWLUMA_WEBUI_PORT must be between 1 and 65535")
+    if qq_platform_transport == "snowluma" and snowluma_webui_port == port:
+        raise ValueError("SNOWLUMA_WEBUI_PORT must differ from PORT")
     if not 0 <= hour <= 23 or not 0 <= minute <= 59:
         raise ValueError("BOT_ROLLUP_HOUR/MINUTE is outside the valid time range")
     parse_bool(values.get("HOURLY_ANNOUNCEMENT_ENABLED", "false"), "HOURLY_ANNOUNCEMENT_ENABLED")

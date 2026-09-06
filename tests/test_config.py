@@ -287,16 +287,34 @@ def test_config_accepts_a_short_onebot_api_interval(monkeypatch):
     assert Settings.from_env().onebot_api_min_interval_seconds == 0.5
 
 
-def test_config_defaults_and_validates_napcat_maintenance_interval(monkeypatch):
+def test_config_defaults_and_validates_qq_transport_maintenance_interval(monkeypatch):
+    monkeypatch.delenv("QQ_TRANSPORT_MAINTENANCE_ENABLED", raising=False)
+    monkeypatch.delenv("QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS", raising=False)
     monkeypatch.delenv("NAPCAT_MAINTENANCE_ENABLED", raising=False)
     monkeypatch.delenv("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", raising=False)
     config = Settings.from_env()
-    assert config.napcat_maintenance_enabled
-    assert config.napcat_maintenance_interval_seconds == 30
+    assert config.qq_transport_maintenance_enabled
+    assert config.qq_transport_maintenance_interval_seconds == 30
 
-    monkeypatch.setenv("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", "9")
-    with pytest.raises(ValueError, match="NAPCAT_MAINTENANCE_INTERVAL_SECONDS"):
+    monkeypatch.setenv("QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS", "9")
+    with pytest.raises(ValueError, match="QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS"):
         Settings.from_env()
+
+
+def test_config_keeps_legacy_napcat_env_on_napcat_until_explicit_cutover(monkeypatch):
+    monkeypatch.delenv("QQ_PLATFORM_TRANSPORT", raising=False)
+    monkeypatch.setenv("NAPCAT_QQ_ID", "12345")
+    monkeypatch.setenv("NAPCAT_DIR", "NapCat.Shell")
+
+    assert Settings.from_env().qq_platform_transport == "napcat"
+
+
+def test_config_defaults_new_install_without_legacy_transport_keys_to_snowluma(monkeypatch):
+    monkeypatch.delenv("QQ_PLATFORM_TRANSPORT", raising=False)
+    monkeypatch.delenv("NAPCAT_QQ_ID", raising=False)
+    monkeypatch.delenv("NAPCAT_DIR", raising=False)
+
+    assert Settings.from_env().qq_platform_transport == "snowluma"
 
 
 def test_config_requires_official_credentials_when_official_transport_is_selected(monkeypatch):

@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/SnowLuma/SnowLuma",
+  "version": "v1.14.15",
+  "source_commit": "fb5f9b21558134db8803d216dfc19c6bce11f2c0",
+  "asset": "SnowLuma-v1.14.15-win-x64.zip",
+  "asset_size": 37806025,
+  "asset_url": "https://github.com/SnowLuma/SnowLuma/releases/download/v1.14.15/SnowLuma-v1.14.15-win-x64.zip",
+  "sha256": "ab657f8121f8b503c8637ae9bf47d8982e4925897d9aa5d99056e04638f05809",
+  "webui_port": 5099
+}

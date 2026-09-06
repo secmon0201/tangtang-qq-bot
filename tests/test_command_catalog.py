@@ -42,7 +42,7 @@ def _active_on_command_names() -> set[str]:
 def test_catalog_mentions_every_active_on_command_and_alias():
     catalog = CATALOG.read_text(encoding="utf-8")
 
-    assert "本清单以当前运行的 **OneBot / NapCat** 模式为准" in catalog
+    assert "本清单以当前运行的 **OneBot / SnowLuma** 模式为准" in catalog
     missing = sorted(name for name in _active_on_command_names() if f"#{name}" not in catalog)
     assert not missing, f"Update {CATALOG.name} for active commands: {', '.join(missing)}"
 

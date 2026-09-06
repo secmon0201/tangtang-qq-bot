@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS asoul_plugin_state (
     updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS napcat_connection_incidents (
+CREATE TABLE IF NOT EXISTS qq_transport_connection_incidents (
     incident_id INTEGER PRIMARY KEY AUTOINCREMENT,
     detected_at TEXT NOT NULL,
     last_connected_at TEXT,
@@ -121,11 +121,11 @@ CREATE TABLE IF NOT EXISTS napcat_connection_incidents (
     recovery_snapshot_json TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS napcat_one_open_connection_incident
-    ON napcat_connection_incidents(status) WHERE status='open';
+CREATE UNIQUE INDEX IF NOT EXISTS qq_transport_one_open_connection_incident
+    ON qq_transport_connection_incidents(status) WHERE status='open';
 
-CREATE INDEX IF NOT EXISTS napcat_connection_incidents_detected_idx
-    ON napcat_connection_incidents(detected_at DESC);
+CREATE INDEX IF NOT EXISTS qq_transport_connection_incidents_detected_idx
+    ON qq_transport_connection_incidents(detected_at DESC);
 
 CREATE TABLE IF NOT EXISTS passive_group_settings (
     group_id INTEGER NOT NULL,
@@ -567,6 +567,7 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA)
+            self._migrate_qq_transport_incidents(connection)
             legacy_filter = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reaction_filters'"
             ).fetchone()
@@ -598,6 +599,25 @@ class Database:
             self._migrate_today_wife_game_tables(connection)
             self._migrate_mini_game_tables(connection)
             self._migrate_group_domain_columns(connection)
+
+    @staticmethod
+    def _migrate_qq_transport_incidents(connection: sqlite3.Connection) -> None:
+        """Preserve outage history recorded before transport-neutral naming."""
+
+        legacy = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='napcat_connection_incidents'"
+        ).fetchone()
+        if legacy is None:
+            return
+        connection.execute(
+            """INSERT OR IGNORE INTO qq_transport_connection_incidents
+               (incident_id,detected_at,last_connected_at,recovered_at,duration_seconds,
+                bot_self_id,trigger,status,diagnosis,snapshot_json,recovery_snapshot_json)
+               SELECT incident_id,detected_at,last_connected_at,recovered_at,duration_seconds,
+                      bot_self_id,trigger,status,diagnosis,snapshot_json,recovery_snapshot_json
+               FROM napcat_connection_incidents"""
+        )
+        connection.execute("DROP TABLE napcat_connection_incidents")
     @staticmethod
     def _migrate_group_domain_columns(connection: sqlite3.Connection) -> None:
         """Apply the additive v1 group-domain schema in one SQLite transaction."""
@@ -1039,7 +1059,7 @@ class Database:
                 (group_id, status, row_count, error[:1000], utc_now()),
             )
 
-    def open_napcat_connection_incident(
+    def open_qq_transport_connection_incident(
         self,
         *,
         last_connected_at: str | None,
@@ -1053,7 +1073,7 @@ class Database:
         payload = json.dumps(dict(snapshot), ensure_ascii=False, separators=(",", ":"))
         with self.connect() as connection:
             connection.execute(
-                """INSERT OR IGNORE INTO napcat_connection_incidents
+                """INSERT OR IGNORE INTO qq_transport_connection_incidents
                    (detected_at,last_connected_at,bot_self_id,trigger,status,diagnosis,snapshot_json)
                    VALUES (?,?,?,?, 'open', ?, ?)""",
                 (
@@ -1066,22 +1086,22 @@ class Database:
                 ),
             )
             row = connection.execute(
-                """SELECT * FROM napcat_connection_incidents
+                """SELECT * FROM qq_transport_connection_incidents
                    WHERE status='open' ORDER BY incident_id DESC LIMIT 1"""
             ).fetchone()
             if row is None:  # pragma: no cover - defensive guard for corrupted external DB edits.
-                raise RuntimeError("NapCat connection incident was not persisted")
+                raise RuntimeError("QQ transport connection incident was not persisted")
             return row
 
-    def recover_open_napcat_connection_incident(
+    def recover_open_qq_transport_connection_incident(
         self, *, recovery_snapshot: Mapping[str, Any]
     ) -> sqlite3.Row | None:
-        """Close the current outage after NapCat reconnects, if one exists."""
+        """Close the current outage after the QQ transport reconnects, if one exists."""
         now = utc_now()
         payload = json.dumps(dict(recovery_snapshot), ensure_ascii=False, separators=(",", ":"))
         with self.connect() as connection:
             row = connection.execute(
-                """SELECT * FROM napcat_connection_incidents
+                """SELECT * FROM qq_transport_connection_incidents
                    WHERE status='open' ORDER BY incident_id DESC LIMIT 1"""
             ).fetchone()
             if row is None:
@@ -1092,30 +1112,30 @@ class Database:
             except ValueError:
                 duration_seconds = None
             connection.execute(
-                """UPDATE napcat_connection_incidents
+                """UPDATE qq_transport_connection_incidents
                    SET status='recovered', recovered_at=?, duration_seconds=?, recovery_snapshot_json=?
                    WHERE incident_id=? AND status='open'""",
                 (now, duration_seconds, payload[:8000], int(row["incident_id"])),
             )
             return connection.execute(
-                "SELECT * FROM napcat_connection_incidents WHERE incident_id=?",
+                "SELECT * FROM qq_transport_connection_incidents WHERE incident_id=?",
                 (int(row["incident_id"]),),
             ).fetchone()
 
-    def napcat_connection_incidents(self, limit: int = 10) -> list[sqlite3.Row]:
+    def qq_transport_connection_incidents(self, limit: int = 10) -> list[sqlite3.Row]:
         with self.connect() as connection:
             return list(
                 connection.execute(
-                    """SELECT * FROM napcat_connection_incidents
+                    """SELECT * FROM qq_transport_connection_incidents
                        ORDER BY incident_id DESC LIMIT ?""",
                     (max(1, min(int(limit), 50)),),
                 )
             )
 
-    def current_napcat_connection_incident(self) -> sqlite3.Row | None:
+    def current_qq_transport_connection_incident(self) -> sqlite3.Row | None:
         with self.connect() as connection:
             return connection.execute(
-                """SELECT * FROM napcat_connection_incidents
+                """SELECT * FROM qq_transport_connection_incidents
                    WHERE status='open' ORDER BY incident_id DESC LIMIT 1"""
             ).fetchone()
 

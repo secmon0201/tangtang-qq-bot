@@ -1,0 +1,33 @@
+{
+  "version": "v1.14.15",
+  "source_commit": "fb5f9b21558134db8803d216dfc19c6bce11f2c0",
+  "required_actions": [
+    "delete_msg",
+    "get_cookies",
+    "get_csrf_token",
+    "get_group_info",
+    "get_group_list",
+    "get_group_member_info",
+    "get_group_member_list",
+    "get_group_msg_history",
+    "get_login_info",
+    "send_group_forward_msg",
+    "send_group_msg",
+    "send_private_forward_msg",
+    "send_private_msg",
+    "set_group_ban",
+    "set_msg_emoji_like"
+  ],
+  "response_adapters": {
+    "get_cookies": "cookies field plus get_csrf_token fallback",
+    "get_group_msg_history": "messages field with reverse_order=true",
+    "message_id": "signed integer values are preserved"
+  },
+  "media_paths": [
+    "OneBot image segment URL",
+    "OneBot image segment local file URI",
+    "OneBot image segment base64",
+    "GIF through OneBot image segment",
+    "forward message nodes"
+  ]
+}

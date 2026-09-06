@@ -18,6 +18,9 @@ SECTIONS = (
         (
             "BOT_TRANSPORT",
             "QQ_PLATFORM_TRANSPORT",
+            "QQ_ACCOUNT_ID",
+            "SNOWLUMA_DIR",
+            "SNOWLUMA_WEBUI_PORT",
             "NAPCAT_QQ_ID",
             "NAPCAT_DIR",
             "LAGRANGE_DIR",
@@ -55,6 +58,8 @@ SECTIONS = (
             "HOST",
             "PORT",
             "ONEBOT_ACCESS_TOKEN",
+            "QQ_TRANSPORT_MAINTENANCE_ENABLED",
+            "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
             "NAPCAT_MAINTENANCE_ENABLED",
             "NAPCAT_MAINTENANCE_INTERVAL_SECONDS",
             "BOT_ONEBOT_API_MIN_INTERVAL_SECONDS",

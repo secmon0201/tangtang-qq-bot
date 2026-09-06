@@ -52,7 +52,17 @@ def git_candidates(project_root: Path) -> list[str]:
         check=True,
         capture_output=True,
     )
-    return [entry.decode("utf-8") for entry in result.stdout.split(b"\0") if entry]
+    candidates = [entry.decode("utf-8") for entry in result.stdout.split(b"\0") if entry]
+    deleted_result = subprocess.run(
+        ["git", "ls-files", "--deleted", "-z"],
+        cwd=project_root,
+        check=True,
+        capture_output=True,
+    )
+    deleted = {
+        entry.decode("utf-8") for entry in deleted_result.stdout.split(b"\0") if entry
+    }
+    return [candidate for candidate in candidates if candidate not in deleted]
 
 
 def git_history_paths(project_root: Path) -> list[str]:

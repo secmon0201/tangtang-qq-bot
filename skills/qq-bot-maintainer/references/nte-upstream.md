@@ -1,6 +1,6 @@
 # Game Interfaces and Upstream Isolation
 
-Chain: `NapCat -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8765 -> NTEUID/XutheringWavesUID`.
+Chain: `SnowLuma -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core:8765 -> NTEUID/XutheringWavesUID`.
 
 - NTEUID and XutheringWavesUID are enabled; GenshinUID stays disabled. `scripts/validate_nte_mode.py` enforces the mode and both force prefixes.
 - `bot/plugins/game_api.py` is the local gate. `bot/plugins/nte_game_ui.py` loads after it (registry `after=("game_api",)`) and intercepts rank/help at priority `-2`; other `#nte` commands continue upstream.

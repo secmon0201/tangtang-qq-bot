@@ -70,3 +70,55 @@ def test_platform_normalizes_transport_failures():
         assert "send_group_msg failed" in str(exc)
     else:
         raise AssertionError("platform error was not raised")
+
+
+def test_web_cookies_keeps_combined_cookie_and_bkn_response():
+    class CombinedBot(FakeBot):
+        async def call_api(self, action, **params):
+            self.calls.append((action, params))
+            assert action == "get_cookies"
+            return {"data": {"cookies": "uin=o1; skey=test", "bkn": 123}}
+
+    bot = CombinedBot()
+    assert asyncio.run(QQPlatform(bot).web_cookies()) == {
+        "cookies": "uin=o1; skey=test",
+        "bkn": "123",
+    }
+    assert [action for action, _ in bot.calls] == ["get_cookies"]
+
+
+def test_web_cookies_falls_back_to_separate_csrf_action():
+    class SeparateBot(FakeBot):
+        async def call_api(self, action, **params):
+            self.calls.append((action, params))
+            if action == "get_cookies":
+                return {"data": {"cookies": "uin=o1; skey=test"}}
+            if action == "get_csrf_token":
+                return {"data": {"token": 456}}
+            raise AssertionError(action)
+
+    bot = SeparateBot()
+    assert asyncio.run(QQPlatform(bot).web_cookies("qun.qq.com")) == {
+        "cookies": "uin=o1; skey=test",
+        "bkn": "456",
+    }
+    assert bot.calls == [
+        ("get_cookies", {"domain": "qun.qq.com"}),
+        ("get_csrf_token", {}),
+    ]
+
+
+def test_message_history_requests_older_messages_in_stable_order():
+    class HistoryBot(FakeBot):
+        async def call_api(self, action, **params):
+            self.calls.append((action, params))
+            return {"data": {"messages": [{"message_id": -42}]}}
+
+    bot = HistoryBot()
+    assert asyncio.run(QQPlatform(bot).message_history(1001, 50)) == [{"message_id": -42}]
+    assert bot.calls == [
+        (
+            "get_group_msg_history",
+            {"group_id": 1001, "count": 50, "reverse_order": True},
+        )
+    ]

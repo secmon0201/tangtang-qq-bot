@@ -1,6 +1,6 @@
 # QQ 本地数据机器人
 
-这是一个运行在 Windows 本机的 NoneBot2 / OneBot v11 QQ 群机器人。QQ 登录由 NapCat / QQNT 完成，机器人通过 OneBot 接收事件，并将群设置和统计数据保存在本地 SQLite。
+这是一个运行在 Windows 本机的 NoneBot2 / OneBot v11 QQ 群机器人。QQ 登录由 SnowLuma / QQNT 接入，机器人通过 OneBot 接收事件，并将群设置和统计数据保存在本地 SQLite。
 
 全部有效文档见 [文档总览](docs/README.md)，AI 和代码维护者还必须阅读 [AGENTS.md](AGENTS.md)。
 
@@ -19,7 +19,7 @@
 
 ## 安装
 
-仅支持 Windows 本地部署：Python 3.13、NoneBot2、OneBot v11、NapCat / QQNT、PowerShell 和 SQLite。
+仅支持 Windows 本地部署：Python 3.13、NoneBot2、OneBot v11、SnowLuma / QQNT、PowerShell 和 SQLite。
 
 ```powershell
 python -m venv .venv
@@ -27,9 +27,9 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-至少确认 `.env` 中的 `MANAGED_GROUP_IDS`、`BOT_OPERATOR_IDS`、`NAPCAT_QQ_ID`、`BOT_COMMAND_PREFIX=#` 和 `BOT_REQUIRE_MENTION=false`。不要把 QQ 密码、验证码、Cookie、Token、数据库、日志或登录状态提交到 Git。
+至少确认 `.env` 中的 `MANAGED_GROUP_IDS`、`BOT_OPERATOR_IDS`、`QQ_ACCOUNT_ID`、`BOT_COMMAND_PREFIX=#` 和 `BOT_REQUIRE_MENTION=false`。不要把 QQ 密码、验证码、Cookie、Token、数据库、日志或登录状态提交到 Git。
 
-QQ 登录、二维码、验证码、滑块、短信和设备验证始终由用户手动完成。NapCat 反向 WebSocket 默认连接：
+QQ 登录、二维码、验证码、滑块、短信和设备验证始终由用户手动完成。SnowLuma 反向 WebSocket 默认连接：
 
 ```text
 ws://127.0.0.1:8080/onebot/v11/ws
@@ -44,7 +44,7 @@ ws://127.0.0.1:8080/onebot/v11/ws
 - `01-启动全部.bat`：启动完整本地环境。
 - `02-重启全部.bat`：重启完整本地环境。
 - `03-关闭全部.bat`：关闭完整本地环境。
-- `11-仅重启机器人.bat`：普通 Python 改动后只重启 NoneBot，不重启 NapCat 或 QQ。
+- `11-仅重启机器人.bat`：普通 Python 改动后只重启 NoneBot，不重启 SnowLuma 或 QQ。
 
 完整入口说明见 [启动工具说明](启动工具/README.md)。
 

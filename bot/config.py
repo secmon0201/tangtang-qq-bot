@@ -105,6 +105,7 @@ def managed_group_order(group_ids: Iterable[int], managed_group_ids: Iterable[in
 @dataclass(frozen=True, slots=True)
 class Settings:
     transport: str
+    qq_platform_transport: str
     managed_group_ids: tuple[int, ...]
     duplicate_group_ids: tuple[int, ...]
     game_group_ids: tuple[int, ...]
@@ -124,8 +125,8 @@ class Settings:
     official_app_secret: str | None
     official_sandbox: bool
     onebot_access_token: str | None
-    napcat_maintenance_enabled: bool
-    napcat_maintenance_interval_seconds: int
+    qq_transport_maintenance_enabled: bool
+    qq_transport_maintenance_interval_seconds: int
     codex_completion_notify_enabled: bool
     codex_completion_notify_group_id: int | None
     codex_completion_notify_super_admin_id: int | None
@@ -210,6 +211,14 @@ class Settings:
         transport = os.getenv("BOT_TRANSPORT", "onebot").strip().lower()
         if transport not in {"onebot", "qq_openapi"}:
             raise ValueError("BOT_TRANSPORT must be onebot or qq_openapi")
+        configured_qq_transport = os.getenv("QQ_PLATFORM_TRANSPORT", "").strip().lower()
+        qq_platform_transport = configured_qq_transport or (
+            "napcat"
+            if os.getenv("NAPCAT_QQ_ID", "").strip() or os.getenv("NAPCAT_DIR", "").strip()
+            else "snowluma"
+        )
+        if qq_platform_transport not in {"snowluma", "napcat", "lagrange"}:
+            raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma, napcat or lagrange")
         groups = _csv_ints(os.getenv("MANAGED_GROUP_IDS"))
 
         def feature_groups(name: str) -> tuple[int, ...]:
@@ -568,6 +577,7 @@ class Settings:
 
         return cls(
             transport=transport,
+            qq_platform_transport=qq_platform_transport,
             managed_group_ids=groups,
             duplicate_group_ids=duplicate_groups,
             game_group_ids=game_groups,
@@ -587,9 +597,15 @@ class Settings:
             official_app_secret=official_app_secret,
             official_sandbox=official_sandbox,
             onebot_access_token=os.getenv("ONEBOT_ACCESS_TOKEN") or None,
-            napcat_maintenance_enabled=boolean("NAPCAT_MAINTENANCE_ENABLED", True),
-            napcat_maintenance_interval_seconds=integer(
-                "NAPCAT_MAINTENANCE_INTERVAL_SECONDS", 30, 10, 300
+            qq_transport_maintenance_enabled=boolean(
+                "QQ_TRANSPORT_MAINTENANCE_ENABLED",
+                boolean("NAPCAT_MAINTENANCE_ENABLED", True),
+            ),
+            qq_transport_maintenance_interval_seconds=integer(
+                "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
+                integer("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", 30, 10, 300),
+                10,
+                300,
             ),
             codex_completion_notify_enabled=codex_completion_notify_enabled,
             codex_completion_notify_group_id=codex_completion_notify_group_id,

@@ -55,7 +55,7 @@ async def finish_with_image_or_text(
     try:
         await matcher.send(message_prefix + local_image_segment(path))  # type: ignore[attr-defined]
     except Exception:
-        logger.exception("NapCat rejected local report image; using text output")
+        logger.exception("QQ transport rejected local report image; using text output")
         await matcher.finish(message_prefix + fallback)  # type: ignore[attr-defined]
     await matcher.finish()  # type: ignore[attr-defined]
 

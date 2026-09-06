@@ -20,7 +20,7 @@ CODEX_WORKER_TIMEOUT_SECONDS=3600
 CODEX_WORKER_SANDBOX=workspace-write
 ```
 
-3. 机器人与 NapCat/OneBot 已连接。worker 作为 NoneBot 的内部常驻服务启动，无须单独启动 Windows 服务。
+3. 机器人与 SnowLuma/OneBot 已连接。worker 作为 NoneBot 的内部常驻服务启动，无须单独启动 Windows 服务。
 4. Codex CLI 使用本机已登录的 Codex 账号。若 CLI 登录失效，任务会失败并将错误送到固定通知群；在本机执行 `..codex\runtime\node_modules\.bin\codex.cmd login` 完成登录后，再用重试命令恢复。
 
 ## 指令库

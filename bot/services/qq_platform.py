@@ -1,8 +1,8 @@
 """Platform boundary for all QQ transport operations.
 
-Business modules depend on this service instead of a specific QQ client.  The
-current implementation speaks OneBot v11, so either NapCat or Lagrange can sit
-behind it.  Adapter-specific actions are intentionally kept out of callers.
+Business modules depend on this service instead of a specific QQ client. The
+current implementation speaks OneBot v11, so compatible local gateways can sit
+behind it. Adapter-specific response differences stay inside this module.
 """
 
 from __future__ import annotations
@@ -107,7 +107,12 @@ class QQPlatform:
         return data
 
     async def message_history(self, group_id: int, count: int = 200) -> list[dict[str, Any]]:
-        data = await self._request("get_group_msg_history", group_id=int(group_id), count=int(count))
+        data = await self._request(
+            "get_group_msg_history",
+            group_id=int(group_id),
+            count=int(count),
+            reverse_order=True,
+        )
         if isinstance(data, dict):
             data = data.get("messages", data.get("message", []))
         if not isinstance(data, list):
@@ -121,7 +126,12 @@ class QQPlatform:
         cookies = data.get("cookies")
         if not isinstance(cookies, str) or not cookies.strip():
             raise QQPlatformError("QQ web cookies are empty")
-        return {"cookies": cookies, "bkn": str(data.get("bkn") or "")}
+        bkn = data.get("bkn")
+        if bkn in {None, ""}:
+            csrf = await self._request("get_csrf_token")
+            if isinstance(csrf, dict):
+                bkn = csrf.get("token", csrf.get("csrf_token"))
+        return {"cookies": cookies, "bkn": str(bkn or "")}
 
     async def sync_members(self, group_ids: Iterable[int], database: Any) -> list[int]:
         failed: list[int] = []

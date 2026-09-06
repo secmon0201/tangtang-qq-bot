@@ -24,7 +24,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo NoneBot restarted. NapCat and QQ were not restarted.
+echo NoneBot restarted. SnowLuma and QQ were not restarted.
 echo Logs: "%ROOT%\logs\bot.out.log"
 echo.
 pause

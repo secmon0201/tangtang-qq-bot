@@ -17,14 +17,14 @@
 - Use `scripts\stop.ps1` then `scripts\start.ps1` with process-only execution policy bypass. `启动工具\11-仅重启机器人.bat` is interactive because it ends in `pause`.
 - `scripts\start.ps1` archives the previous run under `logs\history`, enables unbuffered output and Python fault handling, and appends lifecycle evidence to `logs\bot.lifecycle.log`.
 - Verify: new PID in `logs\bot.pid`; `127.0.0.1:8080` listening; `logs\bot.err.log` empty; startup log shows `Feature plugin loaded` lines, the loaded adapter, and OneBot traffic; Core `8765` and proxy `18765` are unchanged.
-- Never restart NapCat or QQ unless the user explicitly asks.
+- Never restart SnowLuma or QQ unless the user explicitly asks.
 
 ## Watchdog recovery
 
 - Every external recovery process must have a finite timeout and return control to the main watchdog loop on success, failure, or timeout. Never use `Start-Process -Wait` for a script that launches long-lived descendants.
 - Named Tunnel recovery uses `-SkipCoreRestart`; a fixed public URL does not require restarting Core.
-- `data\napcat-watchdog-state.json` must update `last_check_started_at` and `last_check_completed_at` every loop. A completed heartbeat older than 180 seconds means the watchdog is unhealthy even if its PID still exists.
-- Before claiming a watchdog repair, fault-drill a tunnel recovery and then a NoneBot-only outage. Confirm the same watchdog continues updating its heartbeat and restores a new NoneBot PID, port 8080, and OneBot traffic without restarting NapCat/QQ.
+- `data\qq-transport-watchdog-state.json` must update `last_check_started_at` and `last_check_completed_at` every loop. A completed heartbeat older than 180 seconds means the watchdog is unhealthy even if its PID still exists.
+- Before claiming a watchdog repair, fault-drill a tunnel recovery and then a NoneBot-only outage. Confirm the same watchdog continues updating its heartbeat and restores a new NoneBot PID, port 8080, and OneBot traffic without restarting SnowLuma/QQ.
 
 ## Public and image postconditions
 
@@ -43,6 +43,6 @@
 
 - Commit the complete project-owned QQ bot in one repository; NTE is not a separate repository.
 - Keep `main` buildable and use focused commits. No remote is configured yet: remain local-only until the user supplies a private GitHub URL.
-- Never commit `.env`, `data/`, `logs/`, `GsUID.Core`, NapCat, caches, generated outputs, or retired implementations.
+- Never commit `.env`, `data/`, `logs/`, `GsUID.Core`, SnowLuma, caches, generated outputs, or retired implementations.
 - Stage only explicit project-owned paths. Upstream checkouts must remain clean, stash-free, on the locked branch, tracking `origin/<branch>`, and without local-only commits; update them only through `scripts\install_gsuid.ps1` fast-forward flow.
 - After deleting anything material, report what was removed and whether it is recoverable.

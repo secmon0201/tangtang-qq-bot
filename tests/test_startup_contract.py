@@ -14,14 +14,14 @@ def source(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_full_start_orders_core_before_nonebot_and_napcat():
+def test_full_start_orders_core_before_nonebot_and_qq_transport():
     script = source("scripts/start_all.ps1")
 
-    core = script.index('start_gsuid_core.ps1") -Background')
-    nonebot = script.index('start.ps1")')
-    napcat = script.index("Start-Process -FilePath $env:ComSpec")
+    core = script.index("start_gsuid_core.ps1') -Background")
+    nonebot = script.index("start.ps1')")
+    qq_transport = script.index("start_qq_transport.ps1')")
 
-    assert core < nonebot < napcat
+    assert core < nonebot < qq_transport
 
 
 def test_full_start_and_stop_include_every_project_web_tunnel():
@@ -47,9 +47,10 @@ def test_full_start_and_stop_include_every_project_web_tunnel():
 def test_full_stop_preserves_guard_state_and_stops_tunnel_and_core():
     script = source("scripts/stop_all.ps1")
 
-    assert 'stop_nte_tunnel.ps1") -PreserveGuardState' in script
-    assert 'stop_gsuid_core.ps1")' in script
-    assert script.index('stop_nte_tunnel.ps1")') < script.index('stop_gsuid_core.ps1")')
+    assert "stop_nte_tunnel.ps1') -PreserveGuardState" in script
+    assert "stop_gsuid_core.ps1')" in script
+    assert script.index("stop_nte_tunnel.ps1')") < script.index("stop_gsuid_core.ps1')")
+    assert "stop_snowluma.ps1" in script
 
 
 def test_stopping_core_waits_for_the_process_to_exit_before_a_restart():
@@ -71,15 +72,19 @@ def test_start_and_restart_wrappers_restore_tunnel_and_watchdog():
     for wrapper in ("启动工具/01-启动全部.bat", "启动工具/02-重启全部.bat"):
         script = source(wrapper)
         assert 'for %%I in ("%~dp0..") do set "ROOT=%%~fI"' in script
-        assert "nte_tunnel_disabled.flag" in script
-        assert "scripts\\start_nte_tunnel.ps1" in script
-        assert "scripts\\watch_napcat.ps1" in script
-        assert "data\\cloudflared\\tangtang-web.yml" in script
+        assert "scripts\\start_all.ps1" in script
+        assert "scripts\\watch_qq_transport.ps1" not in script
+
+    startup = source("scripts/start_all.ps1")
+    assert "nte_tunnel_disabled.flag" in startup
+    assert "start_nte_tunnel.ps1" in startup
+    assert "start_watchdog.ps1" in startup
+    assert "data\\cloudflared\\tangtang-web.yml" in startup
 
 
 def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():
     tunnel = source("scripts/start_nte_tunnel.ps1")
-    watchdog = source("scripts/watch_napcat.ps1")
+    watchdog = source("scripts/watch_qq_transport.ps1")
 
     assert '"--protocol", "http2"' in tunnel
     assert "Get-NetTCPConnection -OwningProcess" in watchdog
@@ -89,11 +94,11 @@ def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():
     assert "Invoke-BoundedPowerShellScript" in watchdog
     assert "Wait-Process -Id $process.Id -Timeout $TimeoutSeconds" in watchdog
     assert '-WindowStyle Hidden -Wait' not in watchdog
-    assert 'scriptArguments = @("-SkipCoreRestart")' in watchdog
+    assert "scriptArguments = if (Test-Path -LiteralPath $namedConfig) { @('-SkipCoreRestart') }" in watchdog
 
 
 def test_watchdog_records_a_completed_heartbeat_on_every_loop():
-    watchdog = source("scripts/watch_napcat.ps1")
+    watchdog = source("scripts/watch_qq_transport.ps1")
 
     assert "last_check_started_at" in watchdog
     assert "last_check_completed_at" in watchdog
@@ -107,7 +112,7 @@ def test_watchdog_waits_for_recovery_script_not_its_long_lived_children(tmp_path
 
     child_pid_path = tmp_path / "child.pid"
     probe = ROOT / "tests" / "fixtures" / "watchdog_bounded_probe.ps1"
-    watchdog = ROOT / "scripts" / "watch_napcat.ps1"
+    watchdog = ROOT / "scripts" / "watch_qq_transport.ps1"
     started = time.monotonic()
     completed = subprocess.run(
         [

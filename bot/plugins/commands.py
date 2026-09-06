@@ -822,8 +822,8 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "运行边界",
-                    "Windows 本地｜NoneBot2｜OneBot v11｜NapCat｜SQLite\nNTE 上游只读",
-                    "QQ 登录与验证始终由用户手工完成。普通 Python 改动只重启 NoneBot，不重启 NapCat/QQ，也不修改 GsUID.Core。",
+                    "Windows 本地｜NoneBot2｜OneBot v11｜SnowLuma｜SQLite\nNTE 上游只读",
+                    "QQ 登录与验证始终由用户手工完成。普通 Python 改动只重启 NoneBot，不重启 SnowLuma/QQ，也不修改 GsUID.Core。",
                 ),
             ],
         ),

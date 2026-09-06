@@ -2,7 +2,7 @@
 
 ## Supported Environment
 
-- This repository supports Windows-local deployment only: Python 3.13, NoneBot2, OneBot v11, NapCat/QQNT, PowerShell, and SQLite.
+- This repository supports Windows-local deployment only: Python 3.13, NoneBot2, OneBot v11, SnowLuma/QQNT, PowerShell, and SQLite.
 - Do not add alternative operating-system or virtual-machine deployment assets.
 - QQ login, QR codes, CAPTCHA, slider, SMS, and device verification remain manual user operations.
 
@@ -20,7 +20,7 @@
 - `启动工具`: Chinese operator-facing batch shortcuts; implementations stay in `scripts`.
 - `skills`: repository-owned Codex maintenance skill and its local link helper.
 
-`GsUID.Core`, its UID plugins, NapCat, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
+`GsUID.Core`, its UID plugins, SnowLuma, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
 
 ## Game Interface Ownership
 
@@ -59,7 +59,7 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 - Generated-file cleanup preview: `scripts\clean-generated.ps1`
 - Generated-file cleanup: `scripts\clean-generated.ps1 -Apply`
 
-Do not restart NapCat or QQ for ordinary Python changes. Prefer `scripts\stop.ps1` followed by `scripts\start.ps1`, then verify the PID, port 8080, logs, and OneBot connection.
+Do not restart SnowLuma or QQ for ordinary Python changes. Prefer `scripts\stop.ps1` followed by `scripts\start.ps1`, then verify the PID, port 8080, logs, and OneBot connection.
 
 ## Git Rules
 

@@ -315,7 +315,7 @@ class HourlyAnnouncementService:
                         message=message,
                     )
                 except ActionFailed as exc:
-                    # NapCat can submit a message and then time out waiting for its
+                    # A OneBot gateway can submit a message and then time out waiting for its
                     # local confirmation event. Retrying would duplicate the post.
                     uncertain += 1
                     self.database.mark_hourly_delivery_uncertain(

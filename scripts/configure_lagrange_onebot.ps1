@@ -17,8 +17,9 @@ foreach ($line in Get-Content -LiteralPath $envPath -Encoding utf8) {
     $values[$key.Trim()] = $value
 }
 
-$accountId = [string]$values['NAPCAT_QQ_ID']
-if ($accountId -notmatch '^\d{5,12}$') { throw 'NAPCAT_QQ_ID must be a 5-12 digit QQ number.' }
+$accountId = [string]$values['QQ_ACCOUNT_ID']
+if (-not $accountId) { $accountId = [string]$values['NAPCAT_QQ_ID'] }
+if ($accountId -notmatch '^\d{5,12}$') { throw 'QQ_ACCOUNT_ID must be a 5-12 digit QQ number.' }
 $port = if ([string]$values['PORT'] -match '^\d+$') { [int]$values['PORT'] } else { 8080 }
 if ($port -lt 1 -or $port -gt 65535) { throw 'PORT must be between 1 and 65535.' }
 $lagrangeDir = [string]$values['LAGRANGE_DIR']

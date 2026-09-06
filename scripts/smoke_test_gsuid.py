@@ -166,10 +166,10 @@ async def run(
     expect_no_output: bool,
 ) -> int:
     values = dotenv_values(".env")
-    self_id = int(values["NAPCAT_QQ_ID"] or 0)
+    self_id = int(values.get("QQ_ACCOUNT_ID") or values.get("NAPCAT_QQ_ID") or 0)
     access_token = values.get("ONEBOT_ACCESS_TOKEN")
     if not self_id or not access_token:
-        raise RuntimeError(".env must contain NAPCAT_QQ_ID and ONEBOT_ACCESS_TOKEN")
+        raise RuntimeError(".env must contain QQ_ACCOUNT_ID and ONEBOT_ACCESS_TOKEN")
     managed_groups = tuple(
         int(item.strip())
         for item in (values.get("MANAGED_GROUP_IDS") or "").split(",")

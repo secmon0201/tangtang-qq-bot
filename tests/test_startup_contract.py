@@ -102,6 +102,8 @@ def test_watchdog_records_a_completed_heartbeat_on_every_loop():
 
     assert "last_check_started_at" in watchdog
     assert "last_check_completed_at" in watchdog
+    assert "$connections = @(" in watchdog
+    assert "if ($listenerReady) { Get-OneBotClientConnections" in watchdog
     assert 'nte_tunnel_recovery_timed_out' in watchdog
     assert "finally {" in watchdog
 

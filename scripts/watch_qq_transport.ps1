@@ -174,7 +174,9 @@ function Invoke-WatchdogCheck {
     $botProcesses = @(Get-BotProcesses)
     $listenerReady = Test-BotListener -Port $Settings.Port
     $transportProcesses = @(Get-ConfiguredTransportProcesses -Settings $Settings)
-    $connections = if ($listenerReady) { @(Get-OneBotClientConnections -Port $Settings.Port) } else { @() }
+    $connections = @(
+        if ($listenerReady) { Get-OneBotClientConnections -Port $Settings.Port }
+    )
     $clientMatchesTransport = Test-OneBotConnectionOwnership -Settings $Settings -TransportProcesses $transportProcesses -Connections $connections
 
     if (-not $listenerReady) {

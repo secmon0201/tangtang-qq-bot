@@ -27,17 +27,23 @@ def reply_style_instruction(text: str, random_value: float | None = None) -> str
 
     if _DETAIL_REQUEST_RE.search(text):
         return (
-            "这条消息明确需要解释，可以少见地使用长回答；仍按自然语义拆成 1-4 条消息，"
-            "不要为了短而省略必要信息。"
+            "这条消息明确需要解释，可以少见地使用长回答；仍以短句为主，只保留必要信息，"
+            "按自然语义拆成 1-4 条消息，不要为了凑短而省略必要内容。"
         )
     roll = random.random() if random_value is None else float(random_value)
     if roll < 0.20:
-        return "本次偏极短：用 1-2 条消息，每条通常 2-18 个汉字。"
+        return "本次偏极短：用 1-2 条消息，多数句子 15 字上下，必要时可以有一条稍长。"
     if roll < 0.75:
-        return "本次偏短：用 2-4 条自然短消息，每条通常不超过 35 个汉字。"
+        return (
+            "本次偏短：用 2-4 条自然短消息，多数句子 15 字上下；偶尔允许一条必要的长句，"
+            "让长短有起伏、避免每条等长；超过 16 字只作为倾向压低，不是禁令。"
+        )
     if roll < 0.95:
-        return "本次可稍展开：用 1-3 条消息，总体通常不超过 120 个汉字。"
-    return "本次允许少见的长回答：按内容需要写完整，但不要无意义扩写。"
+        return (
+            "本次可稍展开：用 1-3 条消息，长短交错；"
+            "只有确实需要时才展开，别为长而长。"
+        )
+    return "本次允许少见的长回答：按必要长度写完整，不要无意义扩写。"
 
 
 def parse_reply_plan(

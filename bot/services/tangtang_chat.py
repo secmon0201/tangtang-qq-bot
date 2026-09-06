@@ -31,6 +31,7 @@ from bot.services.tangtang_media import (
 )
 from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.tangtang_reply import parse_reply_plan, reply_style_instruction
+from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
 from bot.services.zhijiang_knowledge import search as zhijiang_search
@@ -348,6 +349,7 @@ class TangtangConfig:
     disabled_reason: str = ""
     tools_enabled: bool = True
     tool_loop_max: int = 3
+    humanize_enabled: bool = True
 
     @classmethod
     def disabled(cls, reason: str = "TANGTANG_ENABLED=false") -> "TangtangConfig":
@@ -364,9 +366,9 @@ class TangtangConfig:
             soft_blacklist_ignore_probability=0.0,
             c_probability=0.40,
             proactive_enabled=False,
-            proactive_probability=0.02,
+            proactive_probability=0.50,
             proactive_probability_by_group={},
-            proactive_cooldown_seconds=1800,
+            proactive_cooldown_seconds=900,
             proactive_cooldown_seconds_by_group={},
             proactive_message_interval=30,
             proactive_message_interval_by_group={},
@@ -421,6 +423,7 @@ class TangtangConfig:
         )
         c_probability = _float(values, "TANGTANG_C_PROBABILITY", 0.40, 0.0, 1.0)
         proactive_enabled = _bool(values, "TANGTANG_PROACTIVE_ENABLED", False)
+        humanize_enabled = _bool(values, "TANGTANG_HUMANIZE_ENABLED", True)
         def group_values(name: str, default: object, parser) -> dict[int, object]:
             if not group_order:
                 return {}
@@ -460,10 +463,10 @@ class TangtangConfig:
         )
 
         proactive_probability_by_group = group_float(
-            "TANGTANG_PROACTIVE_PROBABILITY", 0.02, 0.0, 1.0
+            "TANGTANG_PROACTIVE_PROBABILITY", 0.50, 0.0, 1.0
         )
         proactive_cooldown_seconds_by_group = group_integer(
-            "TANGTANG_PROACTIVE_COOLDOWN_SECONDS", 1800, 0, 86400
+            "TANGTANG_PROACTIVE_COOLDOWN_SECONDS", 900, 0, 86400
         )
         proactive_message_interval_by_group = group_integer(
             "TANGTANG_PROACTIVE_MESSAGE_INTERVAL", 30, 0, 10000
@@ -474,8 +477,8 @@ class TangtangConfig:
             proactive_cooldown_seconds = proactive_cooldown_seconds_by_group[first_group_id]
             proactive_message_interval = proactive_message_interval_by_group[first_group_id]
         else:
-            proactive_probability = 0.02
-            proactive_cooldown_seconds = 1800
+            proactive_probability = 0.50
+            proactive_cooldown_seconds = 900
             proactive_message_interval = 30
         history_messages = _int(values, "TANGTANG_HISTORY_MESSAGES", 10, 0, 100)
         history_chars = _int(values, "TANGTANG_HISTORY_CHARS", 1000, 0, 24000)
@@ -571,6 +574,7 @@ class TangtangConfig:
                 disabled_reason="TANGTANG_ENABLED=false",
                 tools_enabled=tools_enabled,
                 tool_loop_max=tool_loop_max,
+                humanize_enabled=humanize_enabled,
             )
         if not group_ids:
             raise ValueError("TANGTANG_GROUP_IDS is required when TANGTANG_ENABLED=true")
@@ -628,6 +632,7 @@ class TangtangConfig:
             **memory_values,
             tools_enabled=tools_enabled,
             tool_loop_max=tool_loop_max,
+            humanize_enabled=humanize_enabled,
         )
 
     def proactive_values_for(self, group_id: int) -> tuple[float, int, int]:
@@ -1516,8 +1521,10 @@ class TangtangService:
             fixed_parts.append("")
         fixed_parts.append(
             "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
-            "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。情绪词如“哈哈哈、嘿嘿、哼”"
-            "适合单独一条，再另起消息说正文；不要按标点机械拆分，也不要解释判断。"
+            "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。语气词（如“哈哈哈、嘿嘿、哼”）"
+            "不要每条都带、不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略；"
+            "不要按标点机械拆分，"
+            "也不要解释判断。"
         )
         fixed_parts.append(reply_style_instruction(call_text))
         fixed_text = "\n".join(fixed_parts)
@@ -1946,7 +1953,12 @@ class TangtangService:
                 max_bubbles=config.reply_max_bubbles,
                 max_chars=config.max_response_chars,
             )
-            if not plan.decided or not plan.messages:
+            messages = (
+                humanize_messages(plan.messages)
+                if config.humanize_enabled
+                else plan.messages
+            )
+            if not plan.decided or not messages:
                 if force_reply:
                     line = self._pick_canned(group_id) or "我在，怎么啦？"
                     await self._send_and_record(
@@ -1964,7 +1976,6 @@ class TangtangService:
                     config, group_id, user_id, "silent", mode=mode, tokens=usage
                 )
                 return
-            messages = plan.messages
             if black_meme_instruction and any(
                 term in message for message in messages for term in FORBIDDEN_LOCAL_TERMS
             ):

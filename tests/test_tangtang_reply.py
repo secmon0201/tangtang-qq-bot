@@ -37,3 +37,6 @@ def test_longer_reply_tiers_have_lower_default_weight():
     assert "稍展开" in reply_style_instruction("随便聊聊", 0.90)
     assert "少见的长回答" in reply_style_instruction("随便聊聊", 0.99)
     assert "需要解释" in reply_style_instruction("请详细分析一下", 0.10)
+    assert "15 字" in reply_style_instruction("随便聊聊", 0.10)
+    assert "16 字" in reply_style_instruction("随便聊聊", 0.50)
+    assert "长短交错" in reply_style_instruction("随便聊聊", 0.90)

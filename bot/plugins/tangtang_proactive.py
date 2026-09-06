@@ -109,9 +109,9 @@ async def _(event: MessageEvent, args=CommandArg()):
         )
 
     if action in {"概率", "命中率", "probability"}:
-        value = percent_value(tokens[1], 0.2) if len(tokens) == 2 else None
+        value = percent_value(tokens[1], 1.0) if len(tokens) == 2 else None
         if value is None:
-            await proactive_reply.finish("用法：#糖糖主动回复 概率 0-20%")
+            await proactive_reply.finish("用法：#糖糖主动回复 概率 0-100%")
         error = _write_env("TANGTANG_PROACTIVE_PROBABILITY", str(value), config)
         if error:
             await proactive_reply.finish(error)
@@ -160,5 +160,5 @@ async def _(event: MessageEvent, args=CommandArg()):
         )
 
     await proactive_reply.finish(
-        "用法：#糖糖主动回复 状态|开启|关闭|概率 0-20%|冷却 0-1440分钟|间隔 0-10000条"
+        "用法：#糖糖主动回复 状态|开启|关闭|概率 0-100%|冷却 0-1440分钟|间隔 0-10000条"
     )

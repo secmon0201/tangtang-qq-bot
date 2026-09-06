@@ -214,9 +214,13 @@ def test_config_validation():
 def test_proactive_config_defaults_and_validation():
     config = enabled_config()
     assert config.proactive_enabled is False
-    assert config.proactive_probability == 0.02
-    assert config.proactive_cooldown_seconds == 1800
+    assert config.proactive_probability == 0.50
+    assert config.proactive_cooldown_seconds == 900
     assert config.proactive_message_interval == 30
+    assert config.humanize_enabled is True
+
+    config = enabled_config(TANGTANG_HUMANIZE_ENABLED="false")
+    assert config.humanize_enabled is False
 
     config = enabled_config(
         TANGTANG_PROACTIVE_ENABLED="true",
@@ -1063,7 +1067,7 @@ def test_history_context_includes_model_replies_only(tmp_path, monkeypatch):
 
 
 def test_prompt_always_keeps_current_call_and_format(tmp_path, monkeypatch):
-    config = enabled_config(TANGTANG_MAX_INPUT_CHARS="300")
+    config = enabled_config(TANGTANG_MAX_INPUT_CHARS="400")
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     for index in range(10):
         service.record_group_message(
@@ -1084,6 +1088,7 @@ def test_prompt_always_keeps_current_call_and_format(tmp_path, monkeypatch):
     assert "[当前呼叫]" in prompt
     assert "糖糖 再聊两句" in prompt
     assert "输出格式" in prompt
+    assert "不要每条都带" in prompt
     assert len(prompt) <= config.max_input_chars
 
 
@@ -1450,6 +1455,53 @@ def test_model_reply_sends_ordered_bubbles_and_quotes_only_first(tmp_path, monke
     assert calls[0]["reply_text"] == "哈哈哈\n这个确实很好笑"
     parts = service.db.reply_parts(calls[0]["id"])
     assert [row["delivered"] for row in parts] == [1, 1]
+
+
+def test_model_reply_humanizes_ai_tells_before_sending(tmp_path, monkeypatch):
+    service, sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        response=(
+            "[接话]\n[消息]说实话，这条切片有点意思。希望以上信息对你有帮助！\n"
+            "[消息]可能大概也许明天还有新切片。"
+        ),
+    )
+    config = enabled_config(
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖看这个"),
+            config,
+        )
+    )
+    assert len(sent) == 2
+    assert sent[0].extract_plain_text() == "这条切片有点意思。"
+    assert sent[1] == "可能明天还有新切片。"
+
+
+def test_model_reply_keeps_ai_tells_when_humanize_disabled(tmp_path, monkeypatch):
+    service, sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\n说实话，这条切片有点意思。",
+    )
+    config = enabled_config(
+        TANGTANG_HUMANIZE_ENABLED="false",
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖看这个"),
+            config,
+        )
+    )
+    assert len(sent) == 1
+    assert sent[0].extract_plain_text() == "说实话，这条切片有点意思。"
 
 
 def test_partial_bubble_delivery_is_recorded_without_retrying_sent_parts(tmp_path, monkeypatch):

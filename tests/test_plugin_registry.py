@@ -36,7 +36,7 @@ def test_transport_and_feature_flags_are_resolved_without_importing_plugins():
     official = plugin_specs_for("qq_openapi", stats_realtime_enabled=True)
 
     assert {spec.key for spec in enabled} >= {
-        "codex_tasks",
+        "runtime_maintenance",
         "tangtang_proactive",
         "stats",
         "a_coast_archive",

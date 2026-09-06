@@ -59,6 +59,8 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 - Full-stack implementations are `scripts\start_all.ps1`, `scripts\restart_all.ps1`, and `scripts\stop_all.ps1`; startup success requires `scripts\verify_full_stack.ps1` to pass.
 - Generated-file cleanup preview: `scripts\clean-generated.ps1`
 - Generated-file cleanup: `scripts\clean-generated.ps1 -Apply`
+- Runtime cleanup runs at startup and every 6 hours: screenshots use `REPORT_RETENTION_HOURS`; GsUID logs keep 30 days with a 256 MiB cap; avatar caches keep only the current file per QQ.
+- `data/backups` has no automatic deletion policy. Audit it read-only before any removal.
 
 Do not restart SnowLuma or QQ for ordinary Python changes. Prefer `scripts\stop.ps1` followed by `scripts\start.ps1`, then verify the PID, port 8080, logs, and OneBot connection.
 

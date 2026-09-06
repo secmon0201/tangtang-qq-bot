@@ -14,6 +14,13 @@ FORBIDDEN_CREDENTIAL_KEYS = {
     "QQ_CAPTCHA",
     "QQ_VERIFICATION_CODE",
 }
+RETIRED_KEYS = {
+    "CODEX_WORKER_ENABLED",
+    "CODEX_WORKER_COMMAND",
+    "CODEX_WORKER_POLL_SECONDS",
+    "CODEX_WORKER_TIMEOUT_SECONDS",
+    "CODEX_WORKER_SANDBOX",
+}
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -132,44 +139,6 @@ def validate_profile(values: dict[str, str]) -> None:
         )
 
 
-def validate_codex_worker(values: dict[str, str], env_path: Path) -> None:
-    enabled = parse_bool(values.get("CODEX_WORKER_ENABLED", "false"), "CODEX_WORKER_ENABLED")
-    sandbox = values.get("CODEX_WORKER_SANDBOX", "workspace-write").strip().lower()
-    if sandbox not in {"read-only", "workspace-write"}:
-        raise ValueError("CODEX_WORKER_SANDBOX must be read-only or workspace-write")
-    for key, default, minimum, maximum in (
-        ("CODEX_WORKER_POLL_SECONDS", "3", 1, 60),
-        ("CODEX_WORKER_TIMEOUT_SECONDS", "3600", 60, 14_400),
-    ):
-        try:
-            value = int(values.get(key, default))
-        except ValueError as exc:
-            raise ValueError(f"{key} must be an integer") from exc
-        if not minimum <= value <= maximum:
-            raise ValueError(f"{key} must be between {minimum} and {maximum}")
-    if not enabled:
-        return
-    if not parse_bool(
-        values.get("CODEX_COMPLETION_NOTIFY_ENABLED", "false"),
-        "CODEX_COMPLETION_NOTIFY_ENABLED",
-    ):
-        raise ValueError("CODEX_WORKER_ENABLED requires CODEX_COMPLETION_NOTIFY_ENABLED=true")
-    raw_command = values.get("CODEX_WORKER_COMMAND", "").strip()
-    if not raw_command:
-        raise ValueError("CODEX_WORKER_COMMAND is required when CODEX_WORKER_ENABLED=true")
-    workspace = env_path.resolve().parent
-    command = Path(raw_command)
-    if not command.is_absolute():
-        command = workspace / command
-    command = command.resolve()
-    try:
-        command.relative_to(workspace)
-    except ValueError as exc:
-        raise ValueError("CODEX_WORKER_COMMAND must be located inside the bot workspace") from exc
-    if not command.is_file():
-        raise ValueError("CODEX_WORKER_COMMAND does not exist or is not a file")
-
-
 def validate_asoul_bili(values: dict[str, str], managed_set: set[str]) -> None:
     groups = parse_ids(values.get("ASOUL_BILI_GROUP_IDS", ""), "ASOUL_BILI_GROUP_IDS")
     invalid = sorted(set(groups) - managed_set)
@@ -218,6 +187,9 @@ def validate(path: Path) -> tuple[int, int]:
     forbidden = sorted(key for key in values if key.upper() in FORBIDDEN_CREDENTIAL_KEYS)
     if forbidden:
         raise ValueError(f"remove login credentials from .env: {', '.join(forbidden)}")
+    retired = sorted(key for key in values if key.upper() in RETIRED_KEYS)
+    if retired:
+        raise ValueError(f"remove retired QQ Codex worker settings from .env: {', '.join(retired)}")
 
     transport = values.get("BOT_TRANSPORT", "onebot").strip().lower()
     if transport not in {"onebot", "qq_openapi"}:
@@ -359,7 +331,6 @@ def validate(path: Path) -> tuple[int, int]:
             raise ValueError(
                 "CODEX_COMPLETION_NOTIFY_TOKEN or ONEBOT_ACCESS_TOKEN is required when notifications are enabled"
             )
-    validate_codex_worker(values, path)
     if transport == "qq_openapi":
         missing = [
             key

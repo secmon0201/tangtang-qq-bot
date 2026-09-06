@@ -83,7 +83,7 @@ PLUGIN_SPECS = (
     PluginSpec("knowledge_review", "bot.plugins.knowledge_review", "知识库审核", "知识与资料", ("onebot",)),
     PluginSpec("mini_games", "bot.plugins.mini_games", "群聊小游戏", "群聊互动", ("onebot",)),
     PluginSpec("today_wife", "bot.plugins.today_wife", "今日老婆与缘分", "群聊互动", ("onebot",)),
-    PluginSpec("codex_tasks", "bot.plugins.codex_tasks", "Codex 持续任务", "运行维护", ("onebot",)),
+    PluginSpec("runtime_maintenance", "bot.plugins.runtime_maintenance", "运行文件维护", "运行维护", ("onebot",)),
     PluginSpec("codex_completion", "bot.plugins.codex_completion", "Codex 完成通知", "运行维护", ("onebot",)),
     PluginSpec("zhijiang", "bot.plugins.zhijiang", "枝江直播与本地功能", "A-SOUL", ("onebot",)),
     PluginSpec("asoul", "bot.plugins.asoul", "A-SOUL 与 B 站接口", "A-SOUL", ("onebot",)),

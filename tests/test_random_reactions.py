@@ -124,5 +124,3 @@ def test_codex_messages_are_not_eligible_for_passive_interactions(monkeypatch):
         "bot.plugins.random_reactions.passive",
         SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1090284567),
     )
-
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#Codex status"))

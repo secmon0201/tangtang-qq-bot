@@ -41,6 +41,8 @@ The three full-stack shortcuts are thin wrappers over `scripts\start_all.ps1`, `
 
 `scripts\clean-generated.ps1` previews; `-Apply` removes generated caches. Never commit caches.
 
+The `runtime_maintenance` plugin cleans avatar superseded versions, HTML screenshot outputs, and `GsUID.Core/data/logs` at startup and every 6 hours. Screenshots follow `REPORT_RETENTION_HOURS`; GsUID logs use 30 days plus a 256 MiB cap. Never include player data or `data/backups` in automatic cleanup. Audit backups with `scripts\audit_database_backups.py` before proposing a retention policy.
+
 ## Git
 
 - Commit the complete project-owned QQ bot in one repository; NTE is not a separate repository.

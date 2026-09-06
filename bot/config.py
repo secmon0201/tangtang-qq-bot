@@ -131,11 +131,6 @@ class Settings:
     codex_completion_notify_group_id: int | None
     codex_completion_notify_super_admin_id: int | None
     codex_completion_notify_token: str | None
-    codex_worker_enabled: bool
-    codex_worker_command: Path | None
-    codex_worker_poll_seconds: int
-    codex_worker_timeout_seconds: int
-    codex_worker_sandbox: str
     report_output_mode: str
     report_dir: Path
     report_font_path: Path | None
@@ -520,29 +515,6 @@ class Settings:
                     "CODEX_COMPLETION_NOTIFY_TOKEN or ONEBOT_ACCESS_TOKEN is required when notifications are enabled"
                 )
 
-        codex_worker_enabled = boolean("CODEX_WORKER_ENABLED", False)
-        codex_worker_command_value = os.getenv("CODEX_WORKER_COMMAND", "").strip()
-        codex_worker_command = Path(codex_worker_command_value) if codex_worker_command_value else None
-        if codex_worker_command is not None and not codex_worker_command.is_absolute():
-            codex_worker_command = ROOT / codex_worker_command
-        if codex_worker_command is not None:
-            codex_worker_command = codex_worker_command.resolve()
-        codex_worker_sandbox = os.getenv("CODEX_WORKER_SANDBOX", "workspace-write").strip().lower()
-        if codex_worker_sandbox not in {"read-only", "workspace-write"}:
-            raise ValueError("CODEX_WORKER_SANDBOX must be read-only or workspace-write")
-        codex_worker_poll_seconds = integer("CODEX_WORKER_POLL_SECONDS", 3, 1, 60)
-        codex_worker_timeout_seconds = integer("CODEX_WORKER_TIMEOUT_SECONDS", 3600, 60, 14_400)
-        if codex_worker_enabled:
-            if not codex_completion_notify_enabled:
-                raise ValueError("CODEX_WORKER_ENABLED requires CODEX_COMPLETION_NOTIFY_ENABLED=true")
-            if codex_worker_command is None:
-                raise ValueError("CODEX_WORKER_COMMAND is required when CODEX_WORKER_ENABLED=true")
-            try:
-                codex_worker_command.relative_to(ROOT.resolve())
-            except ValueError as exc:
-                raise ValueError("CODEX_WORKER_COMMAND must be located inside the bot workspace") from exc
-            if not codex_worker_command.is_file():
-                raise ValueError("CODEX_WORKER_COMMAND does not exist or is not a file")
         require_mention = boolean("BOT_REQUIRE_MENTION", False)
         if require_mention:
             raise ValueError("BOT_REQUIRE_MENTION must be false; commands use the # prefix")
@@ -603,11 +575,6 @@ class Settings:
             codex_completion_notify_group_id=codex_completion_notify_group_id,
             codex_completion_notify_super_admin_id=codex_completion_notify_super_admin_id,
             codex_completion_notify_token=codex_completion_notify_token,
-            codex_worker_enabled=codex_worker_enabled,
-            codex_worker_command=codex_worker_command,
-            codex_worker_poll_seconds=codex_worker_poll_seconds,
-            codex_worker_timeout_seconds=codex_worker_timeout_seconds,
-            codex_worker_sandbox=codex_worker_sandbox,
             report_output_mode=report_mode,
             report_dir=report_dir,
             report_font_path=report_font_path,

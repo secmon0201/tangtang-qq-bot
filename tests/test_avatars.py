@@ -96,6 +96,35 @@ def test_avatar_service_migrates_legacy_cache_path_on_first_refresh(tmp_path: Pa
 
     assert refreshed != legacy
     assert refreshed.name.startswith("7.")
+    assert not legacy.exists()
+
+
+def test_avatar_service_refresh_removes_every_previous_version(tmp_path: Path):
+    payload = BytesIO()
+    Image.new("RGB", (16, 16), "#ff0000").save(payload, format="PNG")
+    legacy = tmp_path / "7.png"
+    previous = tmp_path / "7.aaaaaaaaaaaaaaaa.png"
+    Image.new("RGB", (16, 16), "#00ff00").save(legacy)
+    Image.new("RGB", (16, 16), "#0000ff").save(previous)
+    old_time = time.time() - 7200
+    os.utime(legacy, (old_time - 1, old_time - 1))
+    os.utime(previous, (old_time, old_time))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=payload.getvalue(), request=request)
+
+    service = AvatarService(
+        tmp_path,
+        "https://avatar.test/avatar/{user_id}",
+        refresh_interval=1,
+        transport=httpx.MockTransport(handler),
+    )
+
+    current = asyncio.run(service.prefetch([{"user_id": 7}]))[7]
+
+    assert current.exists()
+    assert not legacy.exists()
+    assert not previous.exists()
 
 
 def test_avatar_service_keeps_old_avatar_during_failure_and_applies_cooldown(tmp_path: Path):

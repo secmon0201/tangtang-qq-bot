@@ -10,6 +10,37 @@ def make_db(tmp_path):
     return db
 
 
+def test_database_removes_retired_codex_task_tables(tmp_path):
+    path = tmp_path / "bot.db"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE codex_tasks (task_id INTEGER PRIMARY KEY, title TEXT);
+            CREATE TABLE codex_task_messages (
+                message_id INTEGER PRIMARY KEY,
+                task_id INTEGER REFERENCES codex_tasks(task_id)
+            );
+            INSERT INTO codex_tasks(task_id,title) VALUES (1,'retired');
+            INSERT INTO codex_task_messages(message_id,task_id) VALUES (1,1);
+            """
+        )
+
+    db = Database(path)
+
+    with db.connect() as connection:
+        tables = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'codex_task%'"
+            )
+        }
+        migration = connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE version=2"
+        ).fetchone()
+    assert tables == set()
+    assert migration is not None
+
+
 def test_duplicate_scan_and_whitelist(tmp_path):
     db = make_db(tmp_path)
     db.replace_members(

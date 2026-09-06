@@ -8,7 +8,6 @@ from bot.openapi import configure_official_environment, official_runtime
 def _official_settings(monkeypatch) -> Settings:
     monkeypatch.setenv("BOT_TRANSPORT", "qq_openapi")
     monkeypatch.setenv("CODEX_COMPLETION_NOTIFY_ENABLED", "false")
-    monkeypatch.setenv("CODEX_WORKER_ENABLED", "false")
     monkeypatch.setenv("QQ_OPENAPI_APP_ID", "1903484661")
     monkeypatch.setenv("QQ_OPENAPI_TOKEN", "test-token")
     monkeypatch.setenv("QQ_OPENAPI_APP_SECRET", "test-secret")

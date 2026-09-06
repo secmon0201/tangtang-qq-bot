@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import threading
 import time
 from collections.abc import Mapping, Sequence
@@ -43,6 +44,7 @@ class AvatarService:
         self.concurrency = max(1, int(concurrency))
 
     _registry_lock = threading.Lock()
+    _cache_name = re.compile(r"^(?P<user_id>\d+)(?:\.[0-9a-f]{16})?\.png$", re.IGNORECASE)
     _refresh_locks: dict[tuple[str, int], asyncio.Lock] = {}
     _next_attempt_at: dict[tuple[str, int], float] = {}
 
@@ -210,13 +212,51 @@ class AvatarService:
             return False
 
     def _cleanup_versions(self, user_id: int, active: Path) -> None:
-        candidates = [path for path in self.cache_dir.glob(f"{user_id}.*.png") if path != active]
-        candidates.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
-        for path in candidates[1:]:
+        candidates = [self.cache_dir / f"{user_id}.png", *self.cache_dir.glob(f"{user_id}.*.png")]
+        for path in candidates:
+            if path == active:
+                continue
             try:
                 path.unlink()
             except OSError:
                 pass
+
+    @classmethod
+    def cleanup_stale_versions(cls, cache_dir: Path) -> tuple[int, int, int]:
+        """Remove cache files that can no longer be selected by ``_current_path``."""
+
+        if not cache_dir.is_dir():
+            return (0, 0, 0)
+        grouped: dict[int, list[Path]] = {}
+        for path in cache_dir.iterdir():
+            if not path.is_file() or (match := cls._cache_name.fullmatch(path.name)) is None:
+                continue
+            grouped.setdefault(int(match.group("user_id")), []).append(path)
+
+        scanned = sum(len(paths) for paths in grouped.values())
+        removed = 0
+        removed_bytes = 0
+        for paths in grouped.values():
+            existing: list[tuple[float, str, Path, int]] = []
+            for path in paths:
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                existing.append((stat.st_mtime, path.name.lower(), path, stat.st_size))
+            if not existing:
+                continue
+            active = max(existing, key=lambda item: (item[0], item[1]))[2]
+            for _modified, _name, path, size in existing:
+                if path == active:
+                    continue
+                try:
+                    path.unlink()
+                except OSError:
+                    continue
+                removed += 1
+                removed_bytes += size
+        return (scanned, removed, removed_bytes)
 
     def _default_url(self, user_id: int) -> str:
         try:

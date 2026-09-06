@@ -89,7 +89,6 @@ def _prepare_server_env() -> None:
     os.environ["gsuid_core_port"] = os.environ.get("gsuid_core_port", "8765")
     os.environ["gsuid_core_botid"] = SMOKE_BOT_ID
     os.environ["STATS_REALTIME_ENABLED"] = "false"
-    os.environ["CODEX_WORKER_ENABLED"] = "false"
     os.environ["CODEX_COMPLETION_NOTIFY_ENABLED"] = "false"
 
 

@@ -7,7 +7,6 @@ from bot.config import Settings, managed_group_order
 def disable_real_completion_notification(monkeypatch):
     """Keep config unit tests independent from the workstation's real QQ targets."""
     monkeypatch.setenv("CODEX_COMPLETION_NOTIFY_ENABLED", "false")
-    monkeypatch.setenv("CODEX_WORKER_ENABLED", "false")
     monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "false")
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
     for key in (

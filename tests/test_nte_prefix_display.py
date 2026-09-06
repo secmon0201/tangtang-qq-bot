@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+import builtins
 
 from bot.services.nte_prefix_display import display_command_prefix, patch_upstream_nte_prefix
 
@@ -25,3 +26,18 @@ def test_patch_upstream_nte_prefix_wraps_only_display_helper(monkeypatch):
     assert patch_upstream_nte_prefix() is True
     assert prefix_module.nte_prefix() == "#nte"
     assert patch_upstream_nte_prefix() is True
+
+
+def test_patch_upstream_nte_prefix_never_imports_the_external_core(monkeypatch):
+    prefix_name = "gsuid_core.plugins.NTEUID.NTEUID.nte_config.prefix"
+    monkeypatch.delitem(sys.modules, prefix_name, raising=False)
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name.startswith("gsuid_core"):
+            raise AssertionError("external Core import is forbidden")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    assert patch_upstream_nte_prefix() is False

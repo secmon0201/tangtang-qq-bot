@@ -49,7 +49,17 @@ function Archive-PreviousBotLogs {
     $archiveDir = Join-Path $HistoryRoot (Get-Date).ToString("yyyyMMdd-HHmmss-fff")
     New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
     foreach ($path in $existing) {
-        Move-Item -LiteralPath $path -Destination (Join-Path $archiveDir (Split-Path -Leaf $path)) -Force
+        $destination = Join-Path $archiveDir (Split-Path -Leaf $path)
+        $moved = $false
+        for ($attempt = 0; $attempt -lt 60 -and -not $moved; $attempt++) {
+            try {
+                Move-Item -LiteralPath $path -Destination $destination -Force -ErrorAction Stop
+                $moved = $true
+            } catch {
+                if ($attempt -eq 59) { throw }
+                Start-Sleep -Milliseconds 250
+            }
+        }
     }
 
     $expired = @(Get-ChildItem -LiteralPath $HistoryRoot -Directory -ErrorAction SilentlyContinue |

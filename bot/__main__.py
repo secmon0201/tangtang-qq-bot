@@ -70,7 +70,7 @@ def main() -> None:
         )
     if settings.gsuid_enabled and settings.transport == "onebot":
         if not patch_upstream_nte_prefix():
-            logger.warning("NTEUID display prefix patch skipped: upstream package is unavailable")
+            logger.info("NTEUID display prefix patch skipped: module is not loaded in this process")
         if importlib.util.find_spec("GenshinUID") is None:
             logger.warning(
                 "GSUID_ENABLED=true but the GenshinUID Core connector is not installed; "

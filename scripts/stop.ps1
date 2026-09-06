@@ -14,10 +14,19 @@ $botProcesses = @(Get-CimInstance Win32_Process | Where-Object {
 if ($botProcesses.Count -eq 0) {
     Write-Output "Bot process not found."
 } else {
+    $stoppedProcessIds = [System.Collections.Generic.List[int]]::new()
     foreach ($process in $botProcesses) {
-        Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction SilentlyContinue
+        $processId = [int]$process.ProcessId
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        $stoppedProcessIds.Add($processId)
         Add-Content -LiteralPath $LifecycleLog -Encoding utf8 -Value ("{0} bot_stop_requested pid={1}" -f (Get-Date).ToString("o"), $process.ProcessId)
         Write-Output "Stopped bot PID $($process.ProcessId)"
+    }
+    foreach ($processId in $stoppedProcessIds) {
+        Wait-Process -Id $processId -Timeout 15 -ErrorAction SilentlyContinue
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            throw "Bot PID $processId did not stop within 15 seconds."
+        }
     }
 }
 

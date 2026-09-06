@@ -198,8 +198,8 @@ function Get-ConfiguredTransportProcesses {
 function Test-OneBotConnectionOwnership {
     param(
         [Parameter(Mandatory)][object]$Settings,
-        [Parameter(Mandatory)][object[]]$TransportProcesses,
-        [Parameter(Mandatory)][object[]]$Connections
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$TransportProcesses,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Connections
     )
 
     if ($TransportProcesses.Count -ne 1 -or $Connections.Count -ne 1) { return $false }

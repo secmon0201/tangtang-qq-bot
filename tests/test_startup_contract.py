@@ -61,6 +61,18 @@ def test_stopping_core_waits_for_the_process_to_exit_before_a_restart():
     assert "did not stop within 15 seconds" in script
 
 
+def test_nonebot_restart_waits_for_exit_and_retries_locked_log_archives():
+    stop = source("scripts/stop.ps1")
+    start = source("scripts/start.ps1")
+
+    assert "Wait-Process -Id $processId -Timeout 15" in stop
+    assert "Bot PID $processId did not stop within 15 seconds" in stop
+    assert "for ($attempt = 0; $attempt -lt 60" in start
+    assert "Move-Item -LiteralPath $path -Destination $destination -Force -ErrorAction Stop" in start
+    assert "if ($attempt -eq 59) { throw }" in start
+    assert "Start-Sleep -Milliseconds 250" in start
+
+
 def test_tunnel_stop_can_preserve_the_user_guard_choice():
     script = source("scripts/stop_nte_tunnel.ps1")
 

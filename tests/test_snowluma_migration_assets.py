@@ -101,6 +101,7 @@ def test_napcat_rollback_status_checks_socket_ownership_through_qq_process_tree(
     assert "Get-QqRootsConnectedToPort -Port $Settings.Port" in ownership
     assert "connectedRoots[0].Pid" in ownership
     assert "return $true" not in ownership
+    assert ownership.count("[AllowEmptyCollection()]") == 2
 
 
 def test_environment_template_selects_snowluma_without_login_material():

@@ -25,6 +25,8 @@ from bot.services.tangtang_chat import (
     resolve_at_labels,
 )
 from bot.services.tangtang_db import TangtangDb
+from bot.services.tangtang_media import VisionImage
+from bot.services.tangtang_media import MediaResolution
 
 
 def group_message(
@@ -96,9 +98,11 @@ class FakeProvider:
         self.calls = 0
         self.histories: list[list[dict]] = []
         self.prompts: list[str] = []
+        self.images: list[tuple[VisionImage, ...]] = []
 
-    async def generate(self, config, persona, prompt):
+    async def generate(self, config, persona, prompt, images=()):
         self.calls += 1
+        self.images.append(tuple(images))
         return self.response, {
             "prompt_tokens": 10,
             "completion_tokens": 5,
@@ -107,10 +111,13 @@ class FakeProvider:
             "latency_ms": 100,
         }
 
-    async def generate_agent(self, config, persona, prompt, tools=(), history=()):
+    async def generate_agent(
+        self, config, persona, prompt, tools=(), history=(), images=()
+    ):
         self.calls += 1
         self.prompts.append(prompt)
         self.histories.append(list(history))
+        self.images.append(tuple(images))
         if self.tool_sequence and self.calls <= len(self.tool_sequence):
             text, calls = self.tool_sequence[self.calls - 1]
             return AgentResult(
@@ -1387,6 +1394,124 @@ def test_responses_payload_supports_tools_and_history():
         "call_id": "c1",
         "output": '{"results": []}',
     }
+
+
+def test_provider_payloads_include_real_multimodal_image_parts():
+    config = enabled_config(TANGTANG_VISION_DETAIL="high")
+    image = VisionImage(
+        source="current",
+        ordinal=1,
+        data_url="data:image/jpeg;base64,dGVzdA==",
+        mime_type="image/jpeg",
+        sha256="a" * 64,
+        byte_count=4,
+    )
+    responses = TangtangProvider._responses_payload(
+        config, "persona", "prompt", images=(image,)
+    )
+    user_parts = responses["input"][1]["content"]
+    assert user_parts[-1] == {
+        "type": "input_image",
+        "image_url": image.data_url,
+        "detail": "high",
+    }
+    chat = TangtangProvider._chat_payload(
+        enabled_config(TANGTANG_API_STYLE="chat_completions"),
+        "persona",
+        "prompt",
+        images=(image,),
+    )
+    assert chat["messages"][1]["content"][-1]["type"] == "image_url"
+
+
+def test_model_reply_sends_ordered_bubbles_and_quotes_only_first(tmp_path, monkeypatch):
+    service, sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\n[消息]哈哈哈\n[消息]这个确实很好笑",
+    )
+    config = enabled_config(
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖看这个"),
+            config,
+        )
+    )
+    assert len(sent) == 2
+    assert has_reply_segment(sent[0])
+    assert not has_reply_segment(sent[1])
+    assert sent[0].extract_plain_text() == "哈哈哈"
+    assert sent[1] == "这个确实很好笑"
+    calls = service.db.list_calls(3, 1001)
+    assert calls[0]["reply_text"] == "哈哈哈\n这个确实很好笑"
+    parts = service.db.reply_parts(calls[0]["id"])
+    assert [row["delivered"] for row in parts] == [1, 1]
+
+
+def test_partial_bubble_delivery_is_recorded_without_retrying_sent_parts(tmp_path, monkeypatch):
+    service, _sent, _provider, usage_dir = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\n[消息]第一条\n[消息]第二条",
+    )
+    attempts = 0
+
+    async def fail_second(bot, api, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise RuntimeError("send failed")
+        return {"data": {"message_id": "sent-1"}}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", fail_second)
+    config = enabled_config(
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖测试分段"),
+            config,
+        )
+    )
+    assert attempts == 2
+    call = service.db.list_calls(3, 1001)[0]
+    assert call["reply_text"] == "第一条"
+    parts = service.db.reply_parts(call["id"])
+    assert [row["delivered"] for row in parts] == [1, 0]
+    assert parts[0]["platform_message_id"] == "sent-1"
+    assert usage_events(usage_dir)[-1]["detail"] == "partial_delivery"
+
+
+def test_vision_image_is_forwarded_to_provider(tmp_path, monkeypatch):
+    image = VisionImage(
+        source="current",
+        ordinal=1,
+        data_url="data:image/jpeg;base64,dGVzdA==",
+        mime_type="image/jpeg",
+        sha256="a" * 64,
+        byte_count=4,
+    )
+
+    class FakeResolver:
+        async def resolve_references(self, references):
+            assert tuple(references)
+            return MediaResolution((image,), ())
+
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    service.media_resolver = FakeResolver()
+    event = group_message(group_id=1001, text="糖糖看看")
+    event.message.append(
+        MessageSegment("image", {"url": "https://example.test/image.png"})
+    )
+    asyncio.run(service.handle(SimpleNamespace(self_id=2), event, enabled_config()))
+    assert provider.images[-1] == (image,)
+    assert "已读取 当前消息图片 1" in provider.prompts[-1]
 
 
 def test_chat_payload_supports_tools_and_history():

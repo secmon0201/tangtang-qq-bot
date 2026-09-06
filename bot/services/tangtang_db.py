@@ -47,7 +47,76 @@ CREATE TABLE IF NOT EXISTS tangtang_proactive_state (
     last_reply_at REAL NOT NULL DEFAULT 0,
     messages_since_reply INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS tangtang_reply_parts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_id INTEGER NOT NULL,
+    part_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    platform_message_id TEXT NOT NULL DEFAULT '',
+    error_type TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE(call_id, part_index)
+);
+CREATE INDEX IF NOT EXISTS idx_tangtang_reply_parts_call
+    ON tangtang_reply_parts (call_id, part_index);
+CREATE TABLE IF NOT EXISTS tangtang_self_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_hash TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tangtang_self_versions_active
+    ON tangtang_self_versions (active, id DESC);
+CREATE TABLE IF NOT EXISTS tangtang_memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    normalized_content TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('candidate', 'active', 'archived', 'deleted')),
+    importance REAL NOT NULL DEFAULT 0.5,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    evidence_count INTEGER NOT NULL DEFAULT 1,
+    source_message_id TEXT NOT NULL DEFAULT '',
+    source_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT,
+    deleted_at TEXT,
+    UNIQUE(group_id, user_id, kind, source_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_tangtang_memories_scope
+    ON tangtang_memories (group_id, user_id, status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS tangtang_relationship_state (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    familiarity REAL NOT NULL DEFAULT 0,
+    warmth REAL NOT NULL DEFAULT 0.5,
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS tangtang_persona_state (
+    group_id INTEGER PRIMARY KEY,
+    valence REAL NOT NULL DEFAULT 0.5,
+    energy REAL NOT NULL DEFAULT 0.5,
+    interaction_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
 """
+
+
+class _ClosingConnection(sqlite3.Connection):
+    """Commit or roll back like sqlite3.Connection, then release Windows locks."""
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        try:
+            return bool(super().__exit__(exc_type, exc_value, traceback))
+        finally:
+            self.close()
 
 
 class TangtangDb:
@@ -62,7 +131,7 @@ class TangtangDb:
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path)
+        conn = sqlite3.connect(self.path, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
@@ -109,9 +178,9 @@ class TangtangDb:
         reply_kind: str,
         mode: str,
         created_at: str,
-    ) -> None:
+    ) -> int:
         with self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO tangtang_calls "
                 "(group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -124,6 +193,250 @@ class TangtangDb:
                     reply_kind,
                     mode,
                     created_at,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+    def insert_reply_parts(
+        self,
+        call_id: int,
+        parts: list[dict[str, Any]],
+        *,
+        created_at: str,
+    ) -> None:
+        if not parts:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO tangtang_reply_parts "
+                "(call_id, part_index, text, delivered, platform_message_id, error_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        int(call_id),
+                        int(part["part_index"]),
+                        str(part.get("text") or ""),
+                        1 if part.get("delivered") else 0,
+                        str(part.get("platform_message_id") or ""),
+                        str(part.get("error_type") or ""),
+                        created_at,
+                    )
+                    for part in parts
+                ],
+            )
+
+    def reply_parts(self, call_id: int) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tangtang_reply_parts WHERE call_id = ? ORDER BY part_index",
+                (int(call_id),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def ensure_self_version(
+        self,
+        version_hash: str,
+        content: str,
+        *,
+        created_at: str,
+    ) -> None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM tangtang_self_versions WHERE version_hash = ?",
+                (str(version_hash),),
+            ).fetchone()
+            if row is not None:
+                conn.execute(
+                    "UPDATE tangtang_self_versions SET active = 1 WHERE id = ?",
+                    (int(row["id"]),),
+                )
+                conn.execute(
+                    "UPDATE tangtang_self_versions SET active = 0 WHERE id <> ?",
+                    (int(row["id"]),),
+                )
+                return
+            conn.execute("UPDATE tangtang_self_versions SET active = 0")
+            conn.execute(
+                "INSERT INTO tangtang_self_versions "
+                "(version_hash, content, active, created_at) VALUES (?, ?, 1, ?)",
+                (str(version_hash), str(content), created_at),
+            )
+
+    def upsert_memory(
+        self,
+        *,
+        group_id: int,
+        user_id: int,
+        kind: str,
+        content: str,
+        normalized_content: str,
+        status: str,
+        importance: float,
+        confidence: float,
+        source_message_id: str | int,
+        source_hash: str,
+        now: str,
+    ) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, evidence_count, status FROM tangtang_memories "
+                "WHERE group_id = ? AND user_id = ? AND kind = ? AND source_hash = ?",
+                (int(group_id), int(user_id), str(kind), str(source_hash)),
+            ).fetchone()
+            if row is None:
+                cursor = conn.execute(
+                    "INSERT INTO tangtang_memories "
+                    "(group_id, user_id, kind, content, normalized_content, status, "
+                    "importance, confidence, source_message_id, source_hash, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        int(group_id), int(user_id), str(kind), str(content),
+                        str(normalized_content), str(status), float(importance),
+                        float(confidence), str(source_message_id or ""),
+                        str(source_hash), now, now,
+                    ),
+                )
+                return int(cursor.lastrowid)
+            evidence_count = int(row["evidence_count"]) + 1
+            next_status = str(row["status"])
+            if next_status == "candidate" and (status == "active" or evidence_count >= 2):
+                next_status = "active"
+            conn.execute(
+                "UPDATE tangtang_memories SET content = ?, normalized_content = ?, "
+                "status = ?, importance = MAX(importance, ?), confidence = MAX(confidence, ?), "
+                "evidence_count = ?, source_message_id = ?, updated_at = ?, deleted_at = NULL "
+                "WHERE id = ?",
+                (
+                    str(content), str(normalized_content), next_status,
+                    float(importance), float(confidence), evidence_count,
+                    str(source_message_id or ""), now, int(row["id"]),
+                ),
+            )
+            return int(row["id"])
+
+    def active_memories(
+        self,
+        group_id: int,
+        user_id: int,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tangtang_memories WHERE group_id = ? AND user_id = ? "
+                "AND status = 'active' AND (expires_at IS NULL OR expires_at > datetime('now')) "
+                "ORDER BY importance DESC, confidence DESC, updated_at DESC LIMIT ?",
+                (int(group_id), int(user_id), max(1, min(int(limit), 500))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def forget_memories(
+        self,
+        group_id: int,
+        user_id: int,
+        query: str,
+        *,
+        now: str,
+    ) -> int:
+        needle = str(query).strip().lower()
+        if not needle:
+            return 0
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE tangtang_memories SET status = 'deleted', deleted_at = ?, updated_at = ? "
+                "WHERE group_id = ? AND user_id = ? AND status IN ('candidate', 'active') "
+                "AND instr(lower(content), ?) > 0",
+                (now, now, int(group_id), int(user_id), needle),
+            )
+            return int(cursor.rowcount)
+
+    def restore_memories(
+        self,
+        group_id: int,
+        user_id: int,
+        query: str,
+        *,
+        now: str,
+    ) -> int:
+        needle = str(query).strip().lower()
+        if not needle:
+            return 0
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE tangtang_memories SET status = 'active', deleted_at = NULL, updated_at = ? "
+                "WHERE group_id = ? AND user_id = ? AND status = 'deleted' "
+                "AND instr(lower(content), ?) > 0",
+                (now, int(group_id), int(user_id), needle),
+            )
+            return int(cursor.rowcount)
+
+    def relationship_state(self, group_id: int, user_id: int) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tangtang_relationship_state WHERE group_id = ? AND user_id = ?",
+                (int(group_id), int(user_id)),
+            ).fetchone()
+        return dict(row) if row is not None else {
+            "group_id": int(group_id), "user_id": int(user_id),
+            "familiarity": 0.0, "warmth": 0.5, "interaction_count": 0,
+        }
+
+    def update_relationship_state(
+        self,
+        group_id: int,
+        user_id: int,
+        *,
+        warmth_delta: float,
+        now: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tangtang_relationship_state "
+                "(group_id, user_id, updated_at) VALUES (?, ?, ?)",
+                (int(group_id), int(user_id), now),
+            )
+            conn.execute(
+                "UPDATE tangtang_relationship_state SET "
+                "interaction_count = interaction_count + 1, "
+                "familiarity = MIN(1.0, familiarity + 0.01), "
+                "warmth = MIN(1.0, MAX(0.0, warmth + ?)), updated_at = ? "
+                "WHERE group_id = ? AND user_id = ?",
+                (max(-0.03, min(0.03, float(warmth_delta))), now, int(group_id), int(user_id)),
+            )
+
+    def persona_state(self, group_id: int) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM tangtang_persona_state WHERE group_id = ?",
+                (int(group_id),),
+            ).fetchone()
+        return dict(row) if row is not None else {
+            "group_id": int(group_id), "valence": 0.5,
+            "energy": 0.5, "interaction_count": 0,
+        }
+
+    def update_persona_state(
+        self,
+        group_id: int,
+        *,
+        valence_delta: float,
+        energy_delta: float,
+        now: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tangtang_persona_state (group_id, updated_at) VALUES (?, ?)",
+                (int(group_id), now),
+            )
+            conn.execute(
+                "UPDATE tangtang_persona_state SET interaction_count = interaction_count + 1, "
+                "valence = MIN(1.0, MAX(0.0, valence + ?)), "
+                "energy = MIN(1.0, MAX(0.0, energy + ?)), updated_at = ? WHERE group_id = ?",
+                (
+                    max(-0.02, min(0.02, float(valence_delta))),
+                    max(-0.02, min(0.02, float(energy_delta))),
+                    now,
+                    int(group_id),
                 ),
             )
 
@@ -388,11 +701,22 @@ class TangtangDb:
 
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT reply_text FROM tangtang_calls "
+                "SELECT id, reply_text FROM tangtang_calls "
                 "WHERE group_id = ? ORDER BY id DESC LIMIT ?",
                 (int(group_id), int(limit)),
             ).fetchall()
-        return any(str(row["reply_text"]) == str(text) for row in rows)
+            call_ids = tuple(int(row["id"]) for row in rows)
+            part_rows: list[sqlite3.Row] = []
+            if call_ids:
+                placeholders = ",".join("?" for _ in call_ids)
+                part_rows = conn.execute(
+                    f"SELECT text FROM tangtang_reply_parts "
+                    f"WHERE delivered = 1 AND call_id IN ({placeholders})",
+                    call_ids,
+                ).fetchall()
+        return any(str(row["reply_text"]) == str(text) for row in rows) or any(
+            str(row["text"]) == str(text) for row in part_rows
+        )
 
     def model_reply_lines(
         self,

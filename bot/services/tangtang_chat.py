@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 import re
@@ -21,6 +22,15 @@ from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
+from bot.services.tangtang_media import (
+    ImageReference,
+    MediaResolution,
+    TangtangMediaResolver,
+    VisionImage,
+    extract_image_references,
+)
+from bot.services.tangtang_memory import TangtangMemoryKernel
+from bot.services.tangtang_reply import parse_reply_plan, reply_style_instruction
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
 from bot.services.zhijiang_knowledge import search as zhijiang_search
@@ -320,6 +330,21 @@ class TangtangConfig:
     max_response_chars: int
     history_messages: int
     history_chars: int
+    vision_enabled: bool
+    vision_max_images: int
+    vision_max_image_bytes: int
+    vision_max_total_bytes: int
+    vision_max_pixels: int
+    vision_max_dimension: int
+    vision_timeout_seconds: int
+    vision_detail: str
+    reply_bubbles_enabled: bool
+    reply_max_bubbles: int
+    reply_delay_min_ms: int
+    reply_delay_max_ms: int
+    memory_enabled: bool
+    memory_recall_limit: int
+    persona_state_enabled: bool
     disabled_reason: str = ""
     tools_enabled: bool = True
     tool_loop_max: int = 3
@@ -356,6 +381,21 @@ class TangtangConfig:
             max_response_chars=0,
             history_messages=10,
             history_chars=1000,
+            vision_enabled=False,
+            vision_max_images=4,
+            vision_max_image_bytes=8 * 1024 * 1024,
+            vision_max_total_bytes=16 * 1024 * 1024,
+            vision_max_pixels=20_000_000,
+            vision_max_dimension=2048,
+            vision_timeout_seconds=10,
+            vision_detail="auto",
+            reply_bubbles_enabled=False,
+            reply_max_bubbles=6,
+            reply_delay_min_ms=0,
+            reply_delay_max_ms=0,
+            memory_enabled=False,
+            memory_recall_limit=5,
+            persona_state_enabled=False,
             disabled_reason=reason,
         )
 
@@ -441,6 +481,59 @@ class TangtangConfig:
         history_chars = _int(values, "TANGTANG_HISTORY_CHARS", 1000, 0, 24000)
         tools_enabled = _bool(values, "TANGTANG_TOOLS_ENABLED", True)
         tool_loop_max = _int(values, "TANGTANG_TOOL_LOOP_MAX", 3, 1, 8)
+        vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
+        vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "auto").lower()
+        if vision_detail not in {"auto", "low", "high"}:
+            raise ValueError("TANGTANG_VISION_DETAIL must be auto, low or high")
+        vision_values = {
+            "vision_enabled": vision_enabled,
+            "vision_max_images": _int(values, "TANGTANG_VISION_MAX_IMAGES", 4, 1, 8),
+            "vision_max_image_bytes": _int(
+                values, "TANGTANG_VISION_MAX_IMAGE_BYTES", 8 * 1024 * 1024, 1024, 20 * 1024 * 1024
+            ),
+            "vision_max_total_bytes": _int(
+                values, "TANGTANG_VISION_MAX_TOTAL_BYTES", 16 * 1024 * 1024, 1024, 40 * 1024 * 1024
+            ),
+            "vision_max_pixels": _int(
+                values, "TANGTANG_VISION_MAX_PIXELS", 20_000_000, 10_000, 100_000_000
+            ),
+            "vision_max_dimension": _int(
+                values, "TANGTANG_VISION_MAX_DIMENSION", 2048, 256, 4096
+            ),
+            "vision_timeout_seconds": _int(
+                values, "TANGTANG_VISION_TIMEOUT_SECONDS", 10, 1, 30
+            ),
+            "vision_detail": vision_detail,
+        }
+        reply_delay_min_ms = _int(
+            values, "TANGTANG_REPLY_DELAY_MIN_MS", 500, 0, 5000
+        )
+        reply_delay_max_ms = _int(
+            values, "TANGTANG_REPLY_DELAY_MAX_MS", 1400, 0, 10000
+        )
+        if reply_delay_max_ms < reply_delay_min_ms:
+            raise ValueError(
+                "TANGTANG_REPLY_DELAY_MAX_MS must be greater than or equal to TANGTANG_REPLY_DELAY_MIN_MS"
+            )
+        reply_values = {
+            "reply_bubbles_enabled": _bool(
+                values, "TANGTANG_REPLY_BUBBLES_ENABLED", True
+            ),
+            "reply_max_bubbles": _int(
+                values, "TANGTANG_REPLY_MAX_BUBBLES", 6, 1, 10
+            ),
+            "reply_delay_min_ms": reply_delay_min_ms,
+            "reply_delay_max_ms": reply_delay_max_ms,
+        }
+        memory_values = {
+            "memory_enabled": _bool(values, "TANGTANG_MEMORY_ENABLED", True),
+            "memory_recall_limit": _int(
+                values, "TANGTANG_MEMORY_RECALL_LIMIT", 5, 1, 20
+            ),
+            "persona_state_enabled": _bool(
+                values, "TANGTANG_PERSONA_STATE_ENABLED", True
+            ),
+        }
         if not enabled:
             return cls(
                 enabled=False,
@@ -472,6 +565,9 @@ class TangtangConfig:
                 max_response_chars=0,
                 history_messages=history_messages,
                 history_chars=history_chars,
+                **vision_values,
+                **reply_values,
+                **memory_values,
                 disabled_reason="TANGTANG_ENABLED=false",
                 tools_enabled=tools_enabled,
                 tool_loop_max=tool_loop_max,
@@ -488,7 +584,7 @@ class TangtangConfig:
             )
         api_url = _raw(values, "TANGTANG_API_URL")
         api_key = _raw(values, "TANGTANG_API_KEY")
-        model = _raw(values, "TANGTANG_MODEL", "deepseek-v4-flash")
+        model = _raw(values, "TANGTANG_MODEL", "deepseek-v4-flash-vision-exp")
         if not api_url or not api_key or not model:
             raise ValueError("TANGTANG_API_URL, TANGTANG_API_KEY and TANGTANG_MODEL are required")
         api_style = _raw(values, "TANGTANG_API_STYLE", "responses").lower()
@@ -527,6 +623,9 @@ class TangtangConfig:
             max_response_chars=_int(values, "TANGTANG_MAX_RESPONSE_CHARS", 1200, 40, 24000),
             history_messages=history_messages,
             history_chars=history_chars,
+            **vision_values,
+            **reply_values,
+            **memory_values,
             tools_enabled=tools_enabled,
             tool_loop_max=tool_loop_max,
         )
@@ -755,15 +854,16 @@ class TangtangProvider:
         config: TangtangConfig,
         persona: str,
         prompt: str,
+        images: tuple[VisionImage, ...] = (),
     ) -> tuple[str, dict[str, Any]]:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
         if config.api_style == "responses":
-            payload = self._responses_payload(config, persona, prompt)
+            payload = self._responses_payload(config, persona, prompt, images=images)
         else:
-            payload = self._chat_payload(config, persona, prompt)
+            payload = self._chat_payload(config, persona, prompt, images=images)
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
             response = await client.post(self.endpoint(config), headers=headers, json=payload)
@@ -781,15 +881,20 @@ class TangtangProvider:
         prompt: str,
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
+        images: tuple[VisionImage, ...] = (),
     ) -> AgentResult:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
         }
         if config.api_style == "responses":
-            payload = self._responses_payload(config, persona, prompt, tools=tools, history=history)
+            payload = self._responses_payload(
+                config, persona, prompt, tools=tools, history=history, images=images
+            )
         else:
-            payload = self._chat_payload(config, persona, prompt, tools=tools, history=history)
+            payload = self._chat_payload(
+                config, persona, prompt, tools=tools, history=history, images=images
+            )
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
             response = await client.post(self.endpoint(config), headers=headers, json=payload)
@@ -797,7 +902,7 @@ class TangtangProvider:
                 logger.warning(
                     "Tangtang API rejected tool parameters; falling back to plain generation"
                 )
-                text, usage = await self.generate(config, persona, prompt)
+                text, usage = await self.generate(config, persona, prompt, images)
                 return AgentResult(text=text, tool_calls=(), usage=usage)
             response.raise_for_status()
             data = response.json()
@@ -815,10 +920,23 @@ class TangtangProvider:
         *,
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
+        images: tuple[VisionImage, ...] = (),
     ) -> dict[str, Any]:
+        user_content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
+        for image in images:
+            user_content.extend(
+                (
+                    {"type": "input_text", "text": f"[{image.label}]"},
+                    {
+                        "type": "input_image",
+                        "image_url": image.data_url,
+                        "detail": config.vision_detail,
+                    },
+                )
+            )
         input_items: list[dict[str, Any]] = [
             {"role": "system", "content": [{"type": "input_text", "text": persona}]},
-            {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
+            {"role": "user", "content": user_content},
         ]
         for turn in history:
             for call in turn.get("tool_calls", ()):
@@ -857,10 +975,28 @@ class TangtangProvider:
         *,
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
+        images: tuple[VisionImage, ...] = (),
     ) -> dict[str, Any]:
+        user_content: str | list[dict[str, Any]] = prompt
+        if images:
+            multimodal: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+            for image in images:
+                multimodal.extend(
+                    (
+                        {"type": "text", "text": f"[{image.label}]"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image.data_url,
+                                "detail": config.vision_detail,
+                            },
+                        },
+                    )
+                )
+            user_content = multimodal
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": persona},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": user_content},
         ]
         for turn in history:
             messages.append(
@@ -1019,21 +1155,34 @@ class TangtangService:
         resource_dir: Path | None = None,
         usage_dir: Path | None = None,
         feature_router: FeatureRouter | None = None,
+        media_resolver: TangtangMediaResolver | None = None,
+        sleeper: Callable[[float], Awaitable[Any]] | None = None,
+        memory_kernel: TangtangMemoryKernel | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self.db = db or TangtangDb()
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
+        self.media_resolver = media_resolver
+        self._media_resolver_signature: tuple[int, ...] | None = None
+        self._sleep = sleeper or asyncio.sleep
         base = resource_dir or RESOURCE_DIR
         self._persona = _TextFileCache(base / "persona.md")
+        self._self = _TextFileCache(base / "self.md")
+        self._soul = _TextFileCache(base / "soul.md")
+        self._identity = _TextFileCache(base / "identity.md")
         self._hard = _TextFileCache(base / "hard_blacklist.txt")
         self._soft = _TextFileCache(base / "soft_blacklist.txt")
         self._lines = _TextFileCache(base / "lines.txt")
         self.usage_dir = usage_dir or USAGE_DIR
         self._group_context: dict[int, deque[str]] = {}
+        self._group_media_context: dict[
+            int, deque[tuple[str, tuple[ImageReference, ...]]]
+        ] = {}
         self._last_canned: dict[int, str] = {}
         self._recent_call_texts: dict[tuple[int, str], float] = {}
         self._in_flight: set[int] = set()
+        self.memory = memory_kernel or TangtangMemoryKernel(self.db, self._now)
 
     def config(self) -> TangtangConfig:
         return self.loader.load()
@@ -1047,11 +1196,17 @@ class TangtangService:
         user_id: int = 0,
         message_id: str | int = "",
         created_at: str | None = None,
+        media_references: tuple[ImageReference, ...] = (),
     ) -> None:
         queue = self._group_context.setdefault(
             int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
         )
         queue.append(f"{nickname}: {text}")
+        if media_references:
+            media_queue = self._group_media_context.setdefault(
+                int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
+            )
+            media_queue.append((str(message_id or ""), media_references))
         try:
             self.db.insert_group_message(
                 group_id=int(group_id),
@@ -1100,8 +1255,73 @@ class TangtangService:
             return text
         return "…" + text[-max_chars:]
 
+    def _context_image_references(
+        self,
+        group_id: int,
+        *,
+        exclude_message_id: str,
+        limit: int,
+    ) -> tuple[ImageReference, ...]:
+        selected_batches: list[tuple[ImageReference, ...]] = []
+        selected_count = 0
+        queue = self._group_media_context.get(int(group_id), ())
+        for message_id, references in reversed(queue):
+            if message_id and message_id == exclude_message_id:
+                continue
+            remaining = limit - selected_count
+            if remaining <= 0:
+                break
+            batch = references[:remaining]
+            if batch:
+                selected_batches.append(batch)
+                selected_count += len(batch)
+        ordered = [
+            reference
+            for batch in reversed(selected_batches)
+            for reference in batch
+        ]
+        return tuple(
+            ImageReference("context", index, reference.value)
+            for index, reference in enumerate(ordered, 1)
+        )
+
+    def _media_resolver_for(self, config: TangtangConfig) -> TangtangMediaResolver:
+        if self.media_resolver is not None and self._media_resolver_signature is None:
+            return self.media_resolver
+        signature = (
+            config.vision_max_images,
+            config.vision_max_image_bytes,
+            config.vision_max_total_bytes,
+            config.vision_max_pixels,
+            config.vision_max_dimension,
+            config.vision_timeout_seconds,
+        )
+        if self.media_resolver is None or signature != self._media_resolver_signature:
+            self.media_resolver = TangtangMediaResolver(
+                max_images=config.vision_max_images,
+                max_image_bytes=config.vision_max_image_bytes,
+                max_total_bytes=config.vision_max_total_bytes,
+                max_pixels=config.vision_max_pixels,
+                max_dimension=config.vision_max_dimension,
+                timeout_seconds=config.vision_timeout_seconds,
+            )
+            self._media_resolver_signature = signature
+        return self.media_resolver
+
     def _persona_text(self) -> str:
-        return self._persona.text() or DEFAULT_PERSONA
+        parts = [
+            text.strip()
+            for text in (
+                self._self.text(),
+                self._soul.text(),
+                self._identity.text(),
+                self._persona.text() or DEFAULT_PERSONA,
+            )
+            if text.strip()
+        ]
+        text = "\n\n".join(parts)
+        self.memory.ensure_self_version("\n\n".join(parts[:3]) or text)
+        return text
 
     def _hard_terms(self) -> frozenset[str]:
         return _term_set(self._hard.text())
@@ -1227,6 +1447,7 @@ class TangtangService:
         call_text: str | None = None,
         proactive: bool = False,
         black_meme_instruction: str | None = None,
+        media_resolution: MediaResolution | None = None,
     ) -> str:
         group_id = int(event.group_id)
         context_lines = self._group_context_lines(group_id, config.group_context_messages)
@@ -1246,6 +1467,11 @@ class TangtangService:
         nickname = str(getattr(sender, "nickname", "") or getattr(sender, "card", "") or "群友")
         mentioned = bool(event.is_tome())
         media_summary = self._media_summary(event)
+        if media_resolution is not None:
+            details = [f"已读取 {image.label}" for image in media_resolution.images]
+            details.extend(media_resolution.failures)
+            if details:
+                media_summary = "；".join(details)
         reply_text = ""
         reply = getattr(event, "reply", None)
         if reply is not None:
@@ -1290,8 +1516,10 @@ class TangtangService:
             fixed_parts.append("")
         fixed_parts.append(
             "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
-            "若 [接话]，第二行起直接写糖糖的回复（1-3 句短句，不要解释你的判断）。"
+            "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。情绪词如“哈哈哈、嘿嘿、哼”"
+            "适合单独一条，再另起消息说正文；不要按标点机械拆分，也不要解释判断。"
         )
+        fixed_parts.append(reply_style_instruction(call_text))
         fixed_text = "\n".join(fixed_parts)
         if len(fixed_text) >= config.max_input_chars:
             # The current call and the format instruction always stay intact,
@@ -1309,10 +1537,34 @@ class TangtangService:
         ]
         context_joined = "\n".join(context_parts)
         knowledge = self._local_knowledge(call_text)
+        memory_sections: list[str] = []
+        if config.memory_enabled:
+            try:
+                recalled = self.memory.recall(
+                    group_id,
+                    int(event.user_id),
+                    call_text,
+                    limit=config.memory_recall_limit,
+                ).prompt_text()
+                if recalled:
+                    memory_sections.append(recalled)
+            except Exception as exc:
+                logger.warning("Tangtang memory recall failed: {}", exc)
+        if config.persona_state_enabled:
+            try:
+                memory_sections.append(
+                    self.memory.state_prompt(group_id, int(event.user_id))
+                )
+            except Exception as exc:
+                logger.warning("Tangtang persona state read failed: {}", exc)
         budget = config.max_input_chars - len(fixed_text) - 2
         if budget < 2:
             return fixed_text
-        sections = [part for part in (knowledge, context_joined) if part]
+        sections = [
+            part
+            for part in (knowledge, *memory_sections, context_joined)
+            if part
+        ]
         joined = "\n\n".join(sections)
         if len(joined) > budget:
             if knowledge:
@@ -1615,6 +1867,34 @@ class TangtangService:
         self._in_flight.add(group_id)
         mode = "proactive" if proactive else config.mode
         try:
+            current_text = (
+                call_text if call_text is not None else event.get_plaintext().strip()
+            )
+            if config.memory_enabled:
+                try:
+                    self.memory.apply_restore_request(group_id, user_id, current_text)
+                    self.memory.apply_forget_request(group_id, user_id, current_text)
+                except Exception as exc:
+                    logger.warning("Tangtang memory forget request failed: {}", exc)
+            media_resolution = MediaResolution((), ())
+            if config.vision_enabled:
+                resolver = self._media_resolver_for(config)
+                current_references = extract_image_references(
+                    event, config.vision_max_images
+                )
+                remaining = max(
+                    0, config.vision_max_images - len(current_references)
+                )
+                context_references = self._context_image_references(
+                    group_id,
+                    exclude_message_id=str(
+                        getattr(event, "message_id", "") or ""
+                    ),
+                    limit=min(2, remaining),
+                )
+                media_resolution = await resolver.resolve_references(
+                    (*current_references, *context_references)
+                )
             persona = self._persona_text()
             prompt = self._build_prompt(
                 event,
@@ -1623,25 +1903,50 @@ class TangtangService:
                 call_text=call_text,
                 proactive=proactive,
                 black_meme_instruction=black_meme_instruction,
+                media_resolution=media_resolution,
             )
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
             history: list[dict[str, Any]] = []
-            result = await self.provider.generate_agent(
-                config, persona, prompt, tools, tuple(history)
-            )
+            if media_resolution.images:
+                result = await self.provider.generate_agent(
+                    config,
+                    persona,
+                    prompt,
+                    tools,
+                    tuple(history),
+                    media_resolution.images,
+                )
+            else:
+                result = await self.provider.generate_agent(
+                    config, persona, prompt, tools, tuple(history)
+                )
             usage = dict(result.usage)
             loops = 0
             while result.tool_calls and loops < config.tool_loop_max:
                 outputs = tuple(self._run_tool(call) for call in result.tool_calls)
                 history.append({"tool_calls": result.tool_calls, "outputs": outputs})
-                result = await self.provider.generate_agent(
-                    config, persona, prompt, tools, tuple(history)
-                )
+                if media_resolution.images:
+                    result = await self.provider.generate_agent(
+                        config,
+                        persona,
+                        prompt,
+                        tools,
+                        tuple(history),
+                        media_resolution.images,
+                    )
+                else:
+                    result = await self.provider.generate_agent(
+                        config, persona, prompt, tools, tuple(history)
+                    )
                 usage = self._merge_usage(usage, result.usage)
                 loops += 1
             answer_raw = result.text
-            decided, answer = parse_decision(answer_raw)
-            if not decided or not answer:
+            plan = parse_reply_plan(
+                answer_raw,
+                max_bubbles=config.reply_max_bubbles,
+                max_chars=config.max_response_chars,
+            )
+            if not plan.decided or not plan.messages:
                 if force_reply:
                     line = self._pick_canned(group_id) or "我在，怎么啦？"
                     await self._send_and_record(
@@ -1659,20 +1964,22 @@ class TangtangService:
                     config, group_id, user_id, "silent", mode=mode, tokens=usage
                 )
                 return
+            messages = plan.messages
             if black_meme_instruction and any(
-                term in answer for term in FORBIDDEN_LOCAL_TERMS
+                term in message for message in messages for term in FORBIDDEN_LOCAL_TERMS
             ):
-                answer = "不谈这个fifa人物"
+                messages = ("不谈这个fifa人物",)
             await self._send_and_record(
                 bot,
                 event,
                 config,
-                answer,
+                "\n".join(messages),
                 reply_kind="proactive" if proactive else "model",
                 mode=mode,
                 tokens=usage,
                 call_text=call_text,
                 proactive=proactive,
+                messages=messages,
             )
         except Exception as exc:
             logger.warning(
@@ -1732,44 +2039,102 @@ class TangtangService:
         tokens: dict[str, Any],
         call_text: str | None = None,
         proactive: bool = False,
+        messages: tuple[str, ...] | None = None,
     ) -> None:
         group_id = int(event.group_id)
         user_id = int(event.user_id)
-        try:
-            await call_qq_action(
-                bot,
-                "send_group_msg",
-                group_id=group_id,
-                message=(
-                    answer
-                    if proactive
-                    else quote_message(event, answer)
-                ),
-            )
-        except Exception as exc:
+        parts = tuple(messages or (answer,))
+        if not config.reply_bubbles_enabled:
+            parts = ("\n".join(parts),)
+        delivery_rows: list[dict[str, Any]] = []
+        delivered: list[str] = []
+        send_error: Exception | None = None
+        for index, part in enumerate(parts):
+            if index:
+                delay_ms = random.uniform(
+                    config.reply_delay_min_ms, config.reply_delay_max_ms
+                )
+                if delay_ms > 0:
+                    await self._sleep(delay_ms / 1000)
+            try:
+                result = await call_qq_action(
+                    bot,
+                    "send_group_msg",
+                    group_id=group_id,
+                    message=(
+                        part
+                        if proactive or index > 0
+                        else quote_message(event, part)
+                    ),
+                )
+                delivered.append(part)
+                delivery_rows.append(
+                    {
+                        "part_index": index,
+                        "text": part,
+                        "delivered": True,
+                        "platform_message_id": self._platform_message_id(result),
+                    }
+                )
+            except Exception as exc:
+                send_error = exc
+                delivery_rows.append(
+                    {
+                        "part_index": index,
+                        "text": part,
+                        "delivered": False,
+                        "error_type": type(exc).__name__,
+                    }
+                )
+                for skipped_index, skipped in enumerate(parts[index + 1 :], index + 1):
+                    delivery_rows.append(
+                        {
+                            "part_index": skipped_index,
+                            "text": skipped,
+                            "delivered": False,
+                            "error_type": "not_attempted",
+                        }
+                    )
+                break
+        if send_error is not None:
             logger.warning(
-                "Tangtang reply send failed (group_id={}, message_id={}): {}",
+                "Tangtang reply send failed (group_id={}, message_id={}, delivered_parts={}): {}",
                 group_id,
                 event.message_id,
-                exc,
+                len(delivered),
+                send_error,
             )
+        if not delivered:
             self._write_usage(config, group_id, user_id, "error", mode=mode, tokens=tokens)
             return
+        delivered_text = "\n".join(delivered)
         try:
-            self.db.insert_call(
+            created_at = self._now()
+            source_text = (
+                call_text
+                if call_text is not None
+                else event.get_plaintext().strip()
+            )
+            call_id = self.db.insert_call(
                 group_id=group_id,
                 user_id=user_id,
                 message_id=str(getattr(event, "message_id", "") or ""),
-                call_text=(
-                    call_text
-                    if call_text is not None
-                    else event.get_plaintext().strip()
-                ),
-                reply_text=answer,
+                call_text=source_text,
+                reply_text=delivered_text,
                 reply_kind=reply_kind,
                 mode=mode,
-                created_at=self._now(),
+                created_at=created_at,
             )
+            self.db.insert_reply_parts(call_id, delivery_rows, created_at=created_at)
+            if config.memory_enabled:
+                self.memory.observe_user_message(
+                    group_id=group_id,
+                    user_id=user_id,
+                    message_id=str(getattr(event, "message_id", "") or ""),
+                    text=source_text,
+                )
+            if config.persona_state_enabled:
+                self.memory.update_states_after_reply(group_id, user_id, source_text)
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", exc)
         self._write_usage(
@@ -1783,4 +2148,15 @@ class TangtangService:
             ),
             mode=mode,
             tokens=tokens,
+            detail="partial_delivery" if send_error is not None else "",
         )
+
+    @staticmethod
+    def _platform_message_id(result: Any) -> str:
+        if not isinstance(result, dict):
+            return ""
+        nested = result.get("data")
+        value = result.get("message_id")
+        if value is None and isinstance(nested, dict):
+            value = nested.get("message_id")
+        return str(value or "")

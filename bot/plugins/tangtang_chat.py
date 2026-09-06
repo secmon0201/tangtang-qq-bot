@@ -28,6 +28,7 @@ from bot.services.tangtang_features import (
     classify_local_feature,
     has_feature_hint,
 )
+from bot.services.tangtang_media import extract_image_references
 
 
 PASSIVE_EVENT_MAX_AGE_SECONDS = 120
@@ -195,7 +196,8 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
         return
     at_labels = await resolve_at_labels(bot, event, use_api=False)
     text = render_message_text(event.message, at_labels)
-    if text:
+    media_references = extract_image_references(event, config.vision_max_images)
+    if text or media_references:
         sender = getattr(event, "sender", None)
         nickname = str(
             getattr(sender, "nickname", "") or getattr(sender, "card", "") or "群友"
@@ -203,7 +205,8 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
         service.record_group_message(
             int(event.group_id),
             nickname,
-            text,
+            text or "[图片]",
             user_id=int(event.user_id),
             message_id=str(getattr(event, "message_id", "") or ""),
+            media_references=media_references,
         )

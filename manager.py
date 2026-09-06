@@ -187,16 +187,11 @@ class ManagerApp:
         actions.pack(fill="x", pady=(12, 0))
         ttk.Button(actions, text="保存配置", command=self.save_config).pack(side="left")
         ttk.Button(actions, text="启动全部", command=self.start_all).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="重启全部", command=self.restart_all).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="仅重启机器人", command=self.restart_bot).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="停止全部", command=self.stop_all).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="刷新状态", command=self.refresh_status).pack(side="right")
         ttk.Button(actions, text="打开 SnowLuma WebUI", command=self.open_webui).pack(side="right", padx=(0, 8))
-
-        migration_actions = ttk.LabelFrame(outer, text="NapCat 到 SnowLuma 迁移", padding=10)
-        migration_actions.pack(fill="x", pady=(12, 0))
-        ttk.Button(migration_actions, text="1. 迁移准备", command=self.prepare_migration).pack(side="left")
-        ttk.Button(migration_actions, text="2. 开始切换", command=self.begin_cutover).pack(side="left", padx=(8, 0))
-        ttk.Button(migration_actions, text="3. 完成切换", command=self.complete_cutover).pack(side="left", padx=(8, 0))
 
         self.log = ScrolledText(
             outer,
@@ -209,7 +204,7 @@ class ManagerApp:
 
     def _load_fields(self) -> None:
         defaults = {
-            "QQ_ACCOUNT_ID": self.env.values.get("NAPCAT_QQ_ID", ""),
+            "QQ_ACCOUNT_ID": "",
             "SNOWLUMA_DIR": str(ROOT / "SnowLuma"),
             "SNOWLUMA_WEBUI_PORT": str(DEFAULT_WEBUI_PORT),
             "MANAGED_GROUP_IDS": "",
@@ -303,24 +298,10 @@ class ManagerApp:
             return
         self.run_script("start_all.ps1")
 
-    def prepare_migration(self) -> None:
+    def restart_all(self) -> None:
         if not self.save_config():
             return
-        self.run_script("prepare_snowluma_migration.ps1")
-
-    def begin_cutover(self) -> None:
-        if not self.save_config():
-            return
-        confirmed = messagebox.askyesno(
-            "开始切换",
-            "确认已在 SnowLuma WebUI 中接受协议并修改初始密码？\n"
-            "继续会停止 watchdog 和当前 QQ 传输，然后进入人工 QQ 登录阶段。",
-        )
-        if confirmed:
-            self.run_script("begin_snowluma_cutover.ps1", "-StartCutover")
-
-    def complete_cutover(self) -> None:
-        self.run_script("complete_snowluma_cutover.ps1")
+        self.run_script("restart_all.ps1")
 
     def stop_all(self) -> None:
         if messagebox.askyesno("停止全部", "停止本项目托管的机器人、QQ 传输、Core、隧道和 watchdog？\n不会删除数据库、参数或登录文件。"):
@@ -397,10 +378,8 @@ class ManagerApp:
 
 def print_check() -> int:
     env = EnvFile(ENV_PATH)
-    account = env.values.get("QQ_ACCOUNT_ID", env.values.get("NAPCAT_QQ_ID", ""))
-    transport = env.values.get("QQ_PLATFORM_TRANSPORT", "").strip().lower()
-    if not transport:
-        transport = "napcat" if env.values.get("NAPCAT_QQ_ID") or env.values.get("NAPCAT_DIR") else "snowluma"
+    account = env.values.get("QQ_ACCOUNT_ID", "")
+    transport = env.values.get("QQ_PLATFORM_TRANSPORT", "snowluma").strip().lower()
     snowluma_dir = Path(env.values.get("SNOWLUMA_DIR", str(ROOT / "SnowLuma")))
     webui_port = int(env.values.get("SNOWLUMA_WEBUI_PORT", str(DEFAULT_WEBUI_PORT)))
     print(f"root={ROOT}")

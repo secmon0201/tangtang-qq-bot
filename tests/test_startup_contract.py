@@ -81,17 +81,34 @@ def test_tunnel_stop_can_preserve_the_user_guard_choice():
 
 
 def test_start_and_restart_wrappers_restore_tunnel_and_watchdog():
-    for wrapper in ("启动工具/01-启动全部.bat", "启动工具/02-重启全部.bat"):
-        script = source(wrapper)
-        assert 'for %%I in ("%~dp0..") do set "ROOT=%%~fI"' in script
-        assert "scripts\\start_all.ps1" in script
-        assert "scripts\\watch_qq_transport.ps1" not in script
+    start_wrapper = source("启动工具/01-启动全部.bat")
+    assert 'for %%I in ("%~dp0..") do set "ROOT=%%~fI"' in start_wrapper
+    assert "scripts\\start_all.ps1" in start_wrapper
+    assert "scripts\\watch_qq_transport.ps1" not in start_wrapper
 
     startup = source("scripts/start_all.ps1")
     assert "nte_tunnel_disabled.flag" in startup
     assert "start_nte_tunnel.ps1" in startup
     assert "start_watchdog.ps1" in startup
+    assert startup.index("start_watchdog.ps1") < startup.index("verify_full_stack.ps1")
     assert "data\\cloudflared\\tangtang-web.yml" in startup
+
+    restart_wrapper = source("启动工具/02-重启全部.bat")
+    assert 'for %%I in ("%~dp0..") do set "ROOT=%%~fI"' in restart_wrapper
+    restart_script = source("scripts/restart_all.ps1")
+    assert "scripts\\restart_all.ps1" in restart_wrapper
+    assert restart_script.index("stop_all.ps1") < restart_script.index("start_all.ps1")
+
+
+def test_full_stack_verifier_checks_transport_watchdog_and_error_log():
+    verifier = source("scripts/verify_full_stack.ps1")
+
+    assert "Test-OneBotConnectionOwnership" in verifier
+    assert "watch_qq_transport.ps1" in verifier
+    assert "last_check_completed_at" in verifier
+    assert "GSUID_CORE_PORT" in verifier
+    assert "bot.err.log" in verifier
+    assert "Full stack is healthy and ready." in verifier
 
 
 def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():

@@ -65,12 +65,13 @@ def test_generic_manager_save_does_not_silently_select_snowluma():
     assert "QQ_PLATFORM_TRANSPORT" not in save_config
 
 
-def test_manager_exposes_the_three_phase_snowluma_migration_scripts():
+def test_manager_exposes_current_snowluma_operations_without_retired_migration():
     source = Path("manager.py").read_text(encoding="utf-8")
 
-    assert 'self.run_script("prepare_snowluma_migration.ps1")' in source
-    assert 'self.run_script("begin_snowluma_cutover.ps1", "-StartCutover")' in source
-    assert 'self.run_script("complete_snowluma_cutover.ps1")' in source
+    assert 'self.run_script("start_all.ps1")' in source
+    assert 'self.run_script("restart_all.ps1")' in source
+    assert 'self.run_script("stop_all.ps1")' in source
+    assert "NapCat" not in source
 
 
 def test_manager_bundle_stays_a_thin_operator_shell_and_checks_build_failures():

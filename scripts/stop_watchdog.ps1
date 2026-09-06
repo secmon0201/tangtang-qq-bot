@@ -2,18 +2,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$candidates = @(
-    [pscustomobject]@{
-        Name = 'QQ transport watchdog'
-        PidPath = Join-Path $root 'logs\qq-transport-watchdog.pid'
-        ScriptPath = Join-Path $PSScriptRoot 'watch_qq_transport.ps1'
-    },
-    [pscustomobject]@{
-        Name = 'legacy watchdog'
-        PidPath = Join-Path $root 'logs\napcat-watchdog.pid'
-        ScriptPath = Join-Path $PSScriptRoot 'watch_napcat.ps1'
-    }
-)
+$candidates = @([pscustomobject]@{
+    Name = 'QQ transport watchdog'
+    PidPath = Join-Path $root 'logs\qq-transport-watchdog.pid'
+    ScriptPath = Join-Path $PSScriptRoot 'watch_qq_transport.ps1'
+})
 
 foreach ($candidate in $candidates) {
     if (-not (Test-Path -LiteralPath $candidate.PidPath)) { continue }

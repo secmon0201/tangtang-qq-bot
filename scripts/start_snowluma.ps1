@@ -13,7 +13,7 @@ $settings = Get-QqTransportSettings -Root $root
 $existing = @(Get-ConfiguredTransportProcesses -Settings ([pscustomobject]@{
     Root = $settings.Root; Transport = 'snowluma'; AccountId = $settings.AccountId
     Port = $settings.Port; SnowLumaDir = $settings.SnowLumaDir
-    LagrangeDir = $settings.LagrangeDir; NapCatDir = $settings.NapCatDir
+    LagrangeDir = $settings.LagrangeDir
     StatePath = Join-Path $settings.Root 'data\qq-transport-snowluma-state.json'
 }))
 if ($existing.Count -gt 0) {

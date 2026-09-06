@@ -37,17 +37,13 @@ function Get-QqTransportSettings {
     $rootPath = [IO.Path]::GetFullPath($Root)
     $values = Read-BotEnvValues -Path (Join-Path $rootPath '.env')
     $transport = [string]$values['QQ_PLATFORM_TRANSPORT']
-    if (-not $transport) {
-        $hasLegacyNapCatSettings = [string]$values['NAPCAT_QQ_ID'] -or [string]$values['NAPCAT_DIR']
-        $transport = if ($hasLegacyNapCatSettings) { 'napcat' } else { 'snowluma' }
-    }
+    if (-not $transport) { $transport = 'snowluma' }
     $transport = $transport.Trim().ToLowerInvariant()
-    if ($transport -notin @('snowluma', 'napcat', 'lagrange')) {
-        throw 'QQ_PLATFORM_TRANSPORT must be snowluma, napcat or lagrange.'
+    if ($transport -notin @('snowluma', 'lagrange')) {
+        throw 'QQ_PLATFORM_TRANSPORT must be snowluma or lagrange.'
     }
 
     $accountId = [string]$values['QQ_ACCOUNT_ID']
-    if (-not $accountId) { $accountId = [string]$values['NAPCAT_QQ_ID'] }
     if ($accountId -notmatch '^\d{5,12}$') {
         throw 'QQ_ACCOUNT_ID must be a 5-12 digit QQ number.'
     }
@@ -67,8 +63,6 @@ function Get-QqTransportSettings {
     if (-not $snowLumaDir) { $snowLumaDir = 'SnowLuma' }
     $lagrangeDir = [string]$values['LAGRANGE_DIR']
     if (-not $lagrangeDir) { $lagrangeDir = 'Lagrange.OneBot' }
-    $napCatDir = [string]$values['NAPCAT_DIR']
-    if (-not $napCatDir) { $napCatDir = 'NapCat.Shell' }
 
     return [pscustomobject]@{
         Root = $rootPath
@@ -82,7 +76,6 @@ function Get-QqTransportSettings {
         SnowLumaDir = Resolve-BotLocalPath -Root $rootPath -Value $snowLumaDir
         SnowLumaWebUiPort = $webUiPort
         LagrangeDir = Resolve-BotLocalPath -Root $rootPath -Value $lagrangeDir
-        NapCatDir = Resolve-BotLocalPath -Root $rootPath -Value $napCatDir
         StatePath = Join-Path $rootPath ("data\qq-transport-{0}-state.json" -f $transport)
     }
 }
@@ -187,12 +180,7 @@ function Get-ConfiguredTransportProcesses {
         })
     }
 
-    . (Join-Path $PSScriptRoot 'napcat_process.ps1')
-    $legacySettings = Get-BotLaunchSettings -Root $Settings.Root
-    $roots = @(Get-QqRootProcesses)
-    $verified = Get-VerifiedStateRoot -Roots $roots -StatePath $legacySettings.StatePath -AccountId $Settings.AccountId
-    if ($null -ne $verified) { return @($verified) }
-    return @($roots | Where-Object { $_.AccountIds -contains $Settings.AccountId })
+    throw "Unsupported QQ transport: $($Settings.Transport)"
 }
 
 function Test-OneBotConnectionOwnership {
@@ -203,34 +191,6 @@ function Test-OneBotConnectionOwnership {
     )
 
     if ($TransportProcesses.Count -ne 1 -or $Connections.Count -ne 1) { return $false }
-    if ($Settings.Transport -eq 'napcat') {
-        # NapCat's OneBot socket is owned by a QQ child process, so map it back
-        # to the verified QQ root instead of comparing the socket PID directly.
-        . (Join-Path $PSScriptRoot 'napcat_process.ps1')
-        $connectedRoots = @(Get-QqRootsConnectedToPort -Port $Settings.Port)
-        if ($connectedRoots.Count -ne 1) { return $false }
-        $transportRootPid = Get-QqTransportProcessId -Process $TransportProcesses[0]
-        return [int]$connectedRoots[0].Pid -eq $transportRootPid
-    }
     $transportPid = Get-QqTransportProcessId -Process $TransportProcesses[0]
     return [int]$Connections[0].OwningProcess -eq $transportPid
-}
-
-function Set-BotEnvValue {
-    param(
-        [Parameter(Mandatory)][string]$Path,
-        [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$Value
-    )
-
-    $lines = [System.Collections.Generic.List[string]](Get-Content -LiteralPath $Path -Encoding utf8)
-    $matched = $false
-    for ($index = 0; $index -lt $lines.Count; $index++) {
-        if ($lines[$index] -match ("^\s*{0}\s*=" -f [regex]::Escape($Name))) {
-            $lines[$index] = "$Name=$Value"
-            $matched = $true
-        }
-    }
-    if (-not $matched) { $lines.Add("$Name=$Value") }
-    $lines | Set-Content -LiteralPath $Path -Encoding utf8
 }

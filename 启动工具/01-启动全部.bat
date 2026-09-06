@@ -4,13 +4,13 @@ setlocal
 for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 cd /d "%ROOT%"
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_all.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\start_all.ps1"
 set "exitCode=%ERRORLEVEL%"
 echo.
-if not "%exitCode%"=="0" echo Startup reported an error. Review the message above.
+if not "%exitCode%"=="0" echo SnowLuma full startup failed. Review the message above.
 if not "%exitCode%"=="0" goto :end
 
-echo All configured components were requested through the unified startup script.
+echo SnowLuma, NoneBot, OneBot, watchdog, Core, and web tunnels are ready.
 :end
 pause
 exit /b %exitCode%

@@ -211,14 +211,9 @@ class Settings:
         transport = os.getenv("BOT_TRANSPORT", "onebot").strip().lower()
         if transport not in {"onebot", "qq_openapi"}:
             raise ValueError("BOT_TRANSPORT must be onebot or qq_openapi")
-        configured_qq_transport = os.getenv("QQ_PLATFORM_TRANSPORT", "").strip().lower()
-        qq_platform_transport = configured_qq_transport or (
-            "napcat"
-            if os.getenv("NAPCAT_QQ_ID", "").strip() or os.getenv("NAPCAT_DIR", "").strip()
-            else "snowluma"
-        )
-        if qq_platform_transport not in {"snowluma", "napcat", "lagrange"}:
-            raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma, napcat or lagrange")
+        qq_platform_transport = os.getenv("QQ_PLATFORM_TRANSPORT", "snowluma").strip().lower()
+        if qq_platform_transport not in {"snowluma", "lagrange"}:
+            raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma or lagrange")
         groups = _csv_ints(os.getenv("MANAGED_GROUP_IDS"))
 
         def feature_groups(name: str) -> tuple[int, ...]:
@@ -597,13 +592,10 @@ class Settings:
             official_app_secret=official_app_secret,
             official_sandbox=official_sandbox,
             onebot_access_token=os.getenv("ONEBOT_ACCESS_TOKEN") or None,
-            qq_transport_maintenance_enabled=boolean(
-                "QQ_TRANSPORT_MAINTENANCE_ENABLED",
-                boolean("NAPCAT_MAINTENANCE_ENABLED", True),
-            ),
+            qq_transport_maintenance_enabled=boolean("QQ_TRANSPORT_MAINTENANCE_ENABLED", True),
             qq_transport_maintenance_interval_seconds=integer(
                 "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
-                integer("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", 30, 10, 300),
+                30,
                 10,
                 300,
             ),

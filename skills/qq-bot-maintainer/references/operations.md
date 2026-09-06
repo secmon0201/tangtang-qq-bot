@@ -35,6 +35,8 @@
 
 `01-启动全部` start all; `02-重启全部` restart all; `03-关闭全部` stop all; `11-仅重启机器人` restart NoneBot only; `21-启动异环登录隧道` start tunnel; `22-关闭异环登录隧道` stop tunnel; `23-设置异环登录地址` set tunnel URL; `31-启动守护程序` start watchdog; `32-关闭守护程序` stop watchdog.
 
+The three full-stack shortcuts are thin wrappers over `scripts\start_all.ps1`, `scripts\restart_all.ps1`, and `scripts\stop_all.ps1`. Start and restart must finish with `scripts\verify_full_stack.ps1`: exactly one configured transport, the NoneBot listener, one correctly owned OneBot client, a valid watchdog process and timely healthy heartbeat, the GsUID Core listener, the SnowLuma WebUI when selected, and an empty `logs\bot.err.log`.
+
 ## Cleanup
 
 `scripts\clean-generated.ps1` previews; `-Apply` removes generated caches. Never commit caches.

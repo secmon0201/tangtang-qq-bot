@@ -23,4 +23,5 @@ def test_lagrange_installer_requires_the_published_archive_hash_before_extractin
 def test_lagrange_handoff_stops_the_old_transport_before_starting_the_new_one():
     switcher = (ROOT / "scripts" / "switch_to_lagrange_onebot.ps1").read_text(encoding="utf-8")
     assert "backup.ps1" in switcher
-    assert switcher.index("stop_napcat_transport.ps1") < switcher.index("start_lagrange_onebot.ps1")
+    assert switcher.index("stop_qq_transport.ps1") < switcher.index("QQ_PLATFORM_TRANSPORT=lagrange")
+    assert switcher.index("QQ_PLATFORM_TRANSPORT=lagrange") < switcher.index("start_lagrange_onebot.ps1")

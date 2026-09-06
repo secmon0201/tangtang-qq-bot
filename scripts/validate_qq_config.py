@@ -222,20 +222,15 @@ def validate(path: Path) -> tuple[int, int]:
     transport = values.get("BOT_TRANSPORT", "onebot").strip().lower()
     if transport not in {"onebot", "qq_openapi"}:
         raise ValueError("BOT_TRANSPORT must be onebot or qq_openapi")
-    configured_qq_transport = values.get("QQ_PLATFORM_TRANSPORT", "").strip().lower()
-    qq_platform_transport = configured_qq_transport or (
-        "napcat"
-        if values.get("NAPCAT_QQ_ID", "").strip() or values.get("NAPCAT_DIR", "").strip()
-        else "snowluma"
-    )
-    if qq_platform_transport not in {"snowluma", "napcat", "lagrange"}:
-        raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma, napcat or lagrange")
+    qq_platform_transport = values.get("QQ_PLATFORM_TRANSPORT", "snowluma").strip().lower()
+    if qq_platform_transport not in {"snowluma", "lagrange"}:
+        raise ValueError("QQ_PLATFORM_TRANSPORT must be snowluma or lagrange")
     if qq_platform_transport == "snowluma":
         if not values.get("SNOWLUMA_DIR", "SnowLuma").strip():
             raise ValueError("SNOWLUMA_DIR cannot be empty when QQ_PLATFORM_TRANSPORT=snowluma")
         account_value = values.get("QQ_ACCOUNT_ID", "")
     else:
-        account_value = values.get("QQ_ACCOUNT_ID", values.get("NAPCAT_QQ_ID", ""))
+        account_value = values.get("QQ_ACCOUNT_ID", "")
     if qq_platform_transport == "lagrange" and not values.get("LAGRANGE_DIR", "Lagrange.OneBot").strip():
         raise ValueError("LAGRANGE_DIR cannot be empty when QQ_PLATFORM_TRANSPORT=lagrange")
 
@@ -285,20 +280,9 @@ def validate(path: Path) -> tuple[int, int]:
     account_ids = parse_ids(account_value, "QQ_ACCOUNT_ID", maximum=1)
     if transport == "onebot" and len(account_ids) != 1:
         raise ValueError("QQ_ACCOUNT_ID must contain exactly one account in OneBot mode")
-    parse_bool(
-        values.get(
-            "QQ_TRANSPORT_MAINTENANCE_ENABLED",
-            values.get("NAPCAT_MAINTENANCE_ENABLED", "true"),
-        ),
-        "QQ_TRANSPORT_MAINTENANCE_ENABLED",
-    )
+    parse_bool(values.get("QQ_TRANSPORT_MAINTENANCE_ENABLED", "true"), "QQ_TRANSPORT_MAINTENANCE_ENABLED")
     try:
-        maintenance_interval = int(
-            values.get(
-                "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
-                values.get("NAPCAT_MAINTENANCE_INTERVAL_SECONDS", "30"),
-            )
-        )
+        maintenance_interval = int(values.get("QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS", "30"))
     except ValueError as exc:
         raise ValueError(
             "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS must be an integer between 10 and 300"

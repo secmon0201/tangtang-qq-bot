@@ -56,52 +56,29 @@ def test_snowluma_config_is_reverse_ws_only_and_blocks_duplicate_gateways():
     assert "unexpected_onebot_client" in source("scripts/watch_qq_transport.ps1")
 
 
-def test_cutover_is_two_phase_and_keeps_watchdog_out_of_manual_login():
-    prepare = source("scripts/prepare_snowluma_migration.ps1")
-    begin = source("scripts/begin_snowluma_cutover.ps1")
-    complete = source("scripts/complete_snowluma_cutover.ps1")
-
-    assert "-EnableOneBot:$false" in prepare
-    assert begin.index("stop_watchdog.ps1") < begin.index("stop_qq_transport.ps1")
-    select_snowluma = (
-        "Set-BotEnvValue -Path $settings.EnvPath -Name 'QQ_PLATFORM_TRANSPORT' "
-        "-Value 'snowluma'"
+def test_active_transport_contract_contains_no_retired_napcat_path():
+    active_paths = (
+        "bot/config.py",
+        "manager.py",
+        "scripts/qq_transport.ps1",
+        "scripts/start_qq_transport.ps1",
+        "scripts/stop_qq_transport.ps1",
+        "scripts/validate_qq_config.py",
     )
-    assert begin.index("stop_qq_transport.ps1") < begin.index(select_snowluma)
-    assert begin.index("webui.json") < begin.index("stop_qq_transport.ps1")
-    assert begin.index("consent.json") < begin.index("stop_qq_transport.ps1")
-    assert "mustChangePassword" in begin
-    assert "The watchdog remains stopped" in begin
-    assert "Expected one OneBot client" in complete
-    assert "not the tracked SnowLuma process" in complete
-    assert complete.index("stop.ps1") < complete.index("start.ps1")
-    assert complete.index("start.ps1") < complete.index("start_watchdog.ps1")
+    for relative in active_paths:
+        assert "napcat" not in source(relative).lower()
 
-
-def test_failed_cutover_restores_exact_environment_and_runtime_chain():
-    begin = source("scripts/begin_snowluma_cutover.ps1")
-
-    catch_block = begin.split("} catch {", 1)[1]
-    assert "Copy-Item -LiteralPath $envBackup -Destination $settings.EnvPath -Force" in catch_block
-    assert "Get-ConfiguredTransportProcesses -Settings $snowSettings" in catch_block
-    assert "previous QQ gateway was not restarted to avoid duplicate clients" in catch_block
-    assert "if ($environmentRestored -and $snowLumaStopped)" in catch_block
-    assert "watchdog remains stopped because the original environment or exclusive gateway state was not restored" in catch_block
-    assert catch_block.index("stop.ps1") < catch_block.index("start.ps1")
-    assert catch_block.index("start.ps1") < catch_block.index("start_qq_transport.ps1")
-    assert catch_block.index("start_qq_transport.ps1") < catch_block.index("start_watchdog.ps1")
-
-
-def test_napcat_rollback_status_checks_socket_ownership_through_qq_process_tree():
-    transport = source("scripts/qq_transport.ps1")
-    ownership = transport.split("function Test-OneBotConnectionOwnership", 1)[1].split(
-        "function Set-BotEnvValue", 1
-    )[0]
-
-    assert "Get-QqRootsConnectedToPort -Port $Settings.Port" in ownership
-    assert "connectedRoots[0].Pid" in ownership
-    assert "return $true" not in ownership
-    assert ownership.count("[AllowEmptyCollection()]") == 2
+    for retired in (
+        "scripts/napcat_process.ps1",
+        "scripts/start_napcat_transport.ps1",
+        "scripts/stop_napcat_transport.ps1",
+        "scripts/switch_back_to_napcat.ps1",
+        "scripts/watch_napcat.ps1",
+        "scripts/prepare_snowluma_migration.ps1",
+        "scripts/begin_snowluma_cutover.ps1",
+        "scripts/complete_snowluma_cutover.ps1",
+    ):
+        assert not (ROOT / retired).exists()
 
 
 def test_environment_template_selects_snowluma_without_login_material():
@@ -120,13 +97,15 @@ def test_active_maintenance_tools_prefer_transport_neutral_account_settings():
     smoke_game = source("scripts/smoke_game_api.py")
     smoke_gsuid = source("scripts/smoke_test_gsuid.py")
     organizer = source("scripts/organize_env.py")
+    historical_backfill = source("scripts/backfill_bot_message_stats.py")
 
-    assert lagrange.index("['QQ_ACCOUNT_ID']") < lagrange.index("['NAPCAT_QQ_ID']")
+    assert "['QQ_ACCOUNT_ID']" in lagrange
+    assert "NAPCAT_" not in lagrange
     for smoke in (smoke_game, smoke_gsuid):
         assert 'values.get("QQ_ACCOUNT_ID")' in smoke
+        assert "NAPCAT_" not in smoke
     assert '"QQ_ACCOUNT_ID"' in organizer
     assert '"QQ_TRANSPORT_MAINTENANCE_ENABLED"' in organizer
-
-
-def test_repository_does_not_depend_on_the_ignored_napcat_runtime_for_tests():
-    assert not (ROOT / "tests" / "test_napcat_reply_lookup.py").exists()
+    assert "NAPCAT_" not in organizer
+    assert 'parser.add_argument("--log-dir", type=Path, required=True)' in historical_backfill
+    assert 'ROOT / "NapCat.Shell"' not in historical_backfill

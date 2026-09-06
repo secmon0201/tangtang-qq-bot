@@ -56,6 +56,7 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 - Full restart: `启动工具\02-重启全部.bat`
 - Full stop: `启动工具\03-关闭全部.bat`
 - NoneBot-only restart: `启动工具\11-仅重启机器人.bat`
+- Full-stack implementations are `scripts\start_all.ps1`, `scripts\restart_all.ps1`, and `scripts\stop_all.ps1`; startup success requires `scripts\verify_full_stack.ps1` to pass.
 - Generated-file cleanup preview: `scripts\clean-generated.ps1`
 - Generated-file cleanup: `scripts\clean-generated.ps1 -Apply`
 

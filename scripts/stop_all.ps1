@@ -34,6 +34,7 @@ Write-Host '[7/8] Stopping GsUID Core...'
 & (Join-Path $PSScriptRoot 'stop_gsuid_core.ps1')
 
 Write-Host '[8/8] Verifying process state...'
+$shutdownIssues = [System.Collections.Generic.List[string]]::new()
 $pythonPath = [regex]::Escape((Join-Path $root '.venv\Scripts\python.exe'))
 $botResidual = @(Get-CimInstance Win32_Process | Where-Object {
     $_.CommandLine -and $_.CommandLine -match $pythonPath -and $_.CommandLine -match '(?i)(-m\s+bot|bot\.__main__)'
@@ -41,12 +42,20 @@ $botResidual = @(Get-CimInstance Win32_Process | Where-Object {
 if ($botResidual.Count -eq 0) {
     Write-Host 'Bot process check: clear.'
 } else {
-    Write-Warning "Bot process check found remaining PID(s): $($botResidual.ProcessId -join ', ')."
+    $shutdownIssues.Add("bot PID(s): $($botResidual.ProcessId -join ', ')")
 }
 $transportResidual = @(Get-ConfiguredTransportProcesses -Settings $transport)
 if ($transportResidual.Count -eq 0) {
     Write-Host 'QQ transport process check: clear.'
 } else {
     $remainingPids = @($transportResidual | ForEach-Object { Get-QqTransportProcessId -Process $_ })
-    Write-Warning "QQ transport process check found remaining PID(s): $($remainingPids -join ', ')."
+    $shutdownIssues.Add("QQ transport PID(s): $($remainingPids -join ', ')")
 }
+$watchdogPidPath = Join-Path $root 'logs\qq-transport-watchdog.pid'
+if (Test-Path -LiteralPath $watchdogPidPath) {
+    $shutdownIssues.Add("watchdog PID file: $watchdogPidPath")
+}
+if ($shutdownIssues.Count -gt 0) {
+    throw ('Shutdown verification found remaining project processes: ' + ($shutdownIssues -join ' | '))
+}
+Write-Output 'All verified SnowLuma bot stack processes are stopped.'

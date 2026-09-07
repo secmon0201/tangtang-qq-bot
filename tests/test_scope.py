@@ -23,6 +23,11 @@ def test_legacy_a_coast_ranking_alias_uses_the_speech_ranking_switch(monkeypatch
 
     class Domains:
         @staticmethod
+        def cluster_by_name_or_alias(name):
+            assert name.casefold() in {"a海岸".casefold()}
+            return object()
+
+        @staticmethod
         def effective_feature_enabled(group_id, feature):
             assert group_id == 9001
             assert feature == "speech_ranking"
@@ -158,17 +163,17 @@ def test_today_wife_clear_command_is_independent_from_the_game_switch(monkeypatc
 
 
 def test_scope_accepts_only_configured_groups():
-    assert is_managed_group(1067772451, (1067772451, 1128870029))
-    assert not is_managed_group(999999999, (1067772451, 1128870029))
+    assert is_managed_group(920000001, (920000001, 910000101))
+    assert not is_managed_group(999999999, (920000001, 910000101))
 
 
 def test_scope_normalizes_numeric_group_ids():
-    assert is_managed_group(1067772451, ("1067772451",))
+    assert is_managed_group(920000001, ("920000001",))
 
 
 def test_feature_scope_accepts_only_enabled_groups():
-    assert is_feature_group(1067772451, (1067772451, 278824712))
-    assert not is_feature_group(1128870029, (1067772451, 278824712))
+    assert is_feature_group(920000001, (920000001, 910000105))
+    assert not is_feature_group(910000101, (920000001, 910000105))
 
 
 def test_private_mini_game_commands_are_silently_intercepted():

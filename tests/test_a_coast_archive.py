@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from bot.config import A_COAST_GROUP_IDS
 from bot.db import Database
 from bot.services.a_coast_archive import ACoastArchiveService, bounded_evidence
 from bot.services.tangtang_db import TangtangDb
@@ -22,7 +21,7 @@ def _make_store(tmp_path: Path) -> tuple[Database, TangtangDb, ACoastArchiveServ
     db = Database(tmp_path / "bot.db")
     db.configure_groups((1001, 1002))
     tangtang_db = TangtangDb(tmp_path / "tangtang.db")
-    service = ACoastArchiveService(db, group_ids=(1001, 1002), tangtang_db=tangtang_db)
+    service = ACoastArchiveService(db, tangtang_db=tangtang_db)
     return db, tangtang_db, service
 
 
@@ -98,7 +97,7 @@ def test_consumption_marks_each_source_message_only_once(tmp_path):
     assert service.unconsumed(7, (1001,)) == []
 
 
-def test_only_a_coast_group_members_can_request_a_coast_profile(monkeypatch):
+def test_only_registered_group_members_can_request_profile(monkeypatch):
     import nonebot
 
     nonebot.init()
@@ -110,8 +109,17 @@ def test_only_a_coast_group_members_can_request_a_coast_profile(monkeypatch):
             self.user_id = 123456
 
     monkeypatch.setattr(a_coast_archive, "GroupMessageEvent", GroupEvent)
+    monkeypatch.setattr(
+        a_coast_archive,
+        "domains",
+        type(
+            "Domains",
+            (),
+            {"domain_for_group": staticmethod(lambda group_id: object() if group_id == 910000101 else None)},
+        )(),
+    )
 
-    assert a_coast_archive.can_request_profile(GroupEvent(A_COAST_GROUP_IDS[0]))
+    assert a_coast_archive.can_request_profile(GroupEvent(910000101))
     assert not a_coast_archive.can_request_profile(GroupEvent(1))
 
 

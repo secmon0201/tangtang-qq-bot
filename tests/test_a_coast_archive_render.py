@@ -19,7 +19,7 @@ def test_archive_renderer_renders_search_results_as_a_portrait_image(tmp_path: P
         903848042,
         [{
             "occurred_at": "2026-07-29 12:34:56",
-            "group_id": 1128870029,
+            "group_id": 910000101,
             "group_name": "A海岸测试群",
             "content": "爱莉希雅" * 50,
         }],

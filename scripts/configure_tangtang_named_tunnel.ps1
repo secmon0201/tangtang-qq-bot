@@ -1,11 +1,30 @@
 param(
-    [string]$Hostname = 'tangtang.secmon.cn',
-    [string]$ShortHostname = 's.secmon.cn',
-    [string]$TunnelName = 'tangtang-secmon'
+    [string]$Hostname = '',
+    [string]$ShortHostname = '',
+    [string]$TunnelName = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
+$EnvPath = Join-Path $Root '.env'
+
+function Get-LocalEnvValue([string]$Name) {
+    if (-not (Test-Path -LiteralPath $EnvPath)) { return '' }
+    $line = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match "^$([regex]::Escape($Name))=" } | Select-Object -Last 1
+    if ($null -eq $line) { return '' }
+    return ([string]$line).Substring(([string]$line).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
+}
+
+if (-not $Hostname) {
+    $baseUrl = Get-LocalEnvValue 'PUBLIC_SITE_BASE_URL'
+    if ($baseUrl -match '^https://([^/]+)/*$') { $Hostname = $Matches[1] }
+}
+if (-not $ShortHostname) { $ShortHostname = Get-LocalEnvValue 'PUBLIC_SHORT_HOST' }
+if (-not $TunnelName) { $TunnelName = Get-LocalEnvValue 'PUBLIC_TUNNEL_NAME' }
+if (-not $TunnelName) { $TunnelName = 'tangtang-public' }
+if (-not $Hostname -or -not $ShortHostname) {
+    throw 'Set PUBLIC_SITE_BASE_URL and PUBLIC_SHORT_HOST in the local .env first.'
+}
 $Cloudflared = Join-Path $Root 'tools\cloudflared.exe'
 $RuntimeDir = Join-Path $Root 'data\cloudflared'
 $ConfigPath = Join-Path $RuntimeDir 'tangtang-web.yml'

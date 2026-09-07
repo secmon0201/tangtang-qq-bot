@@ -7,7 +7,7 @@ from nonebot import get_bots, get_driver, logger, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from zoneinfo import ZoneInfo
 
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.services.daily_ranking import DomainDailyRankingDeliveryService
 from bot.services.avatars import AvatarService
 from bot.services.community_web import (
@@ -76,7 +76,6 @@ async def build_community_ranking_payload(
     domain=None,
 ) -> dict[str, object]:
     """Build the shared online and scheduled ranking payload."""
-    domain = domain or group_domains().domain_for_group(A_COAST_GROUP_IDS[0])
     if domain is None:
         raise ValueError("群域不可用")
     domain_group_ids = group_domains().domain_groups(domain.domain_id)

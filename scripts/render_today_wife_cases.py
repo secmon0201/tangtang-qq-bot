@@ -19,7 +19,7 @@ from bot.services.today_wife_game import TodayWifeGameService
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "data" / "reports" / "today_wife_cases"
 GROUP_ID = 1001
-ACTOR_ID = 595861835
+ACTOR_ID = 900000001
 BOT_ID = 2120682836
 NOW = datetime.fromisoformat("2026-08-11T12:00:00+08:00")
 MEMBERS = [
@@ -128,7 +128,7 @@ async def main() -> None:
         ]
 
         cases = {
-            "01_普通抽中_595861835到机器人": draw_card(ordinary),
+            "01_普通抽中_900000001到机器人": draw_card(ordinary),
             "02_被抽中后另选": draw_card(taken),
             "03_双向奔赴": draw_card(mutual),
             "04_两人撞车与旧缘重逢": draw_card(reunion),

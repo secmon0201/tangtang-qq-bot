@@ -22,16 +22,16 @@ def test_whitelist_feedback_sends_one_native_image(monkeypatch, tmp_path: Path):
             self.sent.append(value)
 
     monkeypatch.setattr(commands, "settings", SimpleNamespace(report_output_mode="local_image"))
-    bot = SimpleNamespace(self_id=3987707335)
+    bot = SimpleNamespace(self_id=920000004)
     matcher = Matcher()
 
     asyncio.run(
         commands.finish_whitelist_forward(
             bot,
             matcher,
-            SimpleNamespace(user_id=595861835),
+            SimpleNamespace(user_id=900000001),
             "查重白名单",
-            "595861835（Secmon）",
+            "900000001（Local Operator）",
             lambda: image,
         )
     )

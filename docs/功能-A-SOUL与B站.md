@@ -11,7 +11,7 @@ A-SOUL 直播日程查询、B 站自动播报与接口测试命令。自动播�
 
 `-a` 参数已不再生效：带与不带 `-a` 都返回完整日程，包含心宜、思诺，不再隐藏。
 
-日程查询优先返回由同一份网页模板渲染的本地确定性 PNG，图片本身只包含本次查询内容，不包含网页切换控件。今日、明日、本周三个指令的图片下方都只附一行 `线上：s.secmon.cn/r`；该唯一短链接固定进入本周直播，打开后仍可在网页顶部切换三种范围。QQ 文案不显示 `https://` 前缀。
+日程查询优先返回由同一份网页模板渲染的本地确定性 PNG，图片本身只包含本次查询内容，不包含网页切换控件。今日、明日、本周三个指令的图片下方都只附一行 `线上：short.example.invalid/r`；该唯一短链接固定进入本周直播，打开后仍可在网页顶部切换三种范围。QQ 文案不显示 `https://` 前缀。
 
 ## 超级管理员命令
 
@@ -42,7 +42,7 @@ A-SOUL 直播日程查询、B 站自动播报与接口测试命令。自动播�
 - `ASOUL_BILI_ENABLED`、`ASOUL_BILI_POLL_INTERVAL_SECONDS`：播报总开关与轮询间隔。
 - 默认监控 8 个 B 站账号，其中包含枝江娱乐的小黑（UID `3493082517474232`，空间 `https://space.bilibili.com/3493082517474232`）。
 - 新独群的 B站推送默认关闭，加入集群时初始开启；本群群主、群管理员或超级管理员使用 `#群设置 B站推送 开|关` 维护本群接收状态。
-- 推送源、账号登录、轮询参数和暂停参数只能由超级管理员维护。`ASOUL_BILI_TARGET_UIDS` 保留 8 个普通内容订阅账号；`ASOUL_BILI_COMMENT_TARGET_UIDS` 是其子集，当前固定为嘉然、乃琳、心宜、思诺、贝拉。`ASOUL_BILI_GROUP_IDS`、`ASOUL_BILI_PUSH_A_COAST` 与 `ASOUL_BILI_A_COAST_GROUP_IDS` 仅作为旧配置迁移和来源兼容，不再是群级运行权威。
+- 推送源、账号登录、轮询参数和暂停参数只能由超级管理员维护。`ASOUL_BILI_TARGET_UIDS` 保留 8 个普通内容订阅账号；`ASOUL_BILI_COMMENT_TARGET_UIDS` 是其子集，当前固定为嘉然、乃琳、心宜、思诺、贝拉。`ASOUL_BILI_GROUP_IDS` 仅作为首次迁移种子，群级运行权威是 SQLite 开关。
 - `ASOUL_BILI_PUSH_DYNAMIC/VIDEO/LIVE/COMMENT`、`ASOUL_BILI_RENDER_CARDS`：各类推送与卡片开关。
 
 ## 维护与验证

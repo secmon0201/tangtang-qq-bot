@@ -208,7 +208,8 @@ def test_named_tunnel_starts_gateway_with_bounded_resource_limits():
     assert "$config.WavesLoginUrlSelf.data = $true" in wuwa_setter
 
     configure = source("scripts/configure_tangtang_named_tunnel.ps1")
-    assert "[string]$ShortHostname = 's.secmon.cn'" in configure
+    assert "[string]$ShortHostname = ''" in configure
+    assert "PUBLIC_SHORT_HOST" in configure
     assert "tunnel route dns --overwrite-dns $TunnelId $candidateHostname" in configure
     assert '"  - hostname: $ShortHostname"' in configure
 
@@ -217,6 +218,7 @@ def test_root_contains_no_scattered_batch_shortcuts():
     assert list(ROOT.glob("*.bat")) == []
     shortcuts = {path.name for path in (ROOT / "启动工具").glob("*.bat")}
     assert shortcuts == {
+        "00-首次初始化设置.bat",
         "01-启动全部.bat",
         "02-重启全部.bat",
         "03-关闭全部.bat",

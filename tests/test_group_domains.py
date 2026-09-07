@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from bot.config import A_COAST_GROUP_IDS
 from bot.db import Database
-from bot.services.group_domains import FEATURE_SPECS, GroupDomainService
+from bot.services.group_domains import (
+    FEATURE_SPECS,
+    GroupDomainService,
+    parse_named_cluster_ranking_command,
+)
+
+
+CLUSTER_GROUP_IDS = (910000105, 910000101, 910000104, 910000102, 910000103)
 
 
 def _service(tmp_path) -> tuple[Database, GroupDomainService]:
     database = Database(tmp_path / "bot.db")
-    database.seed_groups(A_COAST_GROUP_IDS)
-    service = GroupDomainService(database)
+    database.seed_groups(CLUSTER_GROUP_IDS)
+    service = GroupDomainService(database, group_order=CLUSTER_GROUP_IDS)
     service.bootstrap()
+    cluster = service.create_cluster("A海岸", "海岸")
+    for index, group_id in enumerate(CLUSTER_GROUP_IDS, start=1):
+        service.add_group_to_cluster(group_id, cluster.domain_id)
+        service.set_alias(group_id, f"成员群{index}")
     return database, service
 
 
@@ -95,12 +105,28 @@ def test_live_guard_effective_state_depends_on_mini_games(tmp_path):
     assert not service.effective_feature_enabled(9001, "live_guard")
 
 
-def test_a_coast_cluster_keeps_configured_member_order(tmp_path):
+def test_named_cluster_keeps_configured_member_order(tmp_path):
     _database, service = _service(tmp_path)
-    domain = service.domain_for_group(A_COAST_GROUP_IDS[0])
+    domain = service.cluster_by_name_or_alias("a海岸")
 
     assert domain is not None and domain.mode == "cluster"
-    assert service.domain_groups(domain.domain_id) == A_COAST_GROUP_IDS
+    assert service.domain_groups(domain.domain_id) == CLUSTER_GROUP_IDS
+    assert service.cluster_by_name_or_alias("海岸") == domain
+
+
+def test_named_cluster_ranking_parser_preserves_static_cluster_command():
+    assert parse_named_cluster_ranking_command("#A海岸发言排行 月") == ("A海岸", "月")
+    assert parse_named_cluster_ranking_command("#测试集群发言榜") == ("测试集群", "")
+    assert parse_named_cluster_ranking_command("#集群发言排行 月") is None
+
+
+def test_cluster_name_cannot_duplicate_an_existing_alias(tmp_path):
+    _database, service = _service(tmp_path)
+
+    import pytest
+
+    with pytest.raises(ValueError, match="already exists"):
+        service.create_cluster("海岸")
 
 
 def test_group_alias_is_the_solo_domain_display_name(tmp_path):

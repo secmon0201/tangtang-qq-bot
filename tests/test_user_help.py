@@ -146,7 +146,7 @@ def test_user_help_points_to_the_interactive_short_link():
 
     asyncio.run(commands.send_user_help_image(Matcher()))
 
-    assert responses == ["帮助在线：s.secmon.cn/h"]
+    assert responses == ["帮助在线：short.example.invalid/h"]
 
 
 def test_user_help_text_is_one_folded_forward_node():

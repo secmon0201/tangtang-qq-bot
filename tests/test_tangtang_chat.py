@@ -185,6 +185,7 @@ def enable_plugin_group_features(monkeypatch, *group_ids: int) -> None:
     enabled = tuple(group_ids or (1001,))
     domains = SimpleNamespace(
         all_group_ids=lambda: enabled,
+        domain_for_group=lambda group_id: None,
         feature_enabled=lambda group_id, feature: int(group_id) in enabled,
         effective_feature_enabled=lambda group_id, feature: int(group_id) in enabled,
     )
@@ -662,7 +663,7 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
                 tier="clear",
                 action="today_live",
                 scope="",
-                a_coast=False,
+                cluster=False,
                 line="今天的直播给你找出来啦。",
             ),
             {"total_tokens": 3},
@@ -1828,8 +1829,8 @@ def test_render_message_text_keeps_at_mentions():
         + Message("是谁呢")
     )
     assert (
-        render_message_text(message, {"123456": "Secmon"})
-        == "糖糖锐评一下@Secmon是谁呢"
+        render_message_text(message, {"123456": "Local Operator"})
+        == "糖糖锐评一下@Local Operator是谁呢"
     )
     assert render_message_text(message) == "糖糖锐评一下@123456是谁呢"
     assert render_message_text(Message("纯文本")) == "纯文本"
@@ -1847,7 +1848,7 @@ def test_resolve_at_labels_uses_member_info_and_all(monkeypatch):
         async def call_api(self, action, **params):
             assert action == "get_group_member_info"
             assert params == {"group_id": 1001, "user_id": 123456, "no_cache": False}
-            return {"data": {"card": "Secmon", "nickname": "secmon"}}
+            return {"data": {"card": "Local Operator", "nickname": "operator"}}
 
     message = (
         Message("糖糖锐评一下")
@@ -1857,7 +1858,7 @@ def test_resolve_at_labels_uses_member_info_and_all(monkeypatch):
     )
     event = SimpleNamespace(group_id=1001, message=message)
     labels = asyncio.run(resolve_at_labels(FakeBot(), event))
-    assert labels == {"123456": "Secmon", "all": "全体成员"}
+    assert labels == {"123456": "Local Operator", "all": "全体成员"}
 
 
 def test_prompt_keeps_at_mention_label(tmp_path, monkeypatch):
@@ -1900,9 +1901,9 @@ def test_prompt_keeps_at_mention_label(tmp_path, monkeypatch):
         }
     )
     prompt = service._build_prompt(
-        event, enabled_config(), at_labels={"123456": "Secmon"}
+        event, enabled_config(), at_labels={"123456": "Local Operator"}
     )
-    assert "消息：糖糖锐评一下@Secmon是谁呢" in prompt
+    assert "消息：糖糖锐评一下@Local Operator是谁呢" in prompt
 
 
 def test_high_history_chars_values_are_accepted():
@@ -1958,7 +1959,7 @@ def test_group_messages_persist_across_instances(tmp_path, monkeypatch):
         1001, "何时是归年", "今天聊点啥", user_id=3, message_id="m1"
     )
     service.record_group_message(
-        1001, "Secmon", "明天再说", user_id=9, message_id="m2"
+        1001, "Local Operator", "明天再说", user_id=9, message_id="m2"
     )
 
     second = TangtangService(
@@ -1970,7 +1971,7 @@ def test_group_messages_persist_across_instances(tmp_path, monkeypatch):
     )
     assert second._group_context_lines(1001, 30) == [
         "何时是归年: 今天聊点啥",
-        "Secmon: 明天再说",
+        "Local Operator: 明天再说",
     ]
 
 
@@ -1980,7 +1981,7 @@ def test_user_history_is_per_user(tmp_path, monkeypatch):
         1001, "何时是归年", "第一条", user_id=3, message_id="m1"
     )
     service.record_group_message(
-        1001, "Secmon", "别人的话", user_id=9, message_id="m2"
+        1001, "Local Operator", "别人的话", user_id=9, message_id="m2"
     )
     service.record_group_message(
         1001, "何时是归年", "第二条", user_id=3, message_id="m3"
@@ -1997,7 +1998,7 @@ def test_prompt_includes_user_history_section(tmp_path, monkeypatch):
         1001, "何时是归年", "我今天想聊枝江", user_id=3, message_id="m1"
     )
     service.record_group_message(
-        1001, "Secmon", "无关的话", user_id=9, message_id="m2"
+        1001, "Local Operator", "无关的话", user_id=9, message_id="m2"
     )
     event = group_message(group_id=1001, text="糖糖在吗")
     prompt = service._build_prompt(event, enabled_config())

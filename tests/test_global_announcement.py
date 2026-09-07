@@ -9,7 +9,9 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from starlette.responses import Response
 from starlette.datastructures import UploadFile
 
-from bot.config import A_COAST_GROUP_IDS
+
+
+TARGET_GROUP_IDS = (910000101, 910000102, 910000103, 910000104, 910000105)
 from bot.services.reports import ReportRenderer
 from bot.services import roles
 
@@ -270,6 +272,31 @@ def test_announcement_target_snapshot_supports_cluster_and_group_multiselect_wit
     assert session.target_options == options
 
 
+def test_internal_announcement_targets_use_configured_sqlite_cluster(monkeypatch):
+    plugin = announcement_plugin()
+    domain = SimpleNamespace(domain_id=7)
+
+    class Domains:
+        @staticmethod
+        def cluster_by_name_or_alias(name):
+            assert name == "测试集群"
+            return domain
+
+        @staticmethod
+        def domain_groups(domain_id):
+            assert domain_id == 7
+            return TARGET_GROUP_IDS
+
+    monkeypatch.setattr(
+        plugin,
+        "settings",
+        SimpleNamespace(global_announcement_default_cluster="测试集群"),
+    )
+    monkeypatch.setattr(plugin, "domains", Domains())
+
+    assert plugin.announcement_targets() == TARGET_GROUP_IDS
+
+
 def test_announcement_target_selection_is_required_and_rejects_unknown_keys():
     plugin = announcement_plugin()
     session = plugin.web_sessions.create(
@@ -301,7 +328,7 @@ def test_global_announcement_broadcast_sends_one_image_to_each_a_coast_group(mon
         SimpleNamespace(render_global_announcement=lambda _text, sticker=None: poster),
     )
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS)
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS)
     monkeypatch.setattr(
         plugin,
         "resolve_announcement_sticker",
@@ -315,8 +342,8 @@ def test_global_announcement_broadcast_sends_one_image_to_each_a_coast_group(mon
         plugin.send_global_announcement(FakeBot(), "公告内容")
     )
 
-    assert (sent_count, failed_count) == (len(A_COAST_GROUP_IDS), 0)
-    assert [kwargs["group_id"] for action, kwargs in sent] == list(A_COAST_GROUP_IDS)
+    assert (sent_count, failed_count) == (len(TARGET_GROUP_IDS), 0)
+    assert [kwargs["group_id"] for action, kwargs in sent] == list(TARGET_GROUP_IDS)
     assert all(action == "send_group_msg" for action, kwargs in sent)
     message = sent[0][1]["message"]
     assert message.type == "image"
@@ -338,7 +365,7 @@ def test_global_announcement_broadcast_can_mention_all(monkeypatch, tmp_path):
         SimpleNamespace(render_global_announcement=lambda _text, sticker=None: poster),
     )
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS[:1])
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS[:1])
     monkeypatch.setattr(
         plugin,
         "resolve_announcement_sticker",
@@ -368,15 +395,15 @@ def test_global_image_broadcast_sends_existing_image_to_each_a_coast_group(monke
         sent.append((action, kwargs))
 
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS)
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS)
 
     class FakeBot:
         self_id = 123
 
     sent_count, failed_count = asyncio.run(plugin.send_global_image(FakeBot(), image_path))
 
-    assert (sent_count, failed_count) == (len(A_COAST_GROUP_IDS), 0)
-    assert [kwargs["group_id"] for action, kwargs in sent] == list(A_COAST_GROUP_IDS)
+    assert (sent_count, failed_count) == (len(TARGET_GROUP_IDS), 0)
+    assert [kwargs["group_id"] for action, kwargs in sent] == list(TARGET_GROUP_IDS)
     assert all(action == "send_group_msg" for action, kwargs in sent)
     assert all(kwargs["message"].type == "image" for action, kwargs in sent)
 
@@ -391,7 +418,7 @@ def test_global_image_broadcast_appends_optional_text_in_the_same_message(monkey
         sent.append((action, kwargs))
 
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS[:1])
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS[:1])
 
     class FakeBot:
         self_id = 123
@@ -465,7 +492,7 @@ def test_global_announcement_skips_groups_outside_managed_scope(monkeypatch, tmp
         SimpleNamespace(render_global_announcement=lambda _text, sticker=None: poster),
     )
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS[:-1])
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS[:-1])
     monkeypatch.setattr(
         plugin,
         "resolve_announcement_sticker",
@@ -479,8 +506,8 @@ def test_global_announcement_skips_groups_outside_managed_scope(monkeypatch, tmp
         plugin.send_global_announcement(FakeBot(), "公告内容")
     )
 
-    assert (sent_count, failed_count) == (len(A_COAST_GROUP_IDS) - 1, 0)
-    assert [kwargs["group_id"] for action, kwargs in sent] == list(A_COAST_GROUP_IDS[:-1])
+    assert (sent_count, failed_count) == (len(TARGET_GROUP_IDS) - 1, 0)
+    assert [kwargs["group_id"] for action, kwargs in sent] == list(TARGET_GROUP_IDS[:-1])
 
 
 def test_global_announcement_rendering_failure_counts_all_groups_as_failed(monkeypatch):
@@ -499,7 +526,7 @@ def test_global_announcement_rendering_failure_counts_all_groups_as_failed(monke
         SimpleNamespace(render_global_announcement=broken_render),
     )
     monkeypatch.setattr(plugin, "call_qq_action", fake_call_api)
-    monkeypatch.setattr(plugin, "announcement_targets", lambda: A_COAST_GROUP_IDS)
+    monkeypatch.setattr(plugin, "announcement_targets", lambda: TARGET_GROUP_IDS)
 
     class FakeBot:
         self_id = 123
@@ -508,5 +535,5 @@ def test_global_announcement_rendering_failure_counts_all_groups_as_failed(monke
         plugin.send_global_announcement(FakeBot(), "公告内容")
     )
 
-    assert (sent_count, failed_count) == (0, len(A_COAST_GROUP_IDS))
+    assert (sent_count, failed_count) == (0, len(TARGET_GROUP_IDS))
     assert sent == []

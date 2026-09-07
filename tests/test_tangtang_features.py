@@ -42,11 +42,13 @@ def test_explicit_ranking_requests_are_routed_locally_with_persona_feedback():
         assert decision.scope == "day"
         assert decision.line == "好呀，糖糖这就看看群里今天谁最能聊。"
 
-    coast = classify_local_feature("糖糖看A海岸这个月的发言榜")
+    coast = classify_local_feature(
+        "糖糖看A海岸这个月的发言榜", cluster_labels=("A海岸",)
+    )
     assert coast is not None
     assert coast.action == "cluster_ranking"
     assert coast.scope == "month"
-    assert coast.a_coast is True
+    assert coast.cluster is True
     assert coast.line == "好呀，糖糖这就看看当前集群本月谁最能聊。"
 
 
@@ -61,7 +63,7 @@ def test_personal_references_never_switch_ranking_away_from_the_group():
         assert decision is not None
         assert decision.action == "group_ranking"
         assert decision.scope == scope
-        assert decision.a_coast is False
+        assert decision.cluster is False
 
     assert classify_local_feature("糖糖看看我这周在五个群说了多少") is None
 
@@ -72,7 +74,7 @@ def test_ranking_mentions_without_a_request_still_use_ai_router():
 
 def test_parse_clear_maybe_chat_and_invalid_outputs():
     clear = TangtangFeatureClassifier._parse(
-        '{"decision":"clear","action":"today_live","scope":"","a_coast":false,'
+        '{"decision":"clear","action":"today_live","scope":"","cluster":false,'
         '"line":"今天的直播给你找出来啦。"}'
     )
     assert clear is not None
@@ -82,13 +84,13 @@ def test_parse_clear_maybe_chat_and_invalid_outputs():
 
     maybe = TangtangFeatureClassifier._parse(
         '{"decision":"maybe","action":"cluster_ranking","scope":"month",'
-        '"a_coast":true,"line":"你要是想看A海岸这个月发言榜的话，我给你排一排。"}'
+        '"cluster":true,"line":"你要是想看当前集群这个月发言榜的话，我给你排一排。"}'
     )
     assert maybe is not None
     assert maybe.tier == "maybe"
     assert maybe.action == "cluster_ranking"
     assert maybe.scope == "month"
-    assert maybe.a_coast is True
+    assert maybe.cluster is True
 
     assert TangtangFeatureClassifier._parse('{"decision":"chat"}') is None
     assert TangtangFeatureClassifier._parse("不是 JSON") is None
@@ -97,33 +99,33 @@ def test_parse_clear_maybe_chat_and_invalid_outputs():
     ) is None
     assert TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"personal_stats","scope":"week",'
-        '"a_coast":true,"line":"我来看看。"}'
+        '"cluster":true,"line":"我来看看。"}'
     ) is None
     assert TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"today_live","line":""}'
     ) is None
 
 
-def test_parse_normalizes_ranking_scope_and_a_coast():
+def test_parse_normalizes_ranking_scope_and_cluster():
     group = TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"group_ranking","scope":"week",'
-        '"a_coast":false,"line":"本周发言榜来了。"}'
+        '"cluster":false,"line":"本周发言榜来了。"}'
     )
     assert group is not None
     assert group.action == "group_ranking"
     assert group.scope == "week"
 
-    forced_coast = TangtangFeatureClassifier._parse(
+    forced_cluster = TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"group_ranking","scope":"month",'
-        '"a_coast":true,"line":"这个月A海岸的发言榜来了。"}'
+        '"cluster":true,"line":"这个月集群发言榜来了。"}'
     )
-    assert forced_coast is not None
-    assert forced_coast.action == "cluster_ranking"
-    assert forced_coast.a_coast is True
+    assert forced_cluster is not None
+    assert forced_cluster.action == "cluster_ranking"
+    assert forced_cluster.cluster is True
 
     defaulted = TangtangFeatureClassifier._parse(
         '{"decision":"maybe","action":"group_ranking","scope":"",'
-        '"a_coast":false,"line":"发言情况我给你排一排。"}'
+        '"cluster":false,"line":"发言情况我给你排一排。"}'
     )
     assert defaulted is not None
     assert defaulted.scope == "day"
@@ -146,7 +148,7 @@ def test_classifier_returns_decision_and_usage():
 
     provider = FakeProvider(
         '{"decision":"maybe","action":"today_live","scope":"",'
-        '"a_coast":false,"line":"你要是想看今天有谁直播的话，我给你找找。"}'
+        '"cluster":false,"line":"你要是想看今天有谁直播的话，我给你找找。"}'
     )
     classifier = TangtangFeatureClassifier(provider=provider)
     decision, usage = asyncio.run(
@@ -164,13 +166,13 @@ def test_request_from_decision_maps_scope_to_chinese():
         tier="clear",
         action="cluster_ranking",
         scope="month",
-        a_coast=True,
+        cluster=True,
         line="本月发言榜来了。",
     )
     request = request_from_decision(decision)
     assert request.action == "ranking"
     assert request.args == "月"
-    assert request.a_coast is True
+    assert request.cluster is True
     assert feature_label(request) == "集群发言排行 月"
 
 
@@ -181,7 +183,7 @@ def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
 
     async def fake_handler(matcher, bot, event, request):
         del matcher, bot, event
-        calls.append((request.action, (request.args, request.a_coast)))
+        calls.append((request.action, (request.args, request.cluster)))
 
     for action in (
         "zhijiang_schedule",
@@ -200,7 +202,7 @@ def test_run_feature_call_dispatches_to_shared_helpers(monkeypatch):
         FeatureRequest("today_live"),
         FeatureRequest("tomorrow_live"),
         FeatureRequest("week_live"),
-        FeatureRequest("ranking", "周", a_coast=True),
+        FeatureRequest("ranking", "周", cluster=True),
     ]
     for request in requests:
         asyncio.run(run_feature_call(matcher, bot, event, request))

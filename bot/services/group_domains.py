@@ -1,18 +1,34 @@
 from __future__ import annotations
 
 import secrets
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, Mapping
 
-from bot.config import A_COAST_GROUP_IDS
 from bot.db import Database, utc_now
 
 
-A_COAST_DOMAIN_KEY = "cluster:a-coast"
-A_COAST_ALIASES = dict(
-    zip(A_COAST_GROUP_IDS, ("修会", "剧团", "莫塔里", "翡萨烈", "墓岛"), strict=True)
+_NAMED_CLUSTER_RANKING_RE = re.compile(
+    r"^#\s*(?P<name>.+?)(?:发言排行|发言榜|统计)(?:\s+(?P<args>.*))?$",
+    re.IGNORECASE,
 )
+
+
+def normalize_cluster_label(value: str) -> str:
+    return "".join(str(value).split()).casefold()
+
+
+def parse_named_cluster_ranking_command(text: str) -> tuple[str, str] | None:
+    """Parse ``#<cluster name>发言排行`` without reserving any cluster name."""
+
+    match = _NAMED_CLUSTER_RANKING_RE.fullmatch(str(text).strip())
+    if match is None:
+        return None
+    name = " ".join(match.group("name").split())
+    if not name or normalize_cluster_label(name) == normalize_cluster_label("集群"):
+        return None
+    return name, str(match.group("args") or "").strip()
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +80,11 @@ class GroupDomain:
 class GroupDomainService:
     """SQLite authority for independent groups, clusters and local feature intent."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, *, group_order: Iterable[int] = ()) -> None:
         self.database = database
+        self._group_order = tuple(
+            dict.fromkeys(int(group_id) for group_id in group_order)
+        )
 
     @staticmethod
     def _new_token() -> str:
@@ -88,22 +107,6 @@ class GroupDomainService:
         }
         now = utc_now()
         with self.database.connect() as connection:
-            cluster_id = self._ensure_domain(
-                connection,
-                A_COAST_DOMAIN_KEY,
-                "cluster",
-                "A海岸",
-                "A海岸",
-                now,
-            )
-            for group_id in A_COAST_GROUP_IDS:
-                connection.execute(
-                    """UPDATE managed_groups
-                       SET domain_id=?,alias=CASE WHEN alias='' THEN ? ELSE alias END
-                       WHERE group_id=?""",
-                    (cluster_id, A_COAST_ALIASES[group_id], group_id),
-                )
-
             rows = list(
                 connection.execute(
                     "SELECT group_id,domain_id FROM managed_groups WHERE enabled=1 ORDER BY group_id"
@@ -185,16 +188,7 @@ class GroupDomainService:
             if row is None:
                 raise RuntimeError("group registration did not persist")
             domain_id = row["domain_id"]
-            if int(group_id) in A_COAST_GROUP_IDS:
-                domain_id = self._ensure_domain(
-                    connection,
-                    A_COAST_DOMAIN_KEY,
-                    "cluster",
-                    "A海岸",
-                    "A海岸",
-                    now,
-                )
-            elif domain_id is None:
+            if domain_id is None:
                 domain_id = self._ensure_domain(
                     connection,
                     f"solo:{int(group_id)}",
@@ -336,6 +330,31 @@ class GroupDomainService:
             ).fetchone()
         return self._domain(row)
 
+    def cluster_by_name_or_alias(self, value: str) -> GroupDomain | None:
+        normalized = normalize_cluster_label(value)
+        if not normalized:
+            return None
+        with self.database.connect() as connection:
+            rows = list(
+                connection.execute(
+                    """SELECT * FROM group_domains
+                       WHERE mode='cluster' AND enabled=1
+                       ORDER BY domain_id"""
+                )
+            )
+        matches = {
+            int(row["domain_id"]): row
+            for row in rows
+            if normalized
+            in {
+                normalize_cluster_label(str(row["name"])),
+                normalize_cluster_label(str(row["alias"])),
+            }
+        }
+        if len(matches) > 1:
+            raise ValueError("cluster name is ambiguous")
+        return self._domain(next(iter(matches.values()), None))
+
     @staticmethod
     def _domain(row) -> GroupDomain | None:
         if row is None:
@@ -353,10 +372,6 @@ class GroupDomainService:
     def domain_groups(self, domain_id: int, *, enabled_only: bool = True) -> tuple[int, ...]:
         clause = " AND enabled=1" if enabled_only else ""
         with self.database.connect() as connection:
-            domain = connection.execute(
-                "SELECT domain_key FROM group_domains WHERE domain_id=?",
-                (int(domain_id),),
-            ).fetchone()
             rows = list(
                 connection.execute(
                     f"SELECT group_id FROM managed_groups WHERE domain_id=?{clause} ORDER BY group_id",
@@ -364,10 +379,18 @@ class GroupDomainService:
                 )
             )
         group_ids = tuple(int(row["group_id"]) for row in rows)
-        if domain is not None and str(domain["domain_key"]) == A_COAST_DOMAIN_KEY:
-            present = set(group_ids)
-            return tuple(group_id for group_id in A_COAST_GROUP_IDS if group_id in present)
-        return group_ids
+        configured_order = {
+            group_id: index for index, group_id in enumerate(self._group_order)
+        }
+        return tuple(
+            sorted(
+                group_ids,
+                key=lambda group_id: (
+                    configured_order.get(group_id, len(configured_order)),
+                    group_id,
+                ),
+            )
+        )
 
     def ranking_group_ids(self, group_id: int, *, cluster: bool) -> tuple[int, ...]:
         domain = self.domain_for_group(group_id)
@@ -457,6 +480,8 @@ class GroupDomainService:
         cleaned = " ".join(str(name).split())
         if not cleaned:
             raise ValueError("cluster name is required")
+        if self.cluster_by_name_or_alias(cleaned) is not None:
+            raise ValueError("cluster name already exists")
         key = f"cluster:{secrets.token_hex(12)}"
         now = utc_now()
         with self.database.connect() as connection:
@@ -532,13 +557,11 @@ class GroupDomainService:
         now = utc_now()
         with self.database.connect() as connection:
             row = connection.execute(
-                "SELECT domain_key,mode FROM group_domains WHERE domain_id=?",
+                "SELECT mode FROM group_domains WHERE domain_id=?",
                 (domain_id,),
             ).fetchone()
             if row is None or str(row["mode"]) != "cluster":
                 raise ValueError("cluster not found")
-            if str(row["domain_key"]) == A_COAST_DOMAIN_KEY:
-                raise ValueError("A海岸 cluster is fixed")
             for group_id in groups:
                 solo_id = self._ensure_domain(
                     connection, f"solo:{group_id}", "solo", str(group_id), "", now
@@ -556,11 +579,11 @@ class GroupDomainService:
 
 
 __all__ = [
-    "A_COAST_ALIASES",
-    "A_COAST_DOMAIN_KEY",
     "FEATURE_SPECS",
     "FEATURES",
     "FeatureSpec",
     "GroupDomain",
     "GroupDomainService",
+    "normalize_cluster_label",
+    "parse_named_cluster_ranking_command",
 ]

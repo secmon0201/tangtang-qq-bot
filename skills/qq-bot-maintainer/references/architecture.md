@@ -26,7 +26,7 @@ Runtime independence means a matcher may inspect already-known dependency state 
 ## Group domains
 
 - `bot/services/group_domains.py` owns unlimited managed-group registration, aliases, solo domains, private clusters, feature defaults, and public ranking-token rotation. SQLite is the runtime authority; `.env` group lists are migration seeds or machine-level settings only.
-- A newly observed group becomes an independent solo domain. The fixed A-Coast five-group set is the first private cluster, not the default product boundary.
+- A newly observed group becomes an independent solo domain. Named clusters are created and maintained only through SQLite-backed super-admin operations; none are built into source code.
 - Group owners and QQ group administrators can edit only the current group's alias and switches. Only super administrators can create, inspect, invite to, remove from, or dissolve private clusters.
 - Per-group switches control local invocation and push behavior. Cluster membership alone controls cluster statistics, so disabling a feature in one member group never removes that group's records from the cluster aggregate.
 - Token-consuming mention chat and proactive chat additionally require their SQLite robot-wide runtime gates. A robot-wide gate is a reversible cost-control condition and must never overwrite the saved per-group intent.

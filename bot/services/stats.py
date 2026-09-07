@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.db import Database
 
 
@@ -16,7 +16,7 @@ class StatsService:
         self,
         database: Database,
         realtime_enabled: bool = True,
-        group_ids: Iterable[int] = A_COAST_GROUP_IDS,
+        group_ids: Iterable[int] = (),
         group_provider: Callable[[], Iterable[int]] | None = None,
     ) -> None:
         self.database = database
@@ -89,7 +89,7 @@ class StatsService:
         log_dir: Path,
         start_day: date,
     ) -> dict[str, int]:
-        """Backfill self-sent A Coast group messages from local NapCat event logs."""
+        """Backfill self-sent managed-group messages from local NapCat event logs."""
         result = {"files": 0, "matched": 0, "imported": 0, "duplicates": 0, "invalid": 0}
         if not log_dir.is_dir():
             return result

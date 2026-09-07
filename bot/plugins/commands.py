@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException, status as fastapi_status
 from fastapi.responses import HTMLResponse
-from nonebot import get_driver, logger, on_command
+from nonebot import get_driver, logger, on_command, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
 from nonebot.rule import Rule
@@ -32,7 +32,7 @@ from bot.application.command_helpers import (
     user_id,
     valid_qq_id,
 )
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.services.duplicate import (
     DUPLICATE_MODE,
     DUPLICATE_MODE_ALL,
@@ -63,6 +63,7 @@ from bot.services.community_web import (
 from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, group_domains, passive_settings
+from bot.services.group_domains import GroupDomain, parse_named_cluster_ranking_command
 from bot.services.stats import StatsService
 from bot.services.whitelist_menu import (
     build_whitelist_menu_text,
@@ -208,6 +209,7 @@ def user_help_text() -> str:
         commands.extend((
             f"{prefix}发言排行 [日/周/月/总]", f"{prefix}发言榜 [日/周/月/总]", f"{prefix}统计 [日/周/月/总]",
             f"{prefix}集群发言排行 [日/周/月/总]", f"{prefix}集群发言榜 [日/周/月/总]", f"{prefix}集群统计 [日/周/月/总]",
+            f"{prefix}<集群名>发言排行 [日/周/月/总]",
             f"{prefix}发言记录 <QQ号|@成员> [页码]", f"{prefix}发言搜索 <QQ号|@成员> <关键词> [页码]",
             f"{prefix}发言画像 <QQ号|@成员>", f"{prefix}画像 <QQ号|@成员>",
         ))
@@ -330,8 +332,6 @@ async def build_community_ranking_payload(
     if scope not in {value[0] for value in RANKING_SCOPES.values()}:
         raise ValueError("scope 仅支持 day、week、month、total")
     domain = domain or group_domains().domain_for_group(int(selected_group_id or 0))
-    if domain is None:
-        domain = group_domains().domain_for_group(A_COAST_GROUP_IDS[0])
     if domain is None:
         raise ValueError("群域不可用")
     domain_group_ids = group_domains().domain_groups(domain.domain_id)
@@ -1035,33 +1035,44 @@ RANKING_TITLES = {
 
 
 async def finish_message_ranking(
-    matcher: object, event: MessageEvent, args: Message, a_coast: bool
+    matcher: object,
+    event: MessageEvent,
+    args: Message,
+    cluster: bool,
+    *,
+    target_domain: GroupDomain | None = None,
+    command_name: str | None = None,
 ) -> None:
     group_id = current_group(event)
     tokens = text_arg(args).split()
     if len(tokens) > 1 or (tokens and tokens[0] not in RANKING_SCOPES):
-        command = "集群发言排行" if a_coast else "发言排行"
+        command = command_name or ("集群发言排行" if cluster else "发言排行")
         await matcher.finish(f"用法：{settings.command_prefix}{command} 日|周|月|总")  # type: ignore[attr-defined]
     scope, _ = RANKING_SCOPES[tokens[0]] if tokens else RANKING_SCOPES["日"]
     if group_id is None:
         await matcher.finish("发言榜需要在目标 QQ 群内查询。")  # type: ignore[attr-defined]
-    domain = group_domains().domain_for_group(group_id)
-    if domain is None:
+    current_domain = group_domains().domain_for_group(group_id)
+    if current_domain is None:
         await matcher.finish("当前群尚未完成登记，请稍后重试。")  # type: ignore[attr-defined]
-    if a_coast and domain.mode != "cluster":
+    if cluster and current_domain.mode != "cluster":
         await matcher.finish("当前群不属于集群；请使用 #发言榜 查看本群排行。")  # type: ignore[attr-defined]
+    domain = target_domain or current_domain
+    if cluster and domain.domain_id != current_domain.domain_id:
+        await matcher.finish(
+            f"当前群不属于“{group_domains().domain_display_name(domain)}”集群，不能查看该集群排行。"
+        )  # type: ignore[attr-defined]
     ranking_group_ids = (
-        group_domains().domain_groups(domain.domain_id) if a_coast else (group_id,)
+        group_domains().domain_groups(domain.domain_id) if cluster else (group_id,)
     )
     ranking_rows = stats_service.ranking_rows_for_groups(scope, ranking_group_ids)
     rows = user_report_rows(ranking_rows)
     public_group_key = group_domains().public_group_key(group_id) or DOMAIN_GROUP_KEY
     web_payload = await build_community_ranking_payload(
         scope,
-        DOMAIN_GROUP_KEY if a_coast else public_group_key,
+        DOMAIN_GROUP_KEY if cluster else public_group_key,
         rows=rows,
         domain=domain,
-        selected_group_id=None if a_coast else group_id,
+        selected_group_id=None if cluster else group_id,
     )
     title = str(web_payload["title"])
     message_prefix = Message(MessageSegment.at(user_id(event))) if group_id is not None else Message()
@@ -1074,13 +1085,13 @@ async def finish_message_ranking(
         avatar_paths = await cached_avatar_paths(rows)
         group_totals = (
             stats_service.group_totals_for_groups(scope, ranking_group_ids)
-            if a_coast
+            if cluster
             else ()
         )
         group_avatars = await group_avatar_paths(group_totals) if group_totals else {}
         daily_totals = (
             stats_service.recent_group_daily_totals(group_id)
-            if group_id is not None and not a_coast
+            if group_id is not None and not cluster
             else ()
         )
         try:
@@ -1089,7 +1100,7 @@ async def finish_message_ranking(
                 title,
                 str(web_payload["subtitle"]),
                 avatar_paths,
-                show_group_labels=a_coast,
+                show_group_labels=cluster,
                 group_totals=group_totals,
                 group_avatar_paths=group_avatars,
                 daily_totals=daily_totals,
@@ -1117,22 +1128,68 @@ group_ranking._tangtang_skip_quote = True
 
 @group_ranking.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
-    await finish_message_ranking(group_ranking, event, args, a_coast=False)
+    await finish_message_ranking(group_ranking, event, args, cluster=False)
 
 
-a_coast_ranking = on_command(
+cluster_ranking = on_command(
     "集群发言排行",
-    aliases={"集群发言榜", "集群统计", "A海岸发言排行", "A海岸发言榜", "A海岸统计", "a海岸发言排行", "a海岸发言榜", "a海岸统计"},
+    aliases={"集群发言榜", "集群统计"},
     rule=Rule(lambda: settings.stats_realtime_enabled),
     priority=5,
     block=True,
 )
-a_coast_ranking._tangtang_skip_quote = True
+cluster_ranking._tangtang_skip_quote = True
 
 
-@a_coast_ranking.handle()
+@cluster_ranking.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
-    await finish_message_ranking(a_coast_ranking, event, args, a_coast=True)
+    await finish_message_ranking(cluster_ranking, event, args, cluster=True)
+
+
+def named_cluster_ranking_rule(event: MessageEvent) -> bool:
+    parsed = parse_named_cluster_ranking_command(event.get_plaintext())
+    if parsed is None:
+        return False
+    try:
+        return group_domains().cluster_by_name_or_alias(parsed[0]) is not None
+    except ValueError:
+        return True
+
+
+async def finish_named_cluster_ranking(matcher: object, event: MessageEvent) -> None:
+    parsed = parse_named_cluster_ranking_command(event.get_plaintext())
+    if parsed is None:
+        return
+    cluster_name, raw_args = parsed
+    try:
+        domain = group_domains().cluster_by_name_or_alias(cluster_name)
+    except ValueError:
+        await matcher.finish(
+            f"“{cluster_name}”对应多个集群，请让超级管理员调整集群名称或别名。"
+        )  # type: ignore[attr-defined]
+    if domain is None:
+        await matcher.finish(f"没有找到名为“{cluster_name}”的集群。")  # type: ignore[attr-defined]
+    await finish_message_ranking(
+        matcher,
+        event,
+        Message(raw_args),
+        cluster=True,
+        target_domain=domain,
+        command_name=f"{cluster_name}发言排行",
+    )
+
+
+named_cluster_ranking = on_message(
+    rule=Rule(named_cluster_ranking_rule),
+    priority=5,
+    block=True,
+)
+named_cluster_ranking._tangtang_skip_quote = True
+
+
+@named_cluster_ranking.handle()
+async def _(event: MessageEvent):
+    await finish_named_cluster_ranking(named_cluster_ranking, event)
 
 
 status = on_command("机器人状态", priority=5, block=True)
@@ -1184,5 +1241,5 @@ async def _run_local_ranking_feature(
         matcher,
         event,
         Message(request.args),
-        a_coast=request.a_coast,
+        cluster=request.cluster,
     )

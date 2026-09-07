@@ -49,44 +49,44 @@ def test_passive_reaction_accepts_only_non_mention_messages_in_configured_groups
     monkeypatch.setattr("bot.plugins.random_reactions.automation_is_paused", lambda: False)
     monkeypatch.setattr(
         "bot.plugins.random_reactions.passive",
-        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1090284567),
+        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 910000104),
     )
 
-    assert is_passive_reaction_event(group_message(group_id=1090284567))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, to_me=True))
-    assert not is_passive_reaction_event(group_message(group_id=278824712))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#装填"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#枝江直播"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#白名单"))
-    assert is_passive_reaction_event(group_message(group_id=1090284567, text="报名 517"))
-    assert is_passive_reaction_event(group_message(group_id=1090284567, text="取消报名 517"))
-    assert is_passive_reaction_event(group_message(group_id=1090284567, text="活动详情 517"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#猜数"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#猜 123"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#游戏开"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#清游"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#确认"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#取消"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="# 开枪"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#丢给@群友"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="# 重投"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="#不投"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="nte帮助"))
-    assert not is_passive_reaction_event(group_message(group_id=1090284567, text="NTE角色列表"))
+    assert is_passive_reaction_event(group_message(group_id=910000104))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, to_me=True))
+    assert not is_passive_reaction_event(group_message(group_id=910000105))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#装填"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#枝江直播"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#白名单"))
+    assert is_passive_reaction_event(group_message(group_id=910000104, text="报名 517"))
+    assert is_passive_reaction_event(group_message(group_id=910000104, text="取消报名 517"))
+    assert is_passive_reaction_event(group_message(group_id=910000104, text="活动详情 517"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#猜数"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#猜 123"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#游戏开"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#清游"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#确认"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#取消"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="# 开枪"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#丢给@群友"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="# 重投"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="#不投"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="nte帮助"))
+    assert not is_passive_reaction_event(group_message(group_id=910000104, text="NTE角色列表"))
 
 
 def test_filtered_member_is_detected_without_changing_the_blocking_matcher(monkeypatch):
     monkeypatch.setattr("bot.plugins.random_reactions.automation_is_paused", lambda: False)
     monkeypatch.setattr(
         "bot.plugins.random_reactions.passive",
-        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1090284567),
+        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 910000104),
     )
     monkeypatch.setattr(
         "bot.plugins.random_reactions.db",
         SimpleNamespace(passive_filter_contains=lambda user_id: user_id == 3),
     )
 
-    event = group_message(group_id=1090284567)
+    event = group_message(group_id=910000104)
 
     assert is_passive_reaction_event(event)
     assert is_reaction_filtered(event)
@@ -96,14 +96,14 @@ def test_passive_reactions_are_rejected_while_automation_is_paused(monkeypatch):
     monkeypatch.setattr("bot.plugins.random_reactions.automation_is_paused", lambda: True)
     monkeypatch.setattr(
         "bot.plugins.random_reactions.passive",
-        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1090284567),
+        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 910000104),
     )
 
-    assert not is_passive_reaction_event(group_message(group_id=1090284567))
+    assert not is_passive_reaction_event(group_message(group_id=910000104))
 
 
 def test_repeatable_text_requires_a_short_plain_text_message():
-    assert repeatable_text(group_message(group_id=1090284567)) == "test"
+    assert repeatable_text(group_message(group_id=910000104)) == "test"
 
 
 def test_triple_repeat_probability_gate_uses_strict_less_than():
@@ -114,7 +114,7 @@ def test_triple_repeat_probability_gate_uses_strict_less_than():
 
 
 def test_stale_group_messages_are_not_eligible_for_passive_interactions():
-    event = group_message(group_id=1090284567, timestamp=1)
+    event = group_message(group_id=910000104, timestamp=1)
 
     assert is_stale_passive_event(event, now=122)
 
@@ -122,5 +122,5 @@ def test_stale_group_messages_are_not_eligible_for_passive_interactions():
 def test_codex_messages_are_not_eligible_for_passive_interactions(monkeypatch):
     monkeypatch.setattr(
         "bot.plugins.random_reactions.passive",
-        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1090284567),
+        SimpleNamespace(is_group_enabled=lambda group_id: group_id == 910000104),
     )

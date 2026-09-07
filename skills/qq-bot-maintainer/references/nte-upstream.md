@@ -19,10 +19,10 @@ Chain: `SnowLuma -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core
 - RoverSign, TodayEcho, ScoreEcho, and RoverReminder are installed as clean upstream repositories with the `ww` force prefix and exposed through `HelpExtraModules=["all"]`. RoverSign, TodayEcho, and ScoreEcho are enabled. RoverReminder stays disabled at both plugin-load and internal mail-switch levels; project command policy blocks all of its settings and replies that mail reminders are unavailable.
 - ScoreEcho keeps its upstream API failure response, which already includes HTTP status and server detail for an expired token; do not replace upstream errors unless a future pinned version removes that feedback.
 - Ranking interception is whitelist-based: project-rendered score, phantom, practice, and strongest formats only. Damage and activity rankings continue upstream.
-- Rankings read `wavesbind`, `players/<uid>/charListData.json`, and compressed or plain `rawData.json` read-only. They expose current-group and robot-wide local views only, never an A-Coast view.
+- Rankings read `wavesbind`, `players/<uid>/charListData.json`, and compressed or plain `rawData.json` read-only. They expose current-group and robot-wide local views only, never a private-cluster view.
 - QQ avatar, display name, group name, and group alias come from project `bot.db`; pages contain up to 100 ranking rows.
-- `scripts/import_wuwa_data.py` is dry-run by default. `--apply` is permitted only after its A-Coast five-group boundary check and backups succeed. Never print cookies, tokens, or login payloads.
-- `#ww登录` uses `WavesLoginUrl=https://tangtang.secmon.cn` with `WavesLoginUrlSelf=true`. The shared gateway forwards only the temporary `/waves/i/*` page and its approved login submission endpoints; panel editing, gacha pages, fonts, external-login service endpoints, `/ws/*`, and `/api/*` stay private.
+- `scripts/import_wuwa_data.py` is dry-run by default. `--apply` is permitted only after its configured fixed-cluster boundary check and backups succeed. Never print cookies, tokens, or login payloads.
+- `#ww登录` uses `WavesLoginUrl=https://bot.example.invalid` with `WavesLoginUrlSelf=true`. The shared gateway forwards only the temporary `/waves/i/*` page and its approved login submission endpoints; panel editing, gacha pages, fonts, external-login service endpoints, `/ws/*`, and `/api/*` stay private.
 
 ## Upstream update flow
 

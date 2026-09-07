@@ -101,7 +101,7 @@ def test_cluster_delivery_posts_one_shared_image_and_is_idempotent(monkeypatch, 
     monkeypatch.setattr(
         delivery_module,
         "public_domain_ranking_url",
-        lambda token: f"https://tangtang.secmon.cn/ranking/{token}/",
+        lambda token: f"https://bot.example.invalid/ranking/{token}/",
     )
     monkeypatch.setattr(delivery_module, "call_qq_action", send)
     now = datetime(2026, 7, 28, 23, 50, tzinfo=ZONE)
@@ -117,7 +117,7 @@ def test_cluster_delivery_posts_one_shared_image_and_is_idempotent(monkeypatch, 
     assert current_domain is not None
     assert str(sent[0][1]["message"]) == (
         "image:community-ranking.png\n"
-        f"在线：https://tangtang.secmon.cn/ranking/{current_domain.public_token}/"
+        f"在线：https://bot.example.invalid/ranking/{current_domain.public_token}/"
     )
     assert renderer.calls == []
     assert stats.requested_groups == [(1001, 1002)]
@@ -213,7 +213,7 @@ def test_delivery_keeps_domain_link_when_html_renderer_falls_back(monkeypatch, t
     monkeypatch.setattr(
         delivery_module,
         "public_domain_ranking_url",
-        lambda token: f"https://tangtang.secmon.cn/ranking/{token}/",
+        lambda token: f"https://bot.example.invalid/ranking/{token}/",
     )
     monkeypatch.setattr(delivery_module, "call_qq_action", send)
 
@@ -226,6 +226,6 @@ def test_delivery_keeps_domain_link_when_html_renderer_falls_back(monkeypatch, t
     assert result["sent"] == 2
     assert str(sent[0]) == (
         "image:ranking.png\n"
-        f"在线：https://tangtang.secmon.cn/ranking/{domain.public_token}/"
+        f"在线：https://bot.example.invalid/ranking/{domain.public_token}/"
     )
     assert len(renderer.calls) == 1

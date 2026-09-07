@@ -4,6 +4,7 @@
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\validate_public_release.py
 .\.venv\Scripts\python.exe scripts\validate_docs.py
 .\.venv\Scripts\python.exe scripts\validate_architecture.py
 .\.venv\Scripts\python.exe scripts\validate_upstream_lock.py
@@ -46,7 +47,7 @@ The `runtime_maintenance` plugin cleans avatar superseded versions, HTML screens
 ## Git
 
 - Commit the complete project-owned QQ bot in one repository; NTE is not a separate repository.
-- Keep `main` buildable and use focused commits. No remote is configured yet: remain local-only until the user supplies a private GitHub URL.
+- Keep `main` buildable and use focused commits. An operational remote may exist, but it must remain private and must not be pushed without an explicit request. Public release uses a separate fresh-history sanitized repository.
 - Never commit `.env`, `data/`, `logs/`, `GsUID.Core`, SnowLuma, caches, generated outputs, or retired implementations.
 - Stage only explicit project-owned paths. Upstream checkouts must remain clean, stash-free, on the locked branch, tracking `origin/<branch>`, and without local-only commits; update them only through `scripts\install_gsuid.ps1` fast-forward flow.
 - After deleting anything material, report what was removed and whether it is recoverable.

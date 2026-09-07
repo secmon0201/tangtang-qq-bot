@@ -311,7 +311,7 @@ async def _run_client() -> int:
         (
             text
             for text in captured_texts.get("#ww登录", ())
-            if "tangtang.secmon.cn/waves/i/" in text
+            if "bot.example.invalid/waves/i/" in text
         ),
         None,
     )

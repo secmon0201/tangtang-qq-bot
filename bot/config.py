@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -12,10 +13,6 @@ from dotenv import load_dotenv
 ROOT = Path(os.getenv("QQ_BOT_ROOT", Path(__file__).resolve().parent.parent))
 RESOURCE_DIR = ROOT / "bot" / "resources"
 load_dotenv(ROOT / ".env")
-
-
-# A海岸是内置的首个私有集群；其他群由 SQLite 动态登记。
-A_COAST_GROUP_IDS = (1128870029, 1077416717, 1083457871, 1090284567, 278824712)
 
 
 def _csv_ints(value: str | None) -> tuple[int, ...]:
@@ -30,6 +27,25 @@ def _csv_ints(value: str | None) -> tuple[int, ...]:
             raise ValueError(f"invalid QQ/group ID: {item!r}")
         result.append(int(item))
     return tuple(dict.fromkeys(result))
+
+
+def _optional_https_base(name: str) -> str | None:
+    value = os.getenv(name, "").strip().rstrip("/")
+    if not value:
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.path not in {"", "/"}:
+        raise ValueError(f"{name} must be an HTTPS origin without a path")
+    return value
+
+
+def _optional_hostname(name: str) -> str | None:
+    value = os.getenv(name, "").strip().lower().rstrip(".")
+    if not value:
+        return None
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", value):
+        raise ValueError(f"{name} must be a plain DNS hostname")
+    return value
 
 
 def _csv_game_numbers(value: str | None, name: str) -> tuple[int, ...]:
@@ -112,6 +128,7 @@ class Settings:
     game_api_group_ids: tuple[int, ...]
     operator_ids: frozenset[int]
     global_announcement_operator_ids: frozenset[int]
+    global_announcement_default_cluster: str
     command_prefix: str
     timezone: str
     rollup_hour: int
@@ -125,6 +142,9 @@ class Settings:
     official_app_secret: str | None
     official_sandbox: bool
     onebot_access_token: str | None
+    public_site_base_url: str | None
+    public_short_host: str | None
+    public_generator_credit: str
     qq_transport_maintenance_enabled: bool
     qq_transport_maintenance_interval_seconds: int
     codex_completion_notify_enabled: bool
@@ -191,8 +211,6 @@ class Settings:
     asoul_bili_enabled: bool
     asoul_bili_poll_interval_seconds: int
     asoul_bili_group_ids: tuple[int, ...]
-    asoul_bili_push_a_coast: bool
-    asoul_bili_a_coast_group_ids: tuple[int, ...]
     asoul_bili_target_uids: tuple[str, ...]
     asoul_bili_comment_target_uids: tuple[str, ...]
     asoul_bili_push_dynamic: bool
@@ -237,9 +255,6 @@ class Settings:
                 "ASOUL_BILI_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: "
                 f"{invalid_asoul_bili_groups}"
             )
-        asoul_bili_a_coast_group_ids = _csv_ints(
-            os.getenv("ASOUL_BILI_A_COAST_GROUP_IDS", ",".join(map(str, A_COAST_GROUP_IDS)))
-        )
         operators = frozenset(_csv_ints(os.getenv("BOT_OPERATOR_IDS")))
         global_announcement_operators = frozenset(
             _csv_ints(os.getenv("GLOBAL_ANNOUNCEMENT_OPERATOR_IDS"))
@@ -280,15 +295,6 @@ class Settings:
             if value in {"0", "false", "no", "off"}:
                 return False
             raise ValueError(f"{name} must be true or false")
-
-        asoul_bili_push_a_coast = boolean("ASOUL_BILI_PUSH_A_COAST", True)
-        if asoul_bili_push_a_coast:
-            missing_a_coast_bili_groups = sorted(set(asoul_bili_a_coast_group_ids) - set(groups))
-            if missing_a_coast_bili_groups:
-                raise ValueError(
-                    "ASOUL_BILI_A_COAST_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: "
-                    f"{missing_a_coast_bili_groups}"
-                )
 
         def integer(name: str, default: int, minimum: int, maximum: int) -> int:
             value = int(os.getenv(name, str(default)))
@@ -551,6 +557,9 @@ class Settings:
             game_api_group_ids=game_api_groups,
             operator_ids=operators,
             global_announcement_operator_ids=global_announcement_operators,
+            global_announcement_default_cluster=os.getenv(
+                "GLOBAL_ANNOUNCEMENT_DEFAULT_CLUSTER", ""
+            ).strip(),
             command_prefix=prefix,
             timezone=os.getenv("BOT_TIMEZONE", "Asia/Shanghai"),
             rollup_hour=integer("BOT_ROLLUP_HOUR", 1, 0, 23),
@@ -564,6 +573,9 @@ class Settings:
             official_app_secret=official_app_secret,
             official_sandbox=official_sandbox,
             onebot_access_token=os.getenv("ONEBOT_ACCESS_TOKEN") or None,
+            public_site_base_url=_optional_https_base("PUBLIC_SITE_BASE_URL"),
+            public_short_host=_optional_hostname("PUBLIC_SHORT_HOST"),
+            public_generator_credit=os.getenv("PUBLIC_GENERATOR_CREDIT", "").strip()[:80],
             qq_transport_maintenance_enabled=boolean("QQ_TRANSPORT_MAINTENANCE_ENABLED", True),
             qq_transport_maintenance_interval_seconds=integer(
                 "QQ_TRANSPORT_MAINTENANCE_INTERVAL_SECONDS",
@@ -650,8 +662,6 @@ class Settings:
                 "ASOUL_BILI_POLL_INTERVAL_SECONDS", 300, 60, 3600
             ),
             asoul_bili_group_ids=asoul_bili_group_ids,
-            asoul_bili_push_a_coast=asoul_bili_push_a_coast,
-            asoul_bili_a_coast_group_ids=asoul_bili_a_coast_group_ids,
             asoul_bili_target_uids=asoul_bili_target_uids,
             asoul_bili_comment_target_uids=asoul_bili_comment_target_uids,
             asoul_bili_push_dynamic=boolean("ASOUL_BILI_PUSH_DYNAMIC", True),
@@ -660,13 +670,6 @@ class Settings:
             asoul_bili_push_comment=boolean("ASOUL_BILI_PUSH_COMMENT", False),
             asoul_bili_render_cards=boolean("ASOUL_BILI_RENDER_CARDS", True),
         )
-
-    @property
-    def asoul_bili_effective_group_ids(self) -> tuple[int, ...]:
-        groups = self.asoul_bili_group_ids
-        if self.asoul_bili_push_a_coast:
-            groups += self.asoul_bili_a_coast_group_ids
-        return tuple(dict.fromkeys(groups))
 
     def managed_order(self, group_ids: Iterable[int]) -> tuple[int, ...]:
         """Order a group subset by their position in MANAGED_GROUP_IDS."""

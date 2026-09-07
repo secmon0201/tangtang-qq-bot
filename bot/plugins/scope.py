@@ -15,7 +15,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, Me
 
 from bot.config import settings
 from bot.services.pacing import passive_response_for
-from bot.services.group_domains import FEATURES
+from bot.services.group_domains import FEATURES, parse_named_cluster_ranking_command
 from bot.services.qq_platform import QQPlatform, QQPlatformError, call_qq_action
 from bot.services.replies import install_matcher_quote_replies
 from bot.services.roles import UserRole, is_super_admin, user_role
@@ -53,7 +53,7 @@ FEATURE_COMMAND_PATTERNS = (
     (
         "speech_ranking",
         re.compile(
-            r"^#\s*(?:发言排行|发言榜|统计|集群发言排行|集群发言榜|集群统计|[Aa]海岸发言排行|[Aa]海岸发言榜|[Aa]海岸统计)(?:\s|$)"
+            r"^#\s*(?:发言排行|发言榜|统计|集群发言排行|集群发言榜|集群统计)(?:\s|$)"
         ),
     ),
     ("nte", re.compile(r"^#?\s*nte(?:\s|$|[\u4e00-\u9fff])", re.IGNORECASE)),
@@ -166,6 +166,16 @@ def disabled_feature_for(text: str, group_id: int) -> str | None:
             int(group_id), feature_key
         ):
             return feature_key
+    named_cluster = parse_named_cluster_ranking_command(normalized)
+    if named_cluster is not None:
+        try:
+            exists = group_domains().cluster_by_name_or_alias(named_cluster[0]) is not None
+        except ValueError:
+            exists = True
+        if exists and not group_domains().effective_feature_enabled(
+            int(group_id), "speech_ranking"
+        ):
+            return "speech_ranking"
     return None
 
 

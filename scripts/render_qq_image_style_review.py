@@ -49,18 +49,18 @@ async def render_web_samples() -> tuple[Path, ...]:
     )
     ranking_payload = {
         "mode": "ranking",
-        "title": "A海岸今日发言榜",
-        "subtitle": "五群汇总 · 2026-09-01",
+        "title": "示例集群今日发言榜",
+        "subtitle": "集群汇总 · 2026-09-01",
         "message_total": 329,
         "scope": "day",
-        "group": "a-coast",
+        "group": "domain",
         "scope_options": [{"value": "day", "label": "今日"}],
-        "group_options": [{"value": "a-coast", "label": "A海岸五群"}],
+        "group_options": [{"value": "domain", "label": "示例集群"}],
         "rows": [
-            {"rank": 1, "nickname": "嘉然今天吃什么", "message_count": 128, "group_name": "A海岸1群", "avatar": ""},
-            {"rank": 2, "nickname": "向晚大魔王", "message_count": 87, "group_name": "A海岸3群", "avatar": ""},
-            {"rank": 3, "nickname": "贝拉的训练搭档", "message_count": 64, "group_name": "A海岸2群", "avatar": ""},
-            {"rank": 4, "nickname": "乃琳的夜谈听众", "message_count": 50, "group_name": "A海岸5群", "avatar": ""},
+            {"rank": 1, "nickname": "嘉然今天吃什么", "message_count": 128, "group_name": "示例一群", "avatar": ""},
+            {"rank": 2, "nickname": "向晚大魔王", "message_count": 87, "group_name": "示例三群", "avatar": ""},
+            {"rank": 3, "nickname": "贝拉的训练搭档", "message_count": 64, "group_name": "示例二群", "avatar": ""},
+            {"rank": 4, "nickname": "乃琳的夜谈听众", "message_count": 50, "group_name": "示例五群", "avatar": ""},
         ],
         "chart": {
             "kind": "daily",

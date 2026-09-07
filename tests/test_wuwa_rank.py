@@ -19,7 +19,7 @@ from bot.services.wuwa_rank_data import (
 from bot.services.wuwa_rank_render import WuwaRankRenderer
 
 
-GROUP = 1128870029
+GROUP = 910000101
 
 
 def _core_db(path: Path) -> None:

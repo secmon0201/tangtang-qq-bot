@@ -1,29 +1,28 @@
 {
   "version": 1,
-  "host": "s.secmon.cn",
   "qq_schedule": "r",
   "qq_help": "h",
   "help_actions": {
     "live_today": {
       "label": "今日直播",
-      "target": "https://tangtang.secmon.cn/live/?view=today"
+      "target_path": "/live/?view=today"
     },
     "live_tomorrow": {
       "label": "明日直播",
-      "target": "https://tangtang.secmon.cn/live/?view=tomorrow"
+      "target_path": "/live/?view=tomorrow"
     },
     "live_week": {
       "label": "本周直播",
-      "target": "https://tangtang.secmon.cn/live/?view=week"
+      "target_path": "/live/?view=week"
     }
   },
   "links": {
     "r": {
       "view": "week",
-      "target": "https://tangtang.secmon.cn/live/?view=week"
+      "target_path": "/live/?view=week"
     },
     "h": {
-      "target": "https://tangtang.secmon.cn/help/"
+      "target_path": "/help/"
     }
   }
 }

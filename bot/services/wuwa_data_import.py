@@ -10,9 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from bot.config import A_COAST_GROUP_IDS
-
-
 TABLE_KEYS: dict[str, tuple[str, ...]] = {
     "wavesbind": ("bot_id", "user_id"),
     "wavesuser": ("bot_id", "user_id", "uid", "game_id"),
@@ -60,13 +57,15 @@ class WuwaDataImporter:
         source_players: Path,
         target_players: Path,
         *,
-        allowed_groups: tuple[int, ...] = A_COAST_GROUP_IDS,
+        allowed_groups: tuple[int, ...],
     ) -> None:
         self.source_db = Path(source_db).resolve()
         self.target_db = Path(target_db).resolve()
         self.source_players = Path(source_players).resolve()
         self.target_players = Path(target_players).resolve()
         self.allowed_groups = tuple(dict.fromkeys(int(value) for value in allowed_groups))
+        if not self.allowed_groups:
+            raise ValueError("allowed_groups must not be empty")
 
     def plan(self) -> WuwaImportPlan:
         if self.source_db == self.target_db:
@@ -99,7 +98,7 @@ class WuwaDataImporter:
         plan = plan or self.plan()
         if plan.outside_groups:
             raise WuwaImportError(
-                "源数据包含 A 海岸五群之外的群号，拒绝写入："
+                "源数据包含指定集群之外的群号，拒绝写入："
                 + ", ".join(str(value) for value in plan.outside_groups)
             )
         if not self.target_db.is_file():

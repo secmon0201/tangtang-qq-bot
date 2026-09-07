@@ -42,7 +42,13 @@ async def _feature_router(
 ) -> tuple[bool, dict[str, Any]]:
     if not has_feature_hint(text):
         return False, {}
-    decision = classify_local_feature(text)
+    current_domain = group_domains().domain_for_group(int(event.group_id))
+    cluster_labels = (
+        (current_domain.name, current_domain.alias)
+        if current_domain is not None and current_domain.mode == "cluster"
+        else ()
+    )
+    decision = classify_local_feature(text, cluster_labels=cluster_labels)
     if decision is None:
         decision, usage = await feature_classifier.classify(config, text)
     else:

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageOps
 
-from bot.config import A_COAST_GROUP_IDS, RESOURCE_DIR, ROOT, settings
+from bot.config import RESOURCE_DIR, ROOT, settings
 from bot.services.web_screenshot import LocalWebScreenshotRenderer
 
 
@@ -29,7 +29,6 @@ SCOPE_KICKERS = {
     "month": "AK-BOT FUNCTION",
     "total": "AK-BOT FUNCTION",
 }
-GROUP_LABELS = dict(zip(A_COAST_GROUP_IDS, ("修会", "剧团", "莫塔里", "翡萨烈", "墓岛"), strict=True))
 DOMAIN_GROUP_KEY = "domain"
 ALL_GROUP_KEY = DOMAIN_GROUP_KEY
 HELP_GROUP_SPECS = (
@@ -128,9 +127,9 @@ def public_web_url(kind: str) -> str | None:
         return None
     try:
         config = json.loads(SHORT_LINK_CONFIG_PATH.read_text(encoding="utf-8"))
-        host = str(config["host"])
+        host = settings.public_short_host
         code = str(config[key_name])
-        if code not in config["links"]:
+        if not host or code not in config["links"]:
             return None
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         return None
@@ -142,7 +141,9 @@ def public_domain_ranking_url(token: str) -> str | None:
 
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", str(token)):
         return None
-    return f"https://tangtang.secmon.cn/ranking/{token}/"
+    if not settings.public_site_base_url:
+        return None
+    return f"{settings.public_site_base_url}/ranking/{token}/"
 
 
 def _help_action_index() -> dict[str, dict[str, str]]:
@@ -159,11 +160,15 @@ def _help_action_index() -> dict[str, dict[str, str]]:
         if not isinstance(key, str) or not isinstance(raw_action, dict):
             continue
         label = raw_action.get("label")
-        target = raw_action.get("target")
-        if not isinstance(label, str) or not isinstance(target, str):
+        target_path = raw_action.get("target_path")
+        if not isinstance(label, str) or not isinstance(target_path, str):
             continue
+        if not settings.public_site_base_url or not target_path.startswith("/"):
+            continue
+        target = f"{settings.public_site_base_url}{target_path}"
         parsed = urlsplit(target)
-        if parsed.scheme != "https" or parsed.hostname != "tangtang.secmon.cn":
+        base = urlsplit(settings.public_site_base_url)
+        if parsed.scheme != "https" or parsed.hostname != base.hostname:
             continue
         actions[key] = {"key": key, "label": label, "target": target}
     return actions
@@ -256,7 +261,7 @@ def public_help_categories(
                 "",
                 [
                     ("当前群发言排行", f"{prefix}发言排行 / {prefix}发言榜 / {prefix}统计 [日/周/月/总]", "查看当前群的发言排行。"),
-                    ("当前集群发言排行", f"{prefix}集群发言排行 / {prefix}集群发言榜 / {prefix}集群统计 [日/周/月/总]", "仅集群内群可合并查看当前集群排行。"),
+                    ("当前集群发言排行", f"{prefix}集群发言排行 / {prefix}<集群名>发言排行 [日/周/月/总]", "仅集群成员群可查看；集群名入口等同于当前集群排行。"),
                     ("发言档案", f"{prefix}发言记录 / {prefix}发言搜索 / {prefix}发言画像 <QQ号|@成员>", "记录与搜索限定当前群；画像按当前域生成。"),
                 ],
             )
@@ -284,13 +289,6 @@ def public_help_categories(
         ]
     )
     return categories
-
-
-def _group_options() -> list[dict[str, str]]:
-    return [{"key": ALL_GROUP_KEY, "label": "A海岸"}] + [
-        {"key": str(group_id), "label": GROUP_LABELS[group_id]}
-        for group_id in A_COAST_GROUP_IDS
-    ]
 
 
 def _avatar_data_uri(path: Path | None, size: int = 80) -> str:
@@ -326,21 +324,20 @@ def ranking_payload(
 ) -> dict[str, Any]:
     if scope not in RANKING_SCOPES:
         raise ValueError("scope 仅支持 day、week、month、total")
+    labels = {int(key): str(value) for key, value in (group_labels or {}).items()}
     group_id: int | None
     if selected_group_id is not None:
         group_id = int(selected_group_id)
         group_label = group_label_override or str(group_id)
     elif group_key in {ALL_GROUP_KEY, DOMAIN_GROUP_KEY}:
         group_id = None
-        group_label = group_label_override or "A海岸"
+        group_label = group_label_override or "当前集群"
     else:
         try:
             group_id = int(group_key)
         except ValueError as exc:
             raise ValueError("group 不受支持") from exc
-        if group_id not in GROUP_LABELS:
-            raise ValueError("group 不受支持")
-        group_label = group_label_override or GROUP_LABELS[group_id]
+        group_label = group_label_override or labels.get(group_id, str(group_id))
     ranking_rows = (
         [dict(row) for row in rows]
         if rows is not None
@@ -376,7 +373,7 @@ def ranking_payload(
             "y_axis_label": "发言数（条）",
             "rows": [
                 {
-                    "label": (group_labels or GROUP_LABELS).get(
+                    "label": labels.get(
                         int(row.get("group_id") or 0),
                         str(row.get("group_name") or row.get("group_id") or "未命名群"),
                     ),
@@ -414,7 +411,11 @@ def ranking_payload(
         "scope_title": SCOPE_TITLES[scope],
         "header_kicker": SCOPE_KICKERS[scope],
         "scope_options": [{"key": key, "label": SCOPE_LABELS[key]} for key in RANKING_SCOPES],
-        "group_options": [dict(option) for option in group_options] if group_options is not None else _group_options(),
+        "group_options": (
+            [dict(option) for option in group_options]
+            if group_options is not None
+            else [{"key": DOMAIN_GROUP_KEY, "label": group_label}]
+        ),
         "title": f"{group_label}{SCOPE_TITLES[scope]}",
         "subtitle": (
             f"前 100 名｜按发言数降序、QQ 号升序｜历史数据最早自 {history_since}"

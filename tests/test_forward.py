@@ -52,8 +52,8 @@ def test_duplicate_pages_are_sent_as_one_multi_image_message(tmp_path: Path):
     matcher = Matcher()
     asyncio.run(
         commands.send_duplicate_pages(
-            SimpleNamespace(self_id=3987707335),
-            SimpleNamespace(user_id=595861835),
+            SimpleNamespace(self_id=920000004),
+            SimpleNamespace(user_id=900000001),
             matcher,
             ["第一页", "第二页"],
             [first, second],
@@ -88,8 +88,8 @@ def test_duplicate_pages_split_large_image_sets_into_message_batches(tmp_path: P
     matcher = Matcher()
     asyncio.run(
         commands.send_duplicate_pages(
-            SimpleNamespace(self_id=3987707335),
-            SimpleNamespace(user_id=595861835),
+            SimpleNamespace(self_id=920000004),
+            SimpleNamespace(user_id=900000001),
             matcher,
             [f"第 {index} 页" for index in range(len(paths))],
             paths,

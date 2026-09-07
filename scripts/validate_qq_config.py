@@ -144,18 +144,6 @@ def validate_asoul_bili(values: dict[str, str], managed_set: set[str]) -> None:
     invalid = sorted(set(groups) - managed_set)
     if invalid:
         raise ValueError(f"ASOUL_BILI_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: {invalid}")
-    a_coast_groups = parse_ids(
-        values.get("ASOUL_BILI_A_COAST_GROUP_IDS", "1128870029,1077416717,1083457871,1090284567,278824712"),
-        "ASOUL_BILI_A_COAST_GROUP_IDS",
-    )
-    push_a_coast = parse_bool(values.get("ASOUL_BILI_PUSH_A_COAST", "true"), "ASOUL_BILI_PUSH_A_COAST")
-    if push_a_coast:
-        missing_a_coast_groups = sorted(set(a_coast_groups) - managed_set)
-        if missing_a_coast_groups:
-            raise ValueError(
-                "ASOUL_BILI_A_COAST_GROUP_IDS contains groups outside MANAGED_GROUP_IDS: "
-                f"{missing_a_coast_groups}"
-            )
     targets = parse_ids(values.get("ASOUL_BILI_TARGET_UIDS", "672328094,672342685,3537115310721181,3537115310721781,672353429,703007996,3493085336046382,3493082517474232"), "ASOUL_BILI_TARGET_UIDS")
     comment_targets = parse_ids(values.get("ASOUL_BILI_COMMENT_TARGET_UIDS", "672328094,672342685,3537115310721181,3537115310721781,672353429"), "ASOUL_BILI_COMMENT_TARGET_UIDS")
     invalid_comment_targets = sorted(set(comment_targets) - set(targets))
@@ -166,7 +154,6 @@ def validate_asoul_bili(values: dict[str, str], managed_set: set[str]) -> None:
         )
     for key, default in (
         ("ASOUL_BILI_ENABLED", "false"),
-        ("ASOUL_BILI_PUSH_A_COAST", "true"),
         ("ASOUL_BILI_PUSH_DYNAMIC", "true"),
         ("ASOUL_BILI_PUSH_VIDEO", "true"),
         ("ASOUL_BILI_PUSH_LIVE", "true"),

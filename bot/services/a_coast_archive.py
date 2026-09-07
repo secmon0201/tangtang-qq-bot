@@ -4,7 +4,7 @@ from math import ceil
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.db import Database
 from bot.services.tangtang_db import TangtangDb
 
@@ -20,12 +20,10 @@ class ACoastArchiveService:
     def __init__(
         self,
         database: Database,
-        group_ids: Iterable[int] = A_COAST_GROUP_IDS,
         tangtang_db: TangtangDb | None = None,
     ) -> None:
         self.database = database
         self.tangtang_db = tangtang_db or TangtangDb()
-        self.group_ids = frozenset(int(group_id) for group_id in group_ids)
         self.zone = ZoneInfo(settings.timezone)
 
     def _group_names(self) -> dict[int, str]:

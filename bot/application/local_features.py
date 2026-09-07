@@ -16,7 +16,7 @@ from bot.services.tangtang_features import FeatureDecision
 class FeatureRequest:
     action: str
     args: str = ""
-    a_coast: bool = False
+    cluster: bool = False
 
 
 FeatureHandler = Callable[[Any, Bot, Any, FeatureRequest], Awaitable[None]]
@@ -50,9 +50,9 @@ def request_from_decision(decision: FeatureDecision) -> FeatureRequest:
         return FeatureRequest(
             action="ranking",
             args=_SCOPE_LABELS.get(decision.scope, decision.scope),
-            a_coast=decision.a_coast or decision.action == "cluster_ranking",
+            cluster=decision.cluster or decision.action == "cluster_ranking",
         )
-    return FeatureRequest(action=decision.action, args="", a_coast=False)
+    return FeatureRequest(action=decision.action, args="", cluster=False)
 
 
 def feature_label(request: FeatureRequest) -> str:
@@ -63,7 +63,7 @@ def feature_label(request: FeatureRequest) -> str:
         "week_live": "本周直播",
     }
     if request.action == "ranking":
-        name = "集群发言排行" if request.a_coast else "发言排行"
+        name = "集群发言排行" if request.cluster else "发言排行"
         return f"{name} {_SCOPE_LABELS.get(request.args, request.args)}"
     return labels.get(request.action, "本地功能")
 

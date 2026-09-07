@@ -8,11 +8,11 @@
 
 - 管理群数量不设上限。新观察到的群自动登记为独群，运行时以 SQLite 为准；`MANAGED_GROUP_IDS` 只作为首次迁移种子。
 - 独群默认只使用本群数据，不与其他群互动。群主和 QQ 群管理员自动成为本群机器人管理员，可修改本群代称和功能开关。
-- 私有集群只由超级管理员创建、查询、邀请、移除和解散。A海岸五群是第一个私有集群，不是机器人的默认产品边界。
+- 私有集群只由超级管理员创建、查询、邀请、移除和解散；源码不内建任何集群名称或成员。
 - 加入集群时本群功能默认全部开启；之后各群可独立关闭功能，但群级开关不会把该群排除出集群统计。
 - 群内 `#发言排行` 默认查看本群；集群成员可显式查看所在集群榜。独群的 23:50 推送只包含本群，集群成员群的推送包含集群榜。
 - `#nte薄荷排行` 和 `#nte最强排行` 默认查看当前群；只有显式使用 `#nte薄荷总排行`、`#nte最强总排行` 才查看机器人总榜。
-- 排行网页只通过 `/ranking/<token>/` 暴露对应群域数据。公开站不提供 A海岸专页、裸排行入口或旧短链。
+- 排行网页只通过 `/ranking/<token>/` 暴露对应群域数据。公开站不提供私有集群专页、裸排行入口或旧短链。
 - 活动和调查/问卷不属于当前运行功能。旧实现仅保留在 Git 历史中，参考方式见 [旧活动与问卷功能参考](docs/资料-旧活动与问卷功能参考.md)。
 
 详细权限、默认开关和指令见 [权限与范围](docs/功能-权限与范围.md) 与 [全部 `#` 指令清单](docs/全部%23指令清单.md)。
@@ -24,10 +24,10 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
-Copy-Item .env.example .env
+.\scripts\initialize_local_config.ps1
 ```
 
-至少确认 `.env` 中的 `MANAGED_GROUP_IDS`、`BOT_OPERATOR_IDS`、`QQ_ACCOUNT_ID`、`BOT_COMMAND_PREFIX=#` 和 `BOT_REQUIRE_MENTION=false`。不要把 QQ 密码、验证码、Cookie、Token、数据库、日志或登录状态提交到 Git。
+首次使用也可以双击 `启动工具\00-首次初始化设置.bat`。至少确认 `.env` 中的 `MANAGED_GROUP_IDS`、`BOT_OPERATOR_IDS`、`QQ_ACCOUNT_ID`、`BOT_COMMAND_PREFIX=#` 和 `BOT_REQUIRE_MENTION=false`。完整字段说明见 [首次初始化与隐私配置](docs/运维-首次初始化与隐私配置.md)。不要把 QQ 密码、验证码、Cookie、Token、数据库、日志或登录状态提交到 Git。
 
 QQ 登录、二维码、验证码、滑块、短信和设备验证始终由用户手动完成。SnowLuma 反向 WebSocket 默认连接：
 
@@ -58,6 +58,7 @@ NTE 是唯一启用的游戏接口，统一使用 `#nte`。排行、帮助和命
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\validate_public_release.py
 .\.venv\Scripts\python.exe scripts\validate_docs.py
 .\.venv\Scripts\python.exe scripts\validate_architecture.py
 .\.venv\Scripts\python.exe scripts\validate_upstream_lock.py

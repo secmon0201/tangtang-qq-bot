@@ -4,7 +4,6 @@ import asyncio
 
 from PIL import Image
 
-from bot.config import A_COAST_GROUP_IDS
 from bot.services.community_web import (
     CommunityWebRenderer,
     help_payload,
@@ -14,10 +13,18 @@ from bot.services.community_web import (
 )
 
 
+GROUP_IDS = (910000101, 910000102, 910000103, 910000104, 910000105)
+GROUP_LABELS = dict(zip(GROUP_IDS, ("修会", "剧团", "莫塔里", "翡萨烈", "墓岛"), strict=True))
+GROUP_OPTIONS = [{"key": "domain", "label": "A海岸"}] + [
+    {"key": str(group_id), "label": GROUP_LABELS[group_id]}
+    for group_id in GROUP_IDS
+]
+
+
 class _Stats:
     def ranking_rows(self, scope: str, group_id: int | None):
         assert scope == "week"
-        assert group_id == A_COAST_GROUP_IDS[2]
+        assert group_id == GROUP_IDS[2]
         return [
             {"rank": 1, "nickname": "测试成员", "message_count": 18, "group_name": "莫塔里"},
             {"rank": 2, "nickname": "另一位成员", "message_count": 8, "group_name": "莫塔里"},
@@ -35,11 +42,19 @@ class _Stats:
 
 def test_community_short_links_are_bare_and_approved():
     assert public_web_url("ranking") is None
-    assert public_web_url("help") == "s.secmon.cn/h"
+    assert public_web_url("help") == "short.example.invalid/h"
 
 
 def test_ranking_payload_keeps_the_requested_scope_and_fixed_group_order():
-    payload = ranking_payload(_Stats(), "week", str(A_COAST_GROUP_IDS[2]))
+    payload = ranking_payload(
+        _Stats(),
+        "week",
+        str(GROUP_IDS[2]),
+        selected_group_id=GROUP_IDS[2],
+        group_label_override="莫塔里",
+        group_labels=GROUP_LABELS,
+        group_options=GROUP_OPTIONS,
+    )
 
     assert payload["title"] == "莫塔里本周发言榜"
     assert payload["group_label"] == "莫塔里"
@@ -65,7 +80,7 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
     Image.new("RGB", (120, 120), "#7c596a").save(group_avatar)
     group_totals = [
         {"group_id": group_id, "group_name": f"A海岸{index}群", "message_count": index * 10}
-        for index, group_id in enumerate(A_COAST_GROUP_IDS, start=1)
+        for index, group_id in enumerate(GROUP_IDS, start=1)
     ]
 
     payload = ranking_payload(
@@ -84,7 +99,10 @@ def test_a_coast_payload_preserves_member_avatars_and_five_group_chart(tmp_path)
         ],
         avatar_paths={42: avatar},
         group_totals=group_totals,
-        group_avatar_paths={group_id: group_avatar for group_id in A_COAST_GROUP_IDS},
+        group_avatar_paths={group_id: group_avatar for group_id in GROUP_IDS},
+        group_label_override="A海岸",
+        group_labels=GROUP_LABELS,
+        group_options=GROUP_OPTIONS,
     )
 
     assert payload["rows"][0]["avatar"].startswith("data:image/webp;base64,")
@@ -189,9 +207,9 @@ def test_help_payload_indexes_only_confirmed_public_destinations():
     groups = {group["key"]: group for group in payload["groups"]}
 
     assert [action["target"] for action in groups["live"]["quick_actions"]] == [
-        "https://tangtang.secmon.cn/live/?view=today",
-        "https://tangtang.secmon.cn/live/?view=tomorrow",
-        "https://tangtang.secmon.cn/live/?view=week",
+        "https://bot.example.invalid/live/?view=today",
+        "https://bot.example.invalid/live/?view=tomorrow",
+        "https://bot.example.invalid/live/?view=week",
     ]
     assert groups["stats"]["quick_actions"] == []
 
@@ -217,7 +235,15 @@ def test_help_page_exposes_accessible_tabs_copy_feedback_and_mobile_layout():
 
 
 def test_ranking_renderer_outputs_png_without_interactive_controls(tmp_path):
-    payload = ranking_payload(_Stats(), "week", str(A_COAST_GROUP_IDS[2]))
+    payload = ranking_payload(
+        _Stats(),
+        "week",
+        str(GROUP_IDS[2]),
+        selected_group_id=GROUP_IDS[2],
+        group_label_override="莫塔里",
+        group_labels=GROUP_LABELS,
+        group_options=GROUP_OPTIONS,
+    )
     renderer = CommunityWebRenderer(tmp_path)
 
     async def render_and_close():

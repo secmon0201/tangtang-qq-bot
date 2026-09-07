@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from bot.config import A_COAST_GROUP_IDS, settings
+from bot.config import settings
 from bot.db import Database
 from bot.services.group_domains import GroupDomainService
 from bot.services.passive_settings import PassiveSettingsStore
@@ -11,13 +11,13 @@ from bot.services.passive_settings import PassiveSettingsStore
 @lru_cache(maxsize=1)
 def database() -> Database:
     instance = Database(settings.db_path)
-    instance.seed_groups((*settings.managed_group_ids, *A_COAST_GROUP_IDS))
+    instance.seed_groups(settings.managed_group_ids)
     return instance
 
 
 @lru_cache(maxsize=1)
 def group_domains() -> GroupDomainService:
-    instance = GroupDomainService(database())
+    instance = GroupDomainService(database(), group_order=settings.managed_group_ids)
     instance.bootstrap(
         legacy_feature_groups={
             "duplicate": settings.duplicate_group_ids,

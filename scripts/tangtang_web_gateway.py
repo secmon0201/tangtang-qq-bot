@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
+from dotenv import load_dotenv
+
 
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -44,12 +46,14 @@ WUWA_LOGIN_EXACT_PATHS = frozenset(
     }
 )
 WUWA_LOGIN_INDEX_PATTERN = re.compile(r"^/waves/i/[^/]+$")
-SHORT_LINK_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "public-short-links.json"
-SITE_ROOT = (Path(__file__).resolve().parents[1] / "site").resolve()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(PROJECT_ROOT / ".env")
+SHORT_LINK_CONFIG_PATH = PROJECT_ROOT / "config" / "public-short-links.json"
+SITE_ROOT = (PROJECT_ROOT / "site").resolve()
 PUBLIC_SITE_RELEASES_ROOT = (
-    Path(__file__).resolve().parents[1] / "data" / "public-site-releases"
+    PROJECT_ROOT / "data" / "public-site-releases"
 ).resolve()
-PUBLIC_SITE_POINTER = Path(__file__).resolve().parents[1] / "data" / "public-site-current.txt"
+PUBLIC_SITE_POINTER = PROJECT_ROOT / "data" / "public-site-current.txt"
 PUBLIC_SITE_MANIFEST = "_site-manifest.json"
 RELEASE_ID_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}-[a-f0-9]{12}$")
 FINGERPRINTED_FILE_PATTERN = re.compile(r"\.[a-f0-9]{12}\.[A-Za-z0-9]+$")
@@ -181,23 +185,28 @@ def load_short_links() -> tuple[str, dict[str, str]]:
     """Load the explicit ASCII short-link allowlist."""
     try:
         payload = json.loads(SHORT_LINK_CONFIG_PATH.read_text(encoding="utf-8"))
-        host = str(payload["host"]).lower()
         links = payload["links"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise RuntimeError("public short-link configuration is invalid") from exc
+    host = os.getenv("PUBLIC_SHORT_HOST", "short.example.invalid").strip().lower().rstrip(".")
+    public_base = os.getenv(
+        "PUBLIC_SITE_BASE_URL", "https://bot.example.invalid"
+    ).strip().rstrip("/")
     if not re.fullmatch(r"[a-z0-9.-]+", host):
         raise RuntimeError("public short-link host is invalid")
+    base = urlsplit(public_base)
+    if base.scheme != "https" or not base.hostname or base.path not in {"", "/"}:
+        raise RuntimeError("PUBLIC_SITE_BASE_URL must be an HTTPS origin")
     redirects: dict[str, str] = {}
     for code, item in links.items():
         if not isinstance(code, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", code):
             raise RuntimeError("public short-link code is invalid")
         if not isinstance(item, dict):
             raise RuntimeError("public short-link entry is invalid")
-        target = item.get("target")
-        parsed = urlsplit(str(target or ""))
-        if parsed.scheme != "https" or not parsed.netloc:
-            raise RuntimeError("public short-link target must be HTTPS")
-        redirects[f"/{code}"] = str(target)
+        target_path = item.get("target_path")
+        if not isinstance(target_path, str) or not target_path.startswith("/"):
+            raise RuntimeError("public short-link target path must be absolute")
+        redirects[f"/{code}"] = f"{public_base}{target_path}"
     return host, redirects
 
 

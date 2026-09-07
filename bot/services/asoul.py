@@ -1244,7 +1244,7 @@ class ASoulService:
             f"自动播报：{'开启' if settings.asoul_bili_enabled else '关闭'}",
             f"目标 UID：{len(settings.asoul_bili_target_uids)} 个",
             f"评论目标 UID：{len(settings.asoul_bili_comment_target_uids)} 个",
-            f"推送群：{', '.join(map(str, settings.asoul_bili_effective_group_ids)) or '未配置'}",
+            "推送群：由各群的 B站推送开关决定",
             f"轮询：每 {settings.asoul_bili_poll_interval_seconds} 秒",
             f"普通/转发/预约动态 / 动态视频 / 开播下播 / 评论：{'开' if settings.asoul_bili_push_dynamic else '关'} / {'开' if settings.asoul_bili_push_video else '关'} / {'开' if settings.asoul_bili_push_live else '关'} / {'开' if settings.asoul_bili_push_comment else '关'}",
             "独立视频轮询：已停用（投稿视频由动态接口识别）",

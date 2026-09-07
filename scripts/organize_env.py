@@ -36,6 +36,7 @@ SECTIONS = (
         (
             "BOT_OPERATOR_IDS",
             "GLOBAL_ANNOUNCEMENT_OPERATOR_IDS",
+            "GLOBAL_ANNOUNCEMENT_DEFAULT_CLUSTER",
         ),
     ),
     (
@@ -125,12 +126,11 @@ SECTIONS = (
             "GSUID_CORE_PORT",
             "GSUID_CORE_WS_TOKEN",
             "GSUID_CORE_BOTID",
+            "WUWA_IMPORT_CLUSTER_NAME",
             "STATS_REALTIME_ENABLED",
             "A_COAST_PROFILE_ENABLED",
             "ASOUL_BILI_ENABLED",
             "ASOUL_BILI_GROUP_IDS",
-            "ASOUL_BILI_PUSH_A_COAST",
-            "ASOUL_BILI_A_COAST_GROUP_IDS",
             "ASOUL_BILI_POLL_INTERVAL_SECONDS",
             "ASOUL_BILI_PUSH_DYNAMIC",
             "ASOUL_BILI_PUSH_VIDEO",

@@ -14,7 +14,7 @@ MAX_TEXT_LENGTH = 1000
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Send one image-form global announcement to every A-Coast group."
+        description="Send one image-form announcement to the configured default cluster."
     )
     parser.add_argument("text", nargs="?", default=None)
     parser.add_argument(

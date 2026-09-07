@@ -10,7 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-from bot.config import RESOURCE_DIR, ROOT
+from bot.config import RESOURCE_DIR, ROOT, settings
 from bot.services.web_screenshot import LocalWebScreenshotRenderer
 
 
@@ -31,9 +31,9 @@ class NotificationMediaUnavailable(RuntimeError):
 def asoul_live_web_url(view: str) -> str | None:
     try:
         payload = json.loads(SHORT_LINK_CONFIG_PATH.read_text(encoding="utf-8"))
-        host = str(payload["host"])
+        host = settings.public_short_host
         code = str(payload["qq_schedule"])
-        if code not in payload["links"]:
+        if not host or code not in payload["links"]:
             return None
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         return None
@@ -118,7 +118,10 @@ def notification_payload(
 
 
 def page_html(payload: Mapping[str, Any] | None = None, *, capture: bool = False) -> str:
-    source = WEB_PAGE_PATH.read_text(encoding="utf-8")
+    source = WEB_PAGE_PATH.read_text(encoding="utf-8").replace(
+        "__PUBLIC_GENERATOR_CREDIT__",
+        settings.public_generator_credit or "Generated locally",
+    )
     if payload is None:
         serialized = "null"
     else:

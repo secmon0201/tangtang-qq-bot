@@ -8,7 +8,7 @@ import pytest
 from bot.services.wuwa_data_import import TABLE_KEYS, WuwaDataImporter, WuwaImportError
 
 
-GROUP = 1128870029
+GROUP = 910000101
 
 
 SCHEMAS = {
@@ -55,7 +55,9 @@ def test_import_plan_is_dry_run_and_never_exposes_sensitive_values(tmp_path: Pat
     player = source_players / "123456789"
     player.mkdir(parents=True)
     (player / "charListData.json").write_text('{"1304": 100}', encoding="utf-8")
-    importer = WuwaDataImporter(source, target, source_players, target_players)
+    importer = WuwaDataImporter(
+        source, target, source_players, target_players, allowed_groups=(GROUP,)
+    )
 
     plan = importer.plan()
     audit = plan.audit(applied=False)
@@ -83,7 +85,9 @@ def test_apply_backs_up_and_merges_rows_without_copying_ids(tmp_path: Path):
     existing = target_players / "123456789"
     existing.mkdir(parents=True)
     (existing / "old.txt").write_text("old", encoding="utf-8")
-    importer = WuwaDataImporter(source, target, source_players, target_players)
+    importer = WuwaDataImporter(
+        source, target, source_players, target_players, allowed_groups=(GROUP,)
+    )
 
     audit = importer.apply()
     assert audit["mode"] == "apply"
@@ -96,15 +100,21 @@ def test_apply_backs_up_and_merges_rows_without_copying_ids(tmp_path: Path):
     assert any(Path(path).exists() for path in audit["backups"])
 
 
-def test_apply_rejects_any_source_group_outside_a_coast(tmp_path: Path):
+def test_apply_rejects_any_source_group_outside_selected_cluster(tmp_path: Path):
     source = tmp_path / "source.db"
     target = tmp_path / "target.db"
     _source(source, outside=True)
     _database(target)
-    importer = WuwaDataImporter(source, target, tmp_path / "players", tmp_path / "target-players")
+    importer = WuwaDataImporter(
+        source,
+        target,
+        tmp_path / "players",
+        tmp_path / "target-players",
+        allowed_groups=(GROUP,),
+    )
     plan = importer.plan()
     assert plan.outside_groups == (9000,)
-    with pytest.raises(WuwaImportError, match="五群之外"):
+    with pytest.raises(WuwaImportError, match="指定集群之外"):
         importer.apply(plan)
 
 
@@ -115,7 +125,13 @@ def test_import_rejects_player_uid_that_could_escape_player_root(tmp_path: Path)
     _database(target)
     with sqlite3.connect(source) as connection:
         connection.execute("UPDATE wavesbind SET uid='../outside'")
-    importer = WuwaDataImporter(source, target, tmp_path / "players", tmp_path / "target-players")
+    importer = WuwaDataImporter(
+        source,
+        target,
+        tmp_path / "players",
+        tmp_path / "target-players",
+        allowed_groups=(GROUP,),
+    )
 
     with pytest.raises(WuwaImportError, match="安全导入"):
         importer.plan()

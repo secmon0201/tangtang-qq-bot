@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 from nonebot import get_bots, get_driver, logger, on_command
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
 
-from bot.config import A_COAST_GROUP_IDS, RESOURCE_DIR, ROOT, settings
+from bot.config import RESOURCE_DIR, ROOT, settings
 from bot.services.media import local_image_segment
 from bot.services.qq_platform import call_qq_action
 from bot.services.reports import ReportRenderer
@@ -51,15 +51,21 @@ domains = group_domains()
 
 
 def announcement_targets() -> tuple[int, ...]:
-    """Return the legacy fixed targets used only by the local internal endpoint."""
-    managed = set(settings.managed_group_ids)
-    skipped = [group_id for group_id in A_COAST_GROUP_IDS if group_id not in managed]
-    if skipped:
-        logger.warning(
-            "Global announcement skips A-Coast groups outside MANAGED_GROUP_IDS: %s",
-            ",".join(map(str, skipped)),
-        )
-    return tuple(group_id for group_id in A_COAST_GROUP_IDS if group_id in managed)
+    """Resolve the internal endpoint's default target from a named SQLite cluster."""
+
+    cluster_name = settings.global_announcement_default_cluster
+    if not cluster_name:
+        raise ValueError("GLOBAL_ANNOUNCEMENT_DEFAULT_CLUSTER is not configured")
+    try:
+        domain = domains.cluster_by_name_or_alias(cluster_name)
+    except ValueError as exc:
+        raise ValueError("default announcement cluster name is ambiguous") from exc
+    if domain is None:
+        raise ValueError("default announcement cluster does not exist")
+    targets = domains.domain_groups(domain.domain_id)
+    if not targets:
+        raise ValueError("default announcement cluster has no active groups")
+    return targets
 
 
 def announcement_target_options() -> tuple[AnnouncementTarget, ...]:
@@ -695,7 +701,7 @@ async def global_announcement_web_send_image(
 
 @driver.server_app.post("/internal/codex/global-announcement")
 async def receive_global_announcement(request: Request) -> dict[str, Any]:
-    """Receive a local text request and deliver it as an image to all A-Coast groups."""
+    """Deliver a local request to the configured default SQLite cluster."""
     if not settings.codex_completion_notify_enabled:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

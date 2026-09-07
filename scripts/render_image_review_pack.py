@@ -67,7 +67,7 @@ def write_shared_reports() -> list[Path]:
         ),
         renderer.render_group_overview(
             "功能范围已更新",
-            "小游戏已在群 1067772451 开启",
+            "小游戏已在群 920000001 开启",
             [{"group_id": 1001, "group_name": "测试群", "tag": "独群", "detail": "发言榜：开 | 小游戏：开 | 今日老婆：开 | 准时报点：关"}],
         ),
         renderer.render_whitelist(
@@ -146,7 +146,7 @@ async def write_asoul_reports() -> list[Path]:
             "【B站动态】心宜\n这是带引用与预约信息的动态卡片。",
             dynamic={
                 "author": "测试 UP",
-                "uid": "595861835",
+                "uid": "900000001",
                 "profile": "元气满满的 A-SOUL 舞担",
                 "text": "周五中午 12 点，先来看看最新的枝江通讯，然后过一下战双的夏日剧情。",
                 "quote_author": "A-SOUL 官方",
@@ -160,7 +160,7 @@ async def write_asoul_reports() -> list[Path]:
             "【B站视频】心宜\n新视频发布",
             video={
                 "author": "测试 UP",
-                "uid": "595861835",
+                "uid": "900000001",
                 "profile": "A-SOUL 成员",
                 "text": "夏日特别企划：和大家一起完成舞台挑战",
                 "description": "记录这次舞台筹备的片段，也感谢每一位来到直播间的朋友。",
@@ -175,7 +175,7 @@ async def write_asoul_reports() -> list[Path]:
             live={
                 "phase": "start",
                 "author": "测试 UP",
-                "uid": "595861835",
+                "uid": "900000001",
                 "profile": "A-SOUL 成员",
                 "text": "夏日晚间歌回",
                 "url": "https://example.test/live",
@@ -189,7 +189,7 @@ async def write_asoul_reports() -> list[Path]:
             live={
                 "phase": "end",
                 "author": "测试 UP",
-                "uid": "595861835",
+                "uid": "900000001",
                 "profile": "A-SOUL 成员",
                 "text": "夏日晚间歌回",
                 "live_duration": "02:15:32",
@@ -280,13 +280,13 @@ def write_archive_reports() -> list[Path]:
     rows = [
         {
             "occurred_at": "2026-07-29 12:34:56",
-            "group_id": 1128870029,
+            "group_id": 910000101,
             "group_name": "A海岸测试群",
             "content": "今天的直播也辛苦啦，晚上八点见！",
         },
         {
             "occurred_at": "2026-07-29 20:08:18",
-            "group_id": 1077416717,
+            "group_id": 910000102,
             "group_name": "星河群",
             "content": "已经预约直播，期待一起看直播。",
         },
@@ -296,9 +296,9 @@ def write_archive_reports() -> list[Path]:
         for hour in range(24)
     ]
     return [
-        renderer.render(595861835, rows, page=1, keyword="直播", total_pages=1),
+        renderer.render(900000001, rows, page=1, keyword="直播", total_pages=1),
         renderer.render_profile(
-            595861835,
+            900000001,
             "心宜的应援者",
             "2026-07-29T02:01:05+08:00",
             "糖糖开篇：这是一位积极参与群内话题的成员。\n\n正文观察：常在直播话题出现，也会热心回应其他群友。\n\n糖糖总评：保持这份真诚的应援热情。",

@@ -1,5 +1,5 @@
 param(
-    [string]$Hostname = 'tangtang.secmon.cn',
+    [string]$Hostname = '',
     [int]$GatewayPort = 18769,
     [int]$GatewayMaxConcurrency = 32,
     [int]$GatewayClientTimeoutSeconds = 60,
@@ -10,6 +10,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
+$EnvPath = Join-Path $Root '.env'
+if (-not $Hostname -and (Test-Path -LiteralPath $EnvPath)) {
+    $line = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match '^PUBLIC_SITE_BASE_URL=' } | Select-Object -Last 1
+    if ($null -ne $line) {
+        $baseUrl = ([string]$line).Substring(([string]$line).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
+        if ($baseUrl -match '^https://([^/]+)/*$') { $Hostname = $Matches[1] }
+    }
+}
+if (-not $Hostname) { throw 'Set PUBLIC_SITE_BASE_URL in the local .env first.' }
 $Python = Join-Path $Root '.venv\Scripts\python.exe'
 $Cloudflared = Join-Path $Root 'tools\cloudflared.exe'
 $ConfigPath = Join-Path $Root 'data\cloudflared\tangtang-web.yml'
@@ -94,5 +103,12 @@ if ($coreConfigChanged -and -not $SkipCoreRestart) {
 Remove-Item -LiteralPath (Join-Path $Root 'data\nte_tunnel_disabled.flag') -Force -ErrorAction SilentlyContinue
 Write-Output "Tangtang named web tunnel ready: $publicUrl"
 Write-Output 'Public homepage: / (static site)'
-Write-Output 'Short links: s.secmon.cn/r, s.secmon.cn/h'
+$shortHostname = ''
+if (Test-Path -LiteralPath $EnvPath) {
+    $shortLine = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match '^PUBLIC_SHORT_HOST=' } | Select-Object -Last 1
+    if ($null -ne $shortLine) {
+        $shortHostname = ([string]$shortLine).Substring(([string]$shortLine).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
+    }
+}
+if ($shortHostname) { Write-Output "Short links: $shortHostname/r, $shortHostname/h" }
 Write-Output 'Bot feature paths: /live/*, /ranking/<token>/*, /help/*, /notice/*, /duplicate/*, /nte/*, /waves/i/*'

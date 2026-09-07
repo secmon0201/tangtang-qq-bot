@@ -41,7 +41,7 @@ from bot.services.today_wife_story import StoryDirector
 NOW = datetime.fromisoformat("2026-08-11T12:00:00+08:00")
 GROUP_ID = 1001
 BOT_ID = 2120682836
-ACTOR_ID = 595861835
+ACTOR_ID = 900000001
 
 
 def make_service(tmp_path):

@@ -117,16 +117,16 @@ def test_ranking_windows_are_calendar_day_week_month_and_total():
     assert StatsService.window_start("total", today) is None
 
 
-def test_a_coast_ranking_assigns_tied_members_to_the_first_configured_group(tmp_path):
+def test_ranking_assigns_tied_members_to_the_first_configured_group(tmp_path):
     db = Database(tmp_path / "bot.db")
-    group_ids = (1128870029, 1077416717, 1083457871, 1090284567, 278824712)
+    group_ids = (910000101, 910000102, 910000103, 910000104, 910000105)
     db.configure_groups(group_ids)
     db.set_group_info(group_ids[0], "第一海岸群")
     db.set_group_info(group_ids[-1], "第五海岸群")
     stamp = datetime(2026, 7, 20, 10, 0)
     assert db.record_message("first:1", group_ids[0], 7, "成员", stamp)
     assert db.record_message("last:1", group_ids[-1], 7, "成员", stamp)
-    service = StatsService(db)
+    service = StatsService(db, group_ids=group_ids)
 
     rows = service.ranking_rows("total")
 

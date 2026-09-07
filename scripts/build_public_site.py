@@ -7,16 +7,20 @@ import gzip
 import hashlib
 import html
 import json
+import os
 import re
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import brotli
+from dotenv import load_dotenv
 from public_site_schema import SiteManifestError, validate_manifest as validate_site_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env")
 LIVE_SITE = ROOT / "site"
 SOURCE_ROOT = ROOT / "site-src"
 MANIFEST_PATH = SOURCE_ROOT / "site.json"
@@ -80,9 +84,24 @@ class SiteBuildError(RuntimeError):
     pass
 
 
+def _instance_text(source: str) -> str:
+    public_base = os.getenv("PUBLIC_SITE_BASE_URL", "https://bot.example.invalid").rstrip("/")
+    parsed = urlsplit(public_base)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise SiteBuildError("PUBLIC_SITE_BASE_URL must be an HTTPS origin")
+    short_host = os.getenv("PUBLIC_SHORT_HOST", "short.example.invalid").strip()
+    credit = os.getenv("PUBLIC_GENERATOR_CREDIT", "Generated locally").strip()
+    return (
+        source.replace("https://bot.example.invalid", public_base)
+        .replace("bot.example.invalid", parsed.hostname)
+        .replace("short.example.invalid", short_host)
+        .replace("Generated locally", credit or "Generated locally")
+    )
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(_instance_text(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError) as exc:
         raise SiteBuildError(f"cannot read {path}: {exc}") from exc
     if not isinstance(value, dict):
@@ -368,7 +387,7 @@ def build_site(output_root: Path) -> dict[str, Any]:
     route_map: dict[str, str] = {}
     for page in manifest["pages"]:
         fragments = [
-            (SOURCE_ROOT / section["source"]).read_text(encoding="utf-8")
+            _instance_text((SOURCE_ROOT / section["source"]).read_text(encoding="utf-8"))
             for section in page["sections"]
         ]
         release_has_entries = page["key"] == "release" and _has_release_entries()

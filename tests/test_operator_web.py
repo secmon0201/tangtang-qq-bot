@@ -28,7 +28,7 @@ def test_operator_web_base_url_requires_https(monkeypatch, tmp_path):
 
 
 def test_operator_web_urls_use_public_feature_paths():
-    base = "https://tangtang.secmon.cn"
+    base = "https://bot.example.invalid"
 
     assert operator_web_url(base, "duplicate", "token") == f"{base}/duplicate/token"
     with pytest.raises(ValueError, match="unsupported operator web session"):

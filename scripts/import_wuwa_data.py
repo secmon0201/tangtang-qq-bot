@@ -1,9 +1,10 @@
-"""Preview or apply an A-Coast-only XutheringWavesUID data import."""
+"""Preview or apply a cluster-scoped XutheringWavesUID data import."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -12,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from bot.config import settings  # noqa: E402
+from bot.db import Database  # noqa: E402
+from bot.services.group_domains import GroupDomainService  # noqa: E402
 from bot.services.wuwa_data_import import WuwaDataImporter, WuwaImportError  # noqa: E402
 
 
@@ -27,8 +30,40 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    cluster_name = os.getenv("WUWA_IMPORT_CLUSTER_NAME", "").strip()
+    if not cluster_name:
+        print(
+            json.dumps(
+                {"status": "rejected", "reason": "未配置 WUWA_IMPORT_CLUSTER_NAME"},
+                ensure_ascii=True,
+                indent=2,
+            )
+        )
+        return 2
+    domains = GroupDomainService(
+        Database(settings.db_path), group_order=settings.managed_group_ids
+    )
+    try:
+        domain = domains.cluster_by_name_or_alias(cluster_name)
+    except ValueError:
+        domain = None
+    if domain is None:
+        print(
+            json.dumps(
+                {"status": "rejected", "reason": "指定集群不存在或名称不唯一"},
+                ensure_ascii=True,
+                indent=2,
+            )
+        )
+        return 2
     source_players = args.source_players or args.source_db.parent / "XutheringWavesUID" / "players"
-    importer = WuwaDataImporter(args.source_db, args.target_db, source_players, args.target_players)
+    importer = WuwaDataImporter(
+        args.source_db,
+        args.target_db,
+        source_players,
+        args.target_players,
+        allowed_groups=domains.domain_groups(domain.domain_id),
+    )
     try:
         plan = importer.plan()
         audit = importer.apply(plan) if args.apply else plan.audit(applied=False)

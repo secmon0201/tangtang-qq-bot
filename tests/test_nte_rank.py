@@ -42,7 +42,7 @@ def _create_db(path: Path) -> sqlite3.Connection:
     )
     connection.executemany(
         "INSERT INTO coregroup VALUES (?, ?, ?)",
-        [(1, "1128870029", "A海岸一群"), (2, "1077416717", "A海岸二群"), (3, "9001", "外部群")],
+        [(1, "910000101", "A海岸一群"), (2, "910000102", "A海岸二群"), (3, "9001", "外部群")],
     )
     return connection
 
@@ -71,10 +71,10 @@ def test_rank_parser_and_default_scope_split():
         assert is_new_nte_help_command(f"{prefix}帮助")
         assert is_nte_help_command(f"{prefix}原版帮助")
         assert is_original_nte_help_command(f"{prefix}原版帮助")
-    assert resolve_scope(1128870029, None) == "group"
+    assert resolve_scope(910000101, None) == "group"
     assert resolve_scope(9001, None) == "group"
     assert resolve_scope(9001, "群") == "group"
-    assert resolve_scope(1128870029, "bot") == "bot"
+    assert resolve_scope(910000101, "bot") == "bot"
 
 
 def test_recent_group_and_stable_sorting(tmp_path: Path):
@@ -90,11 +90,11 @@ def test_recent_group_and_stable_sorting(tmp_path: Path):
     connection.executemany(
         "INSERT INTO ntegroupmember VALUES (?, 'onebot', ?, ?, ?, ?)",
         [
-            ("1128870029", "u1", "101", "one", "2026-01-01 00:00:00"),
-            ("1077416717", "u2", "102", "two", "2026-01-01 00:00:00"),
-            ("1128870029", "u2", "102", "two-coast", "2026-01-01 00:00:00"),
-            ("1128870029", "u3", "103", "three", "2026-01-01 00:00:00"),
-            ("1128870029", "u4", "104", "four-old", "2025-01-01 00:00:00"),
+            ("910000101", "u1", "101", "one", "2026-01-01 00:00:00"),
+            ("910000102", "u2", "102", "two", "2026-01-01 00:00:00"),
+            ("910000101", "u2", "102", "two-coast", "2026-01-01 00:00:00"),
+            ("910000101", "u3", "103", "three", "2026-01-01 00:00:00"),
+            ("910000101", "u4", "104", "four-old", "2025-01-01 00:00:00"),
             ("9001", "u4", "104", "four-new", "2026-01-02 00:00:00"),
         ],
     )
@@ -102,10 +102,10 @@ def test_recent_group_and_stable_sorting(tmp_path: Path):
     connection.close()
 
     service = NTERankDataService(db)
-    result = service.build_role_rank(RankRequest("c1", False, None), 1128870029)
+    result = service.build_role_rank(RankRequest("c1", False, None), 910000101)
     assert result.scope == "group"
     assert [row.uid for row in result.rows] == ["u3", "u1", "u2", "u4"]
-    assert result.rows[2].group_id == 1128870029
+    assert result.rows[2].group_id == 910000101
     assert result.rows[2].group_name == "A海岸一群"
     assert result.rows[2].element_type == "CHARACTER_ELEMENT_TYPE_NATURE"
     assert result.rows[2].nickname == "two-coast"
@@ -119,10 +119,10 @@ def test_recent_group_and_stable_sorting(tmp_path: Path):
 def test_rank_uses_bot_group_name_when_core_has_placeholder(tmp_path: Path):
     db = tmp_path / "GsData.db"
     connection = _create_db(db)
-    connection.execute("UPDATE coregroup SET group_name='1' WHERE group_id='1128870029'")
+    connection.execute("UPDATE coregroup SET group_name='1' WHERE group_id='910000101'")
     connection.execute("INSERT INTO ntechardata VALUES ('u1', 'c1', ?, 100, 'A', '2026-01-01 00:00:00')", (_detail(),))
     connection.execute(
-        "INSERT INTO ntegroupmember VALUES ('1128870029', 'onebot', 'u1', '101', 'one', '2026-01-01 00:00:00')"
+        "INSERT INTO ntegroupmember VALUES ('910000101', 'onebot', 'u1', '101', 'one', '2026-01-01 00:00:00')"
     )
     connection.commit()
     connection.close()
@@ -130,10 +130,10 @@ def test_rank_uses_bot_group_name_when_core_has_placeholder(tmp_path: Path):
     bot_db = tmp_path / "bot.db"
     with sqlite3.connect(bot_db) as metadata:
         metadata.execute("CREATE TABLE managed_groups (group_id INTEGER PRIMARY KEY, group_name TEXT, alias TEXT, enabled INTEGER)")
-        metadata.execute("INSERT INTO managed_groups VALUES (1128870029, 'A海岸测试群', '修会', 1)")
+        metadata.execute("INSERT INTO managed_groups VALUES (910000101, 'A海岸测试群', '修会', 1)")
 
     result = NTERankDataService(db, group_metadata_path=bot_db).build_role_rank(
-        RankRequest("c1", False, "group"), 1128870029
+        RankRequest("c1", False, "group"), 910000101
     )
     assert result.rows[0].group_name == "修会"
 
@@ -147,7 +147,7 @@ def test_page_size_and_personal_overflow(tmp_path: Path):
     ]
     connection.executemany("INSERT INTO ntechardata VALUES (?, ?, ?, ?, ?, ?)", scores)
     connection.executemany(
-        "INSERT INTO ntegroupmember VALUES ('1128870029', 'onebot', ?, ?, ?, ?)",
+        "INSERT INTO ntegroupmember VALUES ('910000101', 'onebot', ?, ?, ?, ?)",
         [(row[0], "999" if row[0] == "u104" else row[0], row[0], row[5]) for row in scores],
     )
     connection.commit()
@@ -155,14 +155,14 @@ def test_page_size_and_personal_overflow(tmp_path: Path):
 
     service = NTERankDataService(db)
     request = RankRequest("c1", False, "group", 1)
-    first = service.build_role_rank(request, 1128870029, viewer_user_id=999)
+    first = service.build_role_rank(request, 910000101, viewer_user_id=999)
     assert len(first.rows) == 100
     assert first.total == 105
     assert first.self_overflow is not None
     assert first.self_overflow.uid == "u104"
     assert first.self_overflow.rank == 105
 
-    second = service.build_role_rank(RankRequest("c1", False, "group", 2), 1128870029, viewer_user_id=999)
+    second = service.build_role_rank(RankRequest("c1", False, "group", 2), 910000101, viewer_user_id=999)
     assert [row.uid for row in second.rows] == [f"u{index:03d}" for index in range(100, 105)]
     assert second.self_overflow is None
     assert second.rows[-1].is_self
@@ -247,11 +247,11 @@ def test_rank_renderer_grows_with_rows(tmp_path: Path):
     row = ("u1", "c1", _detail(), 100, "S", "2026-01-01 00:00:00")
     connection.execute("INSERT INTO ntechardata VALUES (?, ?, ?, ?, ?, ?)", row)
     connection.execute(
-        "INSERT INTO ntegroupmember VALUES ('1128870029', 'onebot', 'u1', '100', 'tester', '2026-01-01 00:00:00')"
+        "INSERT INTO ntegroupmember VALUES ('910000101', 'onebot', 'u1', '100', 'tester', '2026-01-01 00:00:00')"
     )
     connection.commit()
     connection.close()
-    result = NTERankDataService(db).build_role_rank(RankRequest("c1", False, "group"), 1128870029)
+    result = NTERankDataService(db).build_role_rank(RankRequest("c1", False, "group"), 910000101)
     image_path = NTERankRenderer(output_dir=tmp_path).render(result, {})
     with Image.open(image_path) as image:
         assert image.width == NTERankRenderer.WIDTH

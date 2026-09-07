@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Tests must never inherit identities or public endpoints from a developer's
+# private .env. These values are deliberately synthetic and documentation-safe.
+os.environ["GLOBAL_ANNOUNCEMENT_DEFAULT_CLUSTER"] = "测试集群"
+os.environ["WUWA_IMPORT_CLUSTER_NAME"] = "测试集群"
+os.environ["PUBLIC_SITE_BASE_URL"] = "https://bot.example.invalid"
+os.environ["PUBLIC_SHORT_HOST"] = "short.example.invalid"
+os.environ["PUBLIC_GENERATOR_CREDIT"] = "Generated locally"
 
 from bot.services import mingchao_meme_culture, zhijiang_knowledge
 from bot.services.knowledge_db import KnowledgeDb

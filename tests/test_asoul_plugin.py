@@ -13,7 +13,7 @@ import bot.plugins.asoul as plugin
 
 
 class FakeBot:
-    self_id = 3987707335
+    self_id = 920000004
 
 
 class _ScheduleFinished(Exception):
@@ -115,7 +115,7 @@ def test_schedule_image_reply_uses_the_single_bare_short_link(monkeypatch, tmp_p
         asyncio.run(plugin.finish_schedule_reply(matcher, "今日直播", datetime(2026, 8, 16, 12, 0)))
 
     rendered = str(matcher.finished_message)
-    assert rendered.endswith("线上：s.secmon.cn/r")
+    assert rendered.endswith("线上：short.example.invalid/r")
     assert "https://" not in rendered
 
 
@@ -148,7 +148,7 @@ def test_week_schedule_reply_ignores_a_option(monkeypatch):
 def test_live_push_mentions_all_only_when_bot_is_admin(monkeypatch):
     bot = FakeBot()
     calls = []
-    enable_bilibili_groups(monkeypatch, 1067772451)
+    enable_bilibili_groups(monkeypatch, 920000001)
 
     async def updates():
         return ["【开播】测试UP\n直播标题\nhttps://live.bilibili.com/1"]
@@ -161,8 +161,8 @@ def test_live_push_mentions_all_only_when_bot_is_admin(monkeypatch):
 
     monkeypatch.setattr(plugin, "settings", SimpleNamespace(
         asoul_bili_enabled=True,
-        asoul_bili_group_ids=(1067772451,),
-        asoul_bili_effective_group_ids=(1067772451,),
+        asoul_bili_group_ids=(920000001,),
+        asoul_bili_effective_group_ids=(920000001,),
         asoul_bili_render_cards=False,
     ))
     monkeypatch.setattr(plugin.service, "poll_updates", updates)
@@ -178,7 +178,7 @@ def test_live_push_mentions_all_only_when_bot_is_admin(monkeypatch):
 def test_live_push_mentions_all_when_bot_is_admin(monkeypatch):
     bot = FakeBot()
     calls = []
-    enable_bilibili_groups(monkeypatch, 1067772451)
+    enable_bilibili_groups(monkeypatch, 920000001)
 
     async def updates():
         return ["【开播】测试UP\n直播标题\nhttps://live.bilibili.com/1"]
@@ -191,8 +191,8 @@ def test_live_push_mentions_all_when_bot_is_admin(monkeypatch):
 
     monkeypatch.setattr(plugin, "settings", SimpleNamespace(
         asoul_bili_enabled=True,
-        asoul_bili_group_ids=(1067772451,),
-        asoul_bili_effective_group_ids=(1067772451,),
+        asoul_bili_group_ids=(920000001,),
+        asoul_bili_effective_group_ids=(920000001,),
         asoul_bili_render_cards=False,
     ))
     monkeypatch.setattr(plugin.service, "poll_updates", updates)
@@ -210,7 +210,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
     bot = FakeBot()
     calls = []
     rendered = []
-    enable_bilibili_groups(monkeypatch, 1067772451)
+    enable_bilibili_groups(monkeypatch, 920000001)
     card = tmp_path / "05a.png"
     card.write_bytes(b"png")
     messages = [
@@ -258,7 +258,7 @@ def test_monitor_uses_05a_html_cards_for_dynamic_video_live_and_comment(monkeypa
 
     monkeypatch.setattr(plugin, "settings", SimpleNamespace(
         asoul_bili_enabled=True,
-        asoul_bili_effective_group_ids=(1067772451,),
+        asoul_bili_effective_group_ids=(920000001,),
         asoul_bili_render_cards=True,
     ))
     monkeypatch.setattr(plugin.service, "poll_updates", updates)
@@ -294,7 +294,7 @@ def test_monitor_renders_one_card_for_all_target_groups(monkeypatch, tmp_path):
     bot = FakeBot()
     calls = []
     rendered = []
-    groups = (1067772451, 1067772452)
+    groups = (920000001, 1067772452)
     enable_bilibili_groups(monkeypatch, *groups)
     monkeypatch.setattr(plugin, "_pending_monitor_messages", {})
     card = tmp_path / "shared.png"
@@ -343,7 +343,7 @@ def test_monitor_defers_incomplete_media_until_a_later_poll(monkeypatch, tmp_pat
     bot = FakeBot()
     calls = []
     attempts = []
-    enable_bilibili_groups(monkeypatch, 1067772451)
+    enable_bilibili_groups(monkeypatch, 920000001)
     monkeypatch.setattr(plugin, "_pending_monitor_messages", {})
     card = tmp_path / "recovered.png"
     card.write_bytes(b"png")
@@ -394,13 +394,13 @@ def test_monitor_defers_incomplete_media_until_a_later_poll(monkeypatch, tmp_pat
 
 
 def test_monitor_does_not_poll_before_a_bot_is_connected(monkeypatch):
-    enable_bilibili_groups(monkeypatch, 1067772451)
+    enable_bilibili_groups(monkeypatch, 920000001)
     async def updates():
         raise AssertionError("Bilibili detection must wait for a connected bot")
 
     monkeypatch.setattr(plugin, "settings", SimpleNamespace(
         asoul_bili_enabled=True,
-        asoul_bili_effective_group_ids=(1067772451,),
+        asoul_bili_effective_group_ids=(920000001,),
     ))
     monkeypatch.setattr(plugin.service, "poll_updates", updates)
     monkeypatch.setattr(plugin, "get_bots", lambda: {})

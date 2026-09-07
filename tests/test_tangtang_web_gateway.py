@@ -125,16 +125,16 @@ def test_root_domain_short_links_are_explicit_redirects():
     gateway = load_gateway()
 
     assert gateway.SHORT_LINK_REDIRECTS == {
-        "/r": "https://tangtang.secmon.cn/live/?view=week",
-        "/h": "https://tangtang.secmon.cn/help/",
+        "/r": "https://bot.example.invalid/live/?view=week",
+        "/h": "https://bot.example.invalid/help/",
     }
-    assert gateway.short_redirect_target("s.secmon.cn", "/r") == "https://tangtang.secmon.cn/live/?view=week"
-    assert gateway.short_redirect_target("S.SECMON.CN:443", "/r?source=qq") == "https://tangtang.secmon.cn/live/?view=week"
-    assert gateway.short_redirect_target("s.secmon.cn", "/s") is None
-    assert gateway.short_redirect_target("s.secmon.cn", "/h") == "https://tangtang.secmon.cn/help/"
-    assert gateway.short_redirect_target("s.secmon.cn", "/t") is None
-    assert gateway.short_redirect_target("secmon.cn", "/r") is None
-    assert gateway.short_redirect_target("tangtang.secmon.cn", "/r") is None
+    assert gateway.short_redirect_target("short.example.invalid", "/r") == "https://bot.example.invalid/live/?view=week"
+    assert gateway.short_redirect_target("SHORT.EXAMPLE.INVALID:443", "/r?source=qq") == "https://bot.example.invalid/live/?view=week"
+    assert gateway.short_redirect_target("short.example.invalid", "/s") is None
+    assert gateway.short_redirect_target("short.example.invalid", "/h") == "https://bot.example.invalid/help/"
+    assert gateway.short_redirect_target("short.example.invalid", "/t") is None
+    assert gateway.short_redirect_target("example.invalid", "/r") is None
+    assert gateway.short_redirect_target("bot.example.invalid", "/r") is None
 
 
 def test_root_domain_serves_only_short_redirects():
@@ -142,17 +142,17 @@ def test_root_domain_serves_only_short_redirects():
     server, thread = start_gateway(gateway)
     try:
         connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
-        connection.request("GET", "/r", headers={"Host": "s.secmon.cn"})
+        connection.request("GET", "/r", headers={"Host": "short.example.invalid"})
         response = connection.getresponse()
         response.read()
         assert response.status == 302
-        assert response.getheader("Location") == "https://tangtang.secmon.cn/live/?view=week"
+        assert response.getheader("Location") == "https://bot.example.invalid/live/?view=week"
         assert response.getheader("Cache-Control") == "no-store"
         connection.close()
 
         for path in ("/", "/t", "/m", "/w", "/api/send_msg", "/unknown"):
             connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
-            connection.request("GET", path, headers={"Host": "s.secmon.cn"})
+            connection.request("GET", path, headers={"Host": "short.example.invalid"})
             response = connection.getresponse()
             response.read()
             assert response.status == 404

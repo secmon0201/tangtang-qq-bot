@@ -22,12 +22,14 @@
 
 `GsUID.Core`, its UID plugins, SnowLuma, Lagrange, `.env`, databases, logs, reports, downloads, backups, login state, and caches are independent local runtime data and must never be committed.
 
+Public source must also exclude instance identities: real QQ/group IDs, operator identity, private domains, personal credits, machine-specific paths, and credentials belong in ignored `.env` or SQLite. `.env.example` keeps those fields empty, tests use synthetic IDs and `example.invalid`, and `scripts/validate_public_release.py` must pass. A public repository is created from a sanitized snapshot with fresh history; never publish this operational repository's existing history.
+
 ## Game Interface Ownership
 
 - NTE and Wuthering Waves are the only enabled game interfaces and use `#nte` and `#ww`.
 - Ranking, help rendering, command takeover, and compatibility code are project-owned and stay under `bot`.
 - Never modify `GsUID.Core`, NTEUID, or XutheringWavesUID source. Read `GsData.db` and game caches in read-only mode and keep upstream repositories clean.
-- Wuthering Waves rankings expose only current-group and robot-wide local views. Never add an A-Coast Wuthering Waves board. Render 100 rows per page.
+- Wuthering Waves rankings expose only current-group and robot-wide local views. Never add a private-cluster Wuthering Waves board. Render 100 rows per page.
 - Existing Wuthering Waves data may be imported only through the scoped dry-run-first tool and only for the fixed A-Coast five groups.
 - Update upstream pins through `config/upstream-lock.json` and validate compatibility after every upstream update.
 - Treat every locked upstream checkout as disposable, pristine vendor code: no tracked or untracked source changes, stashes, local-only commits, or diverged history. Each checkout must track its declared `origin/<branch>`; `scripts/install_gsuid.ps1` may repair tracking metadata and fast-forward, but must never reset, clean, stash, merge, or replay patches.
@@ -40,6 +42,7 @@ Run before every commit:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\validate_public_release.py
 .\.venv\Scripts\python.exe scripts\validate_docs.py
 .\.venv\Scripts\python.exe scripts\validate_architecture.py
 .\.venv\Scripts\python.exe scripts\validate_upstream_lock.py

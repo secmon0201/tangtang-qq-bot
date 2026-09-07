@@ -149,7 +149,7 @@ def test_a_coast_ranking_report_shows_group_labels_without_qq_number_text(tmp_pa
         [
             {
                 "rank": 1,
-                "user_id": 2120682836,
+            "user_id": 900000002,
                 "nickname": "测试成员",
                 "message_count": 42,
                 "group_labels": "海岸一群、海岸二群",

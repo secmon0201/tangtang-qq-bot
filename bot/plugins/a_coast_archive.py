@@ -120,8 +120,6 @@ def profile_scope(event: MessageEvent) -> tuple[tuple[int, ...], str]:
     if domain is None:
         return (), ""
     scope = domains.domain_groups(domain.domain_id)
-    if domain.domain_key == "cluster:a-coast":
-        return scope, "a_coast"
     if domain.mode == "solo":
         return scope, f"group:{int(event.group_id)}"
     return scope, domain.domain_key

@@ -7,7 +7,6 @@ from bot.config import Settings, managed_group_order
 def disable_real_completion_notification(monkeypatch):
     """Keep config unit tests independent from the workstation's real QQ targets."""
     monkeypatch.setenv("CODEX_COMPLETION_NOTIFY_ENABLED", "false")
-    monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "false")
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
     for key in (
         "DUPLICATE_GROUP_IDS",
@@ -99,58 +98,17 @@ def test_config_feature_groups_must_be_managed_subset(monkeypatch):
         Settings.from_env()
 
 
-def test_config_combines_external_and_a_coast_bilibili_groups(monkeypatch):
-    monkeypatch.setenv(
-        "MANAGED_GROUP_IDS",
-        "9999,1128870029,1077416717,1083457871,1090284567,278824712",
-    )
-    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
-        monkeypatch.setenv(name, "")
-    monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
-    monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
-    monkeypatch.setenv("ASOUL_BILI_GROUP_IDS", "9999")
-    monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "true")
-
-    config = Settings.from_env()
-
-    assert config.asoul_bili_group_ids == (9999,)
-    assert config.asoul_bili_effective_group_ids == (
-        9999,
-        1128870029,
-        1077416717,
-        1083457871,
-        1090284567,
-        278824712,
-    )
-
-
-def test_config_allows_explicit_a_coast_bilibili_group_when_switch_is_off(monkeypatch):
-    monkeypatch.setenv("MANAGED_GROUP_IDS", "1128870029")
-    for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
-        monkeypatch.setenv(name, "")
-    monkeypatch.setenv("ASOUL_BILI_GROUP_IDS", "1128870029")
-    monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "false")
-    monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
-    monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
-
-    config = Settings.from_env()
-
-    assert config.asoul_bili_effective_group_ids == (1128870029,)
-
-
-def test_config_uses_custom_a_coast_bilibili_scope(monkeypatch):
+def test_config_accepts_bilibili_migration_seed_groups(monkeypatch):
     monkeypatch.setenv("MANAGED_GROUP_IDS", "1001,1002")
     for name in ("DUPLICATE_GROUP_IDS", "GAME_GROUP_IDS"):
         monkeypatch.setenv(name, "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_GROUP_IDS", "")
     monkeypatch.setenv("BOT_RANDOM_REACTION_ENABLED", "false")
     monkeypatch.setenv("ASOUL_BILI_GROUP_IDS", "1001")
-    monkeypatch.setenv("ASOUL_BILI_A_COAST_GROUP_IDS", "1002")
-    monkeypatch.setenv("ASOUL_BILI_PUSH_A_COAST", "true")
 
     config = Settings.from_env()
 
-    assert config.asoul_bili_effective_group_ids == (1001, 1002)
+    assert config.asoul_bili_group_ids == (1001,)
 
 
 def test_config_validates_global_announcement_operator_ids(monkeypatch):

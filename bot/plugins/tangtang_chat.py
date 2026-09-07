@@ -200,7 +200,7 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
     if text or media_references:
         sender = getattr(event, "sender", None)
         nickname = str(
-            getattr(sender, "nickname", "") or getattr(sender, "card", "") or "群友"
+            getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友"
         )
         service.record_group_message(
             int(event.group_id),

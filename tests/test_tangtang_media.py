@@ -27,15 +27,26 @@ def test_extract_image_references_keeps_current_then_reply_and_deduplicates():
         SimpleNamespace(type="image", data={"url": "https://example.test/a.png"}),
     ]
     reply = SimpleNamespace(
+        sender=SimpleNamespace(user_id=22, card="被引用的人", nickname="quoted"),
         message=[
             SimpleNamespace(type="image", data={"url": "https://example.test/a.png"}),
             SimpleNamespace(type="image", data={"file": _data_url()}),
         ]
     )
-    refs = extract_image_references(SimpleNamespace(message=current, reply=reply), 4)
+    event = SimpleNamespace(
+        user_id=11,
+        sender=SimpleNamespace(user_id=11, card="当前发图人", nickname="current"),
+        message=current,
+        reply=reply,
+    )
+    refs = extract_image_references(event, 4)
     assert [(ref.source, ref.ordinal) for ref in refs] == [
         ("current", 1),
         ("reply", 2),
+    ]
+    assert [(ref.sender_id, ref.sender_name) for ref in refs] == [
+        (11, "当前发图人"),
+        (22, "被引用的人"),
     ]
 
 
@@ -49,6 +60,23 @@ def test_data_url_is_validated_and_normalised_for_vision():
     assert result.images[0].data_url.startswith("data:image/jpeg;base64,")
     assert result.images[0].byte_count > 0
     assert len(result.images[0].sha256) == 64
+
+
+def test_cached_image_uses_current_reference_sender_instead_of_cached_sender():
+    resolver = TangtangMediaResolver(max_images=1)
+    value = _data_url()
+    first = asyncio.run(
+        resolver.resolve_references(
+            (ImageReference("current", 1, value, 11, "甲"),)
+        )
+    )
+    second = asyncio.run(
+        resolver.resolve_references(
+            (ImageReference("context", 1, value, 22, "乙"),)
+        )
+    )
+    assert first.images[0].label == "当前消息图片 1（发送者：甲）"
+    assert second.images[0].label == "最近群聊上下文图片 1（发送者：乙）"
 
 
 def test_private_network_image_url_is_rejected_before_download():

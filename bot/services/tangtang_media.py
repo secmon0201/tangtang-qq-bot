@@ -25,6 +25,8 @@ class ImageReference:
     source: str
     ordinal: int
     value: str
+    sender_id: int = 0
+    sender_name: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +37,8 @@ class VisionImage:
     mime_type: str
     sha256: str
     byte_count: int
+    sender_id: int = 0
+    sender_name: str = ""
 
     @property
     def label(self) -> str:
@@ -43,7 +47,9 @@ class VisionImage:
             "reply": "引用消息",
             "context": "最近群聊上下文",
         }.get(self.source, "消息")
-        return f"{prefix}图片 {self.ordinal}"
+        label = f"{prefix}图片 {self.ordinal}"
+        sender_name = self.sender_name.strip()
+        return f"{label}（发送者：{sender_name}）" if sender_name else label
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,14 +63,16 @@ def extract_image_references(event: Any, max_images: int) -> tuple[ImageReferenc
 
     references: list[ImageReference] = []
     seen: set[str] = set()
-    sources: tuple[tuple[str, Iterable[Any]], ...] = (
-        ("current", getattr(event, "message", ())),
+    reply = getattr(event, "reply", None)
+    sources: tuple[tuple[str, Iterable[Any], tuple[int, str]], ...] = (
+        ("current", getattr(event, "message", ()), _sender_identity(event)),
         (
             "reply",
-            getattr(getattr(event, "reply", None), "message", ()),
+            getattr(reply, "message", ()),
+            _sender_identity(reply),
         ),
     )
-    for source, message in sources:
+    for source, message, (sender_id, sender_name) in sources:
         ordinal = 0
         for segment in message:
             if str(getattr(segment, "type", "") or "") != "image":
@@ -75,7 +83,15 @@ def extract_image_references(event: Any, max_images: int) -> tuple[ImageReferenc
             if not value or value in seen:
                 continue
             seen.add(value)
-            references.append(ImageReference(source, ordinal, value))
+            references.append(
+                ImageReference(
+                    source,
+                    ordinal,
+                    value,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                )
+            )
             if len(references) >= max_images:
                 return tuple(references)
     return tuple(references)
@@ -118,7 +134,7 @@ class TangtangMediaResolver:
             cached = self._cache.get(reference.value)
             if cached is not None:
                 if total + cached.byte_count > self.max_total_bytes:
-                    failures.append(f"{_source_label(reference.source)}图片 {reference.ordinal} 读取失败")
+                    failures.append(f"{_reference_label(reference)} 读取失败")
                     continue
                 self._cache.move_to_end(reference.value)
                 images.append(
@@ -129,6 +145,8 @@ class TangtangMediaResolver:
                         mime_type=cached.mime_type,
                         sha256=cached.sha256,
                         byte_count=cached.byte_count,
+                        sender_id=reference.sender_id,
+                        sender_name=reference.sender_name,
                     )
                 )
                 total += cached.byte_count
@@ -140,7 +158,7 @@ class TangtangMediaResolver:
                 image = self._normalise(reference, raw)
             except (OSError, ValueError, httpx.HTTPError, UnidentifiedImageError):
                 failures.append(
-                    f"{_source_label(reference.source)}图片 {reference.ordinal} 读取失败"
+                    f"{_reference_label(reference)} 读取失败"
                 )
                 continue
             total += len(raw)
@@ -247,6 +265,8 @@ class TangtangMediaResolver:
             mime_type="image/jpeg",
             sha256=hashlib.sha256(raw).hexdigest(),
             byte_count=len(raw),
+            sender_id=reference.sender_id,
+            sender_name=reference.sender_name,
         )
 
 
@@ -264,6 +284,29 @@ def _source_label(source: str) -> str:
         "reply": "引用消息",
         "context": "最近群聊上下文",
     }.get(source, "消息")
+
+
+def _reference_label(reference: ImageReference) -> str:
+    label = f"{_source_label(reference.source)}图片 {reference.ordinal}"
+    sender_name = reference.sender_name.strip()
+    return f"{label}（发送者：{sender_name}）" if sender_name else label
+
+
+def _sender_identity(container: Any) -> tuple[int, str]:
+    if container is None:
+        return 0, ""
+    sender = getattr(container, "sender", None)
+    if sender is None:
+        return int(getattr(container, "user_id", 0) or 0), ""
+    sender_id = int(
+        getattr(sender, "user_id", 0)
+        or getattr(container, "user_id", 0)
+        or 0
+    )
+    sender_name = str(
+        getattr(sender, "card", "") or getattr(sender, "nickname", "") or ""
+    ).strip()
+    return sender_id, sender_name
 
 
 __all__ = [

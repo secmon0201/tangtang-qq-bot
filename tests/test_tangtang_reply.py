@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from bot.services.tangtang_reply import parse_reply_plan, reply_style_instruction
+from bot.services.tangtang_reply import (
+    parse_reply_plan,
+    reply_bubble_limit,
+    reply_style_instruction,
+)
 
 
 def test_parse_marked_reply_into_ordered_bubbles():
@@ -31,12 +35,15 @@ def test_reply_plan_is_bounded_without_punctuation_splitting():
     assert parse_reply_plan("[接话]\n很长", max_chars=1).messages == ("…",)
 
 
-def test_longer_reply_tiers_have_lower_default_weight():
+def test_ordinary_reply_tiers_keep_group_chat_short():
     assert "极短" in reply_style_instruction("随便聊聊", 0.10)
-    assert "偏短" in reply_style_instruction("随便聊聊", 0.50)
-    assert "稍展开" in reply_style_instruction("随便聊聊", 0.90)
-    assert "少见的长回答" in reply_style_instruction("随便聊聊", 0.99)
-    assert "需要解释" in reply_style_instruction("请详细分析一下", 0.10)
-    assert "15 字" in reply_style_instruction("随便聊聊", 0.10)
-    assert "16 字" in reply_style_instruction("随便聊聊", 0.50)
-    assert "长短交错" in reply_style_instruction("随便聊聊", 0.90)
+    assert "4-12 字" in reply_style_instruction("随便聊聊", 0.50)
+    assert "稍多说一点" in reply_style_instruction("随便聊聊", 0.95)
+    assert "超过 20 字" in reply_style_instruction("随便聊聊", 0.95)
+    assert "明确要求详细说明" in reply_style_instruction("请详细分析一下", 0.10)
+
+
+def test_ordinary_chat_is_capped_at_two_bubbles_but_detail_can_use_configured_limit():
+    assert reply_bubble_limit("为什么会这样", 6) == 2
+    assert reply_bubble_limit("随便聊聊", 1) == 1
+    assert reply_bubble_limit("请详细分析一下", 6) == 6

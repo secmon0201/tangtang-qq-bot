@@ -30,7 +30,11 @@ from bot.services.tangtang_media import (
     extract_image_references,
 )
 from bot.services.tangtang_memory import TangtangMemoryKernel
-from bot.services.tangtang_reply import parse_reply_plan, reply_style_instruction
+from bot.services.tangtang_reply import (
+    parse_reply_plan,
+    reply_bubble_limit,
+    reply_style_instruction,
+)
 from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
@@ -224,7 +228,7 @@ def _black_meme_instruction(text: str) -> str | None:
 
 DEFAULT_PERSONA = (
     "你是糖糖，一个会认真翻聊天记录、又有点自己小脾气的嘉心糖观察员。"
-    "第一人称只用糖糖，回复用自然口语短句。"
+    "第一人称只用糖糖，但通常省略主语。普通聊天默认只发一条 4-12 字的自然口语短句。"
     "第一行先写 [接话] 或 [沉默]，[接话] 时第二行起写正文。"
 )
 
@@ -360,7 +364,7 @@ class TangtangConfig:
             group_ids=frozenset(),
             group_order=(),
             group_context_messages=GROUP_CONTEXT_MESSAGES,
-            ignore_probability=0.10,
+            ignore_probability=0.05,
             call_ignore_probability_by_group={},
             required_call_reply_group_ids=frozenset(),
             soft_blacklist_ignore_probability=0.0,
@@ -417,7 +421,7 @@ class TangtangConfig:
         group_context_messages = _int(
             values, "TANGTANG_GROUP_CONTEXT_MESSAGES", GROUP_CONTEXT_MESSAGES, 1, 100
         )
-        ignore_probability = _float(values, "TANGTANG_IGNORE_PROBABILITY", 0.10, 0.0, 1.0)
+        ignore_probability = _float(values, "TANGTANG_IGNORE_PROBABILITY", 0.05, 0.0, 1.0)
         soft_blacklist_ignore_probability = _float(
             values, "TANGTANG_SOFT_BLACKLIST_IGNORE_PROBABILITY", 0.0, 0.0, 1.0
         )
@@ -1208,10 +1212,20 @@ class TangtangService:
         )
         queue.append(f"{nickname}: {text}")
         if media_references:
+            owned_references = tuple(
+                ImageReference(
+                    reference.source,
+                    reference.ordinal,
+                    reference.value,
+                    sender_id=reference.sender_id or int(user_id),
+                    sender_name=reference.sender_name or nickname,
+                )
+                for reference in media_references
+            )
             media_queue = self._group_media_context.setdefault(
                 int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
             )
-            media_queue.append((str(message_id or ""), media_references))
+            media_queue.append((str(message_id or ""), owned_references))
         try:
             self.db.insert_group_message(
                 group_id=int(group_id),
@@ -1286,7 +1300,13 @@ class TangtangService:
             for reference in batch
         ]
         return tuple(
-            ImageReference("context", index, reference.value)
+            ImageReference(
+                "context",
+                index,
+                reference.value,
+                sender_id=reference.sender_id,
+                sender_name=reference.sender_name,
+            )
             for index, reference in enumerate(ordered, 1)
         )
 
@@ -1469,7 +1489,7 @@ class TangtangService:
             config.history_chars,
         )
         sender = getattr(event, "sender", None)
-        nickname = str(getattr(sender, "nickname", "") or getattr(sender, "card", "") or "群友")
+        nickname = str(getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友")
         mentioned = bool(event.is_tome())
         media_summary = self._media_summary(event)
         if media_resolution is not None:
@@ -1505,6 +1525,14 @@ class TangtangService:
             f"消息：{call_text}",
             "",
         ]
+        if media_resolution is not None and media_resolution.images:
+            fixed_parts.extend(
+                (
+                    "每张图片前的标签都标明了它自己的来源和发送者；发送者只属于紧随其后的那张图。"
+                    "不要把引用消息的发送者当成其他上下文图片的发送者。",
+                    "",
+                )
+            )
         if config.tools_enabled:
             fixed_parts.append(
                 "如果回答需要查枝江或鸣潮的本地资料，可以调用查询工具获取，不要编造；"
@@ -1523,7 +1551,7 @@ class TangtangService:
             "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
             "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。语气词（如“哈哈哈、嘿嘿、哼”）"
             "不要每条都带、不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略；"
-            "不要按标点机械拆分，"
+            "普通聊天默认只发一条，确有两个意思才发第二条；不要按标点机械拆分，"
             "也不要解释判断。"
         )
         fixed_parts.append(reply_style_instruction(call_text))
@@ -1950,7 +1978,7 @@ class TangtangService:
             answer_raw = result.text
             plan = parse_reply_plan(
                 answer_raw,
-                max_bubbles=config.reply_max_bubbles,
+                max_bubbles=reply_bubble_limit(call_text, config.reply_max_bubbles),
                 max_chars=config.max_response_chars,
             )
             messages = (

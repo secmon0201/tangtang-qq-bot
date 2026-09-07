@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 MESSAGE_MARKER = "[消息]"
 _DETAIL_REQUEST_RE = re.compile(
-    r"详细|展开|长篇|完整|全面|深入|逐步|一步一步|教程|分析|梳理|总结|为什么"
+    r"详细|展开|长篇|完整|全面|深入|逐步|一步一步|教程|分析|梳理|总结|"
+    r"讲清楚|解释清楚|具体讲|仔细说|多说点"
 )
 
 
@@ -23,27 +24,35 @@ class ReplyPlan:
 
 
 def reply_style_instruction(text: str, random_value: float | None = None) -> str:
-    """Choose a length tier whose probability decreases as replies get longer."""
+    """Choose a short-chat style, allowing long replies only when requested."""
 
     if _DETAIL_REQUEST_RE.search(text):
         return (
-            "这条消息明确需要解释，可以少见地使用长回答；仍以短句为主，只保留必要信息，"
-            "按自然语义拆成 1-4 条消息，不要为了凑短而省略必要内容。"
+            "对方明确要求详细说明，可以按需要写完整；先尝试用 1-2 条说清，"
+            "只有信息确实很多时才用 3 条以上。删掉铺垫、重复和总结套话。"
         )
     roll = random.random() if random_value is None else float(random_value)
-    if roll < 0.20:
-        return "本次偏极短：用 1-2 条消息，多数句子 15 字上下，必要时可以有一条稍长。"
-    if roll < 0.75:
+    if roll < 0.35:
         return (
-            "本次偏短：用 2-4 条自然短消息，多数句子 15 字上下；偶尔允许一条必要的长句，"
-            "让长短有起伏、避免每条等长；超过 16 字只作为倾向压低，不是禁令。"
+            "本次只发一条极短消息，2-8 字就够；能用残句就别补成完整句，"
+            "句尾通常不加句号。"
         )
-    if roll < 0.95:
+    if roll < 0.90:
         return (
-            "本次可稍展开：用 1-3 条消息，长短交错；"
-            "只有确实需要时才展开，别为长而长。"
+            "本次只发一条日常短消息，尽量控制在 4-12 字；"
+            "只有一个意思确实装不下才加第二条，总长尽量不超过 20 字。"
         )
-    return "本次允许少见的长回答：按必要长度写完整，不要无意义扩写。"
+    return (
+        "本次可以稍多说一点，仍优先只发一条；确有两个意思时才发两条，"
+        "单条超过 20 字就先删掉不必要内容。"
+    )
+
+
+def reply_bubble_limit(text: str, configured_max: int = 6) -> int:
+    """Keep ordinary chat to two bubbles while preserving explicit detail requests."""
+
+    limit = max(1, int(configured_max))
+    return limit if _DETAIL_REQUEST_RE.search(text) else min(limit, 2)
 
 
 def parse_reply_plan(
@@ -129,4 +138,10 @@ def _marked_messages(body: str) -> tuple[str, ...]:
     return tuple(message for message in messages if message)
 
 
-__all__ = ["MESSAGE_MARKER", "ReplyPlan", "parse_reply_plan", "reply_style_instruction"]
+__all__ = [
+    "MESSAGE_MARKER",
+    "ReplyPlan",
+    "parse_reply_plan",
+    "reply_bubble_limit",
+    "reply_style_instruction",
+]

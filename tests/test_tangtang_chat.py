@@ -25,8 +25,7 @@ from bot.services.tangtang_chat import (
     resolve_at_labels,
 )
 from bot.services.tangtang_db import TangtangDb
-from bot.services.tangtang_media import VisionImage
-from bot.services.tangtang_media import MediaResolution
+from bot.services.tangtang_media import ImageReference, MediaResolution, VisionImage
 
 
 def group_message(
@@ -201,6 +200,7 @@ def test_config_validation():
     assert config.soft_blacklist_ignore_probability == 0.0
     disabled = TangtangConfig.from_values({"TANGTANG_ENABLED": "false"}, (1001,))
     assert not disabled.enabled
+    assert disabled.ignore_probability == 0.05
     import pytest
 
     with pytest.raises(ValueError):
@@ -484,6 +484,7 @@ def test_proactive_prompt_uses_proactive_header(tmp_path, monkeypatch):
     prompt = service._build_prompt(event, enabled_config(), proactive=True)
     assert "[当前群友发言]" in prompt
     assert "没有人呼叫糖糖" in prompt
+    assert "普通聊天默认只发一条" in prompt
     assert "[当前呼叫]" not in prompt
 
 
@@ -1097,7 +1098,7 @@ def test_prompt_includes_mention_media_and_reply(tmp_path, monkeypatch):
     sender = {
         "user_id": 3,
         "nickname": "tester",
-        "card": "",
+        "card": "群名片",
         "sex": "unknown",
         "age": 0,
         "area": "",
@@ -1138,6 +1139,7 @@ def test_prompt_includes_mention_media_and_reply(tmp_path, monkeypatch):
         }
     )
     prompt = service._build_prompt(event, enabled_config())
+    assert "说话人昵称：群名片" in prompt
     assert "被@状态：否" in prompt
     assert "消息媒体：图片" in prompt
     assert "引用消息：被引用的内容" in prompt
@@ -1410,11 +1412,17 @@ def test_provider_payloads_include_real_multimodal_image_parts():
         mime_type="image/jpeg",
         sha256="a" * 64,
         byte_count=4,
+        sender_id=3,
+        sender_name="tester",
     )
     responses = TangtangProvider._responses_payload(
         config, "persona", "prompt", images=(image,)
     )
     user_parts = responses["input"][1]["content"]
+    assert user_parts[-2] == {
+        "type": "input_text",
+        "text": "[当前消息图片 1（发送者：tester）]",
+    }
     assert user_parts[-1] == {
         "type": "input_image",
         "image_url": image.data_url,
@@ -1426,6 +1434,10 @@ def test_provider_payloads_include_real_multimodal_image_parts():
         "prompt",
         images=(image,),
     )
+    assert chat["messages"][1]["content"][-2] == {
+        "type": "text",
+        "text": "[当前消息图片 1（发送者：tester）]",
+    }
     assert chat["messages"][1]["content"][-1]["type"] == "image_url"
 
 
@@ -1455,6 +1467,49 @@ def test_model_reply_sends_ordered_bubbles_and_quotes_only_first(tmp_path, monke
     assert calls[0]["reply_text"] == "哈哈哈\n这个确实很好笑"
     parts = service.db.reply_parts(calls[0]["id"])
     assert [row["delivered"] for row in parts] == [1, 1]
+
+
+def test_ordinary_model_reply_drops_bubbles_after_second(tmp_path, monkeypatch):
+    service, sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\n[消息]第一条\n[消息]第二条\n[消息]第三条",
+    )
+    config = enabled_config(
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖随便聊聊"),
+            config,
+        )
+    )
+    assert sent[0].extract_plain_text() == "第一条"
+    assert sent[1:] == ["第二条"]
+
+
+def test_explicit_detail_request_keeps_configured_bubble_limit(tmp_path, monkeypatch):
+    service, sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\n[消息]第一条\n[消息]第二条\n[消息]第三条",
+    )
+    config = enabled_config(
+        TANGTANG_REPLY_MAX_BUBBLES="3",
+        TANGTANG_REPLY_DELAY_MIN_MS="0",
+        TANGTANG_REPLY_DELAY_MAX_MS="0",
+    )
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖详细分析一下"),
+            config,
+        )
+    )
+    assert sent[0].extract_plain_text() == "第一条"
+    assert sent[1:] == ["第二条", "第三条"]
 
 
 def test_model_reply_humanizes_ai_tells_before_sending(tmp_path, monkeypatch):
@@ -1564,6 +1619,61 @@ def test_vision_image_is_forwarded_to_provider(tmp_path, monkeypatch):
     asyncio.run(service.handle(SimpleNamespace(self_id=2), event, enabled_config()))
     assert provider.images[-1] == (image,)
     assert "已读取 当前消息图片 1" in provider.prompts[-1]
+
+
+def test_context_images_keep_their_original_senders(tmp_path, monkeypatch):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(
+        1001,
+        "甲",
+        "[图片]",
+        user_id=11,
+        message_id="image-a",
+        media_references=(ImageReference("current", 1, "https://example.test/a.png"),),
+    )
+    service.record_group_message(
+        1001,
+        "乙",
+        "[图片]",
+        user_id=22,
+        message_id="image-b",
+        media_references=(ImageReference("current", 1, "https://example.test/b.png"),),
+    )
+
+    references = service._context_image_references(
+        1001,
+        exclude_message_id="call",
+        limit=2,
+    )
+    assert [(item.source, item.sender_id, item.sender_name) for item in references] == [
+        ("context", 11, "甲"),
+        ("context", 22, "乙"),
+    ]
+
+    resolution = MediaResolution(
+        tuple(
+            VisionImage(
+                source=item.source,
+                ordinal=item.ordinal,
+                data_url="data:image/jpeg;base64,dGVzdA==",
+                mime_type="image/jpeg",
+                sha256=str(item.ordinal) * 64,
+                byte_count=4,
+                sender_id=item.sender_id,
+                sender_name=item.sender_name,
+            )
+            for item in references
+        ),
+        (),
+    )
+    prompt = service._build_prompt(
+        group_message(group_id=1001, text="糖糖刚才那些图是谁发的"),
+        enabled_config(),
+        media_resolution=resolution,
+    )
+    assert "最近群聊上下文图片 1（发送者：甲）" in prompt
+    assert "最近群聊上下文图片 2（发送者：乙）" in prompt
+    assert "不要把引用消息的发送者当成其他上下文图片的发送者" in prompt
 
 
 def test_chat_payload_supports_tools_and_history():

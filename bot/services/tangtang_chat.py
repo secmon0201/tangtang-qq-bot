@@ -227,7 +227,7 @@ def _black_meme_instruction(text: str) -> str | None:
 
 
 DEFAULT_PERSONA = (
-    "你是糖糖，一个会认真翻聊天记录、又有点自己小脾气的嘉心糖观察员。"
+    "你是糖糖，一个服务于多个 QQ 群、会认真翻当前群聊天记录、又有点自己小脾气的嘉心糖观察员。"
     "第一人称只用糖糖，但通常省略主语。普通聊天默认只发一条 4-12 字的自然口语短句。"
     "第一行先写 [接话] 或 [沉默]，[接话] 时第二行起写正文。"
 )
@@ -239,6 +239,13 @@ _QUESTION_RE = re.compile(
 _CASUAL_RE = re.compile(
     r"你好|您好|嗨|哈喽|hello|hi|在吗|在不在|早安|晚安|早上好|"
     r"晚上好|中午好|哈哈|嘿嘿|嘻嘻"
+)
+_GROUP_IDENTITY_QUESTION_RE = re.compile(
+    r"(?:这|这里)(?:到底)?(?:是|叫|属于)?(?:什么|啥|哪个|哪一个)(?:名字的)?群"
+    r"|(?:这个|本|咱们|咱)群(?:到底)?(?:是|叫|属于|叫什么)?"
+    r"(?:什么|啥|哪个|哪一个)(?:名字)?"
+    r"|(?:咱们|咱)(?:现在)?(?:是|属于)(?:什么|啥|哪个|哪一个)群"
+    r"|群(?:名|名称)(?:是|叫|叫什么)?(?:什么|啥)"
 )
 
 
@@ -1155,6 +1162,17 @@ FeatureRouter = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class TangtangGroupIdentity:
+    group_name: str = ""
+    alias: str = ""
+    domain_mode: str = ""
+    domain_name: str = ""
+
+
+GroupIdentityProvider = Callable[[int], TangtangGroupIdentity | None]
+
+
 class TangtangService:
     def __init__(
         self,
@@ -1167,6 +1185,7 @@ class TangtangService:
         media_resolver: TangtangMediaResolver | None = None,
         sleeper: Callable[[float], Awaitable[Any]] | None = None,
         memory_kernel: TangtangMemoryKernel | None = None,
+        group_identity_provider: GroupIdentityProvider | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self.db = db or TangtangDb()
@@ -1175,6 +1194,7 @@ class TangtangService:
         self.media_resolver = media_resolver
         self._media_resolver_signature: tuple[int, ...] | None = None
         self._sleep = sleeper or asyncio.sleep
+        self.group_identity_provider = group_identity_provider
         base = resource_dir or RESOURCE_DIR
         self._persona = _TextFileCache(base / "persona.md")
         self._self = _TextFileCache(base / "self.md")
@@ -1192,6 +1212,35 @@ class TangtangService:
         self._recent_call_texts: dict[tuple[int, str], float] = {}
         self._in_flight: set[int] = set()
         self.memory = memory_kernel or TangtangMemoryKernel(self.db, self._now)
+
+    @staticmethod
+    def _clean_group_identity_value(value: str, limit: int = 80) -> str:
+        return " ".join(str(value or "").split())[:limit]
+
+    def _group_identity(self, group_id: int) -> TangtangGroupIdentity | None:
+        if self.group_identity_provider is None:
+            return None
+        try:
+            identity = self.group_identity_provider(int(group_id))
+        except Exception as exc:
+            logger.warning("Tangtang group identity read failed: {}", exc)
+            return None
+        if identity is None:
+            return None
+        return TangtangGroupIdentity(
+            group_name=self._clean_group_identity_value(identity.group_name),
+            alias=self._clean_group_identity_value(identity.alias, 40),
+            domain_mode=self._clean_group_identity_value(identity.domain_mode, 20),
+            domain_name=self._clean_group_identity_value(identity.domain_name, 40),
+        )
+
+    def _group_identity_answer(self, group_id: int, text: str) -> str | None:
+        if not _GROUP_IDENTITY_QUESTION_RE.search("".join(str(text).split())):
+            return None
+        identity = self._group_identity(group_id)
+        if identity is None or not identity.group_name:
+            return "不知道这个群叫什么"
+        return f"这是{identity.group_name}"
 
     def config(self) -> TangtangConfig:
         return self.loader.load()
@@ -1514,9 +1563,32 @@ class TangtangService:
             else "你收到一条群友的呼叫消息。先判断这条消息值不值得接话，再按糖糖人格决定。"
         )
         section_label = "[当前群友发言]" if proactive else "[当前呼叫]"
+        group_identity = self._group_identity(group_id)
+        group_identity_parts: list[str] = []
+        if group_identity is not None:
+            group_name = group_identity.group_name or "未知"
+            group_alias = group_identity.alias or "未设置"
+            if group_identity.domain_mode == "cluster":
+                domain_description = f"集群（{group_identity.domain_name or '名称未知'}）"
+            elif group_identity.domain_mode == "solo":
+                domain_description = "独立群（不属于任何集群）"
+            else:
+                domain_description = "未知"
+            group_identity_parts = [
+                "[当前 QQ 群资料（客观事实）]",
+                f"群名称：{group_name}",
+                f"群内代称：{group_alias}",
+                f"群域归属：{domain_description}",
+                (
+                    "回答当前群名称、归属或糖糖现在在哪个群时，只能使用本节资料；"
+                    "不要从人格、聊天记录、用户身份或其他群经历推断。资料未知就直接说不知道。"
+                ),
+                "",
+            ]
         fixed_parts = [
             header,
             "",
+            *group_identity_parts,
             section_label,
             f"说话人昵称：{nickname}",
             f"被@状态：{'否' if proactive else ('是' if mentioned else '否')}",
@@ -1713,6 +1785,19 @@ class TangtangService:
         lowered = text.lower()
         if _matches(self._hard_terms(), self._hard_patterns(), text):
             self._write_usage(config, group_id, user_id, "hard_block", mode=None, tokens={})
+            return
+        group_identity_answer = self._group_identity_answer(group_id, call_text)
+        if group_identity_answer is not None:
+            await self._send_and_record(
+                bot,
+                event,
+                config,
+                group_identity_answer,
+                reply_kind="canned",
+                mode="local",
+                tokens={},
+                call_text=call_text,
+            )
             return
         black_meme_instruction = _black_meme_instruction(text)
         if black_meme_instruction:

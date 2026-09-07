@@ -17,6 +17,7 @@ from bot.services.tangtang_chat import (
     TOOL_SCHEMAS,
     TangtangConfig,
     TangtangConfigLoader,
+    TangtangGroupIdentity,
     TangtangProvider,
     TangtangService,
     classify_call,
@@ -144,6 +145,7 @@ def make_service(
     monkeypatch,
     response: str = "[接话]\n好的呀",
     provider: FakeProvider | None = None,
+    group_identity_provider=None,
 ):
     resource_dir = tmp_path / "resources"
     usage_dir = tmp_path / "usage"
@@ -159,6 +161,7 @@ def make_service(
         provider=provider,
         resource_dir=resource_dir,
         usage_dir=usage_dir,
+        group_identity_provider=group_identity_provider,
     )
     sent: list = []
     monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: 0.5)
@@ -209,6 +212,16 @@ def test_config_validation():
         enabled_config(TANGTANG_GROUP_IDS="9999")
     with pytest.raises(ValueError):
         enabled_config(TANGTANG_API_KEY="")
+
+
+def test_persona_does_not_claim_a_coast_as_default_identity():
+    persona = (RESOURCE_DIR / "persona.md").read_text(encoding="utf-8")
+    identity = (RESOURCE_DIR / "identity.md").read_text(encoding="utf-8")
+
+    assert "服务于多个 QQ 群" in persona
+    assert "服务于多个 QQ 群" in identity
+    assert "A 海岸群里的" not in persona
+    assert "身份：A 海岸" not in identity
 
 
 def test_proactive_config_defaults_and_validation():
@@ -486,6 +499,67 @@ def test_proactive_prompt_uses_proactive_header(tmp_path, monkeypatch):
     assert "没有人呼叫糖糖" in prompt
     assert "普通聊天默认只发一条" in prompt
     assert "[当前呼叫]" not in prompt
+
+
+def test_prompt_uses_authoritative_current_group_identity(tmp_path, monkeypatch):
+    service, _sent, _provider, _usage = make_service(
+        tmp_path,
+        monkeypatch,
+        group_identity_provider=lambda _group_id: TangtangGroupIdentity(
+            group_name="aakk巨龙友好群",
+            alias="巨龙群",
+            domain_mode="solo",
+        ),
+    )
+    prompt = service._build_prompt(
+        group_message(group_id=1001, text="糖糖，这是什么群啊"),
+        enabled_config(),
+    )
+
+    assert "群名称：aakk巨龙友好群" in prompt
+    assert "群内代称：巨龙群" in prompt
+    assert "群域归属：独立群（不属于任何集群）" in prompt
+    assert "不要从人格、聊天记录、用户身份或其他群经历推断" in prompt
+
+
+def test_group_identity_question_uses_local_fact_not_model(tmp_path, monkeypatch):
+    service, sent, provider, usage_dir = make_service(
+        tmp_path,
+        monkeypatch,
+        response="[接话]\nA海岸群啊",
+        group_identity_provider=lambda _group_id: TangtangGroupIdentity(
+            group_name="aakk巨龙友好群",
+            alias="巨龙群",
+            domain_mode="solo",
+        ),
+    )
+    event = group_message(group_id=1001, text="糖糖，这是什么群啊")
+
+    asyncio.run(service.handle(SimpleNamespace(self_id=2), event, enabled_config()))
+
+    assert provider.calls == 0
+    assert len(sent) == 1
+    assert "这是aakk巨龙友好群" in str(sent[0])
+    assert service.db.list_calls(3, 1001)[0]["reply_kind"] == "canned"
+    assert usage_events(usage_dir)[-1]["event"] == "canned"
+
+
+def test_non_group_what_question_still_uses_model(tmp_path, monkeypatch):
+    service, sent, provider, _usage_dir = make_service(
+        tmp_path,
+        monkeypatch,
+        group_identity_provider=lambda _group_id: TangtangGroupIdentity(
+            group_name="aakk巨龙友好群",
+            domain_mode="solo",
+        ),
+    )
+    event = group_message(group_id=1001, text="糖糖，这是什么游戏啊")
+
+    asyncio.run(service.handle(SimpleNamespace(self_id=2), event, enabled_config()))
+
+    assert provider.calls == 1
+    assert len(sent) == 1
+    assert "好的呀" in str(sent[0])
 
 
 def test_proactive_miss_is_not_logged(tmp_path, monkeypatch):

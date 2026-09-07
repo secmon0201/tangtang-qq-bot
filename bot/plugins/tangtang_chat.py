@@ -18,6 +18,7 @@ from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.game_api_gate import GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
+    TangtangGroupIdentity,
     TangtangService,
     render_message_text,
     resolve_at_labels,
@@ -75,9 +76,36 @@ async def _feature_router(
     return True, usage
 
 
-feature_classifier = TangtangFeatureClassifier()
-service = TangtangService(loader=loader, feature_router=_feature_router)
 db = database()
+
+
+def _group_identity(group_id: int) -> TangtangGroupIdentity | None:
+    row = db.managed_group(int(group_id), include_disabled=True)
+    if row is None:
+        return None
+    domains = group_domains()
+    domain = domains.domain_for_group(int(group_id))
+    stored_name = str(row["group_name"] or "").strip()
+    if stored_name == str(int(group_id)):
+        stored_name = ""
+    return TangtangGroupIdentity(
+        group_name=stored_name,
+        alias=str(row["alias"] or "").strip(),
+        domain_mode=domain.mode if domain is not None else "",
+        domain_name=(
+            domains.domain_display_name(domain)
+            if domain is not None and domain.mode == "cluster"
+            else ""
+        ),
+    )
+
+
+feature_classifier = TangtangFeatureClassifier()
+service = TangtangService(
+    loader=loader,
+    feature_router=_feature_router,
+    group_identity_provider=_group_identity,
+)
 
 
 def runtime_config() -> TangtangConfig:

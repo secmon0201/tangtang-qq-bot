@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $EnvPath = Join-Path $Root '.env'
 if (-not $Hostname -and (Test-Path -LiteralPath $EnvPath)) {
-    $line = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match '^PUBLIC_SITE_BASE_URL=' } | Select-Object -Last 1
+    $line = Get-Content -LiteralPath $EnvPath -Encoding UTF8 | Where-Object { $_ -match '^PUBLIC_SITE_BASE_URL=' } | Select-Object -Last 1
     if ($null -ne $line) {
         $baseUrl = ([string]$line).Substring(([string]$line).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
         if ($baseUrl -match '^https://([^/]+)/*$') { $Hostname = $Matches[1] }
@@ -105,7 +105,7 @@ Write-Output "Tangtang named web tunnel ready: $publicUrl"
 Write-Output 'Public homepage: / (static site)'
 $shortHostname = ''
 if (Test-Path -LiteralPath $EnvPath) {
-    $shortLine = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match '^PUBLIC_SHORT_HOST=' } | Select-Object -Last 1
+    $shortLine = Get-Content -LiteralPath $EnvPath -Encoding UTF8 | Where-Object { $_ -match '^PUBLIC_SHORT_HOST=' } | Select-Object -Last 1
     if ($null -ne $shortLine) {
         $shortHostname = ([string]$shortLine).Substring(([string]$shortLine).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
     }

@@ -10,7 +10,7 @@ $EnvPath = Join-Path $Root '.env'
 
 function Get-LocalEnvValue([string]$Name) {
     if (-not (Test-Path -LiteralPath $EnvPath)) { return '' }
-    $line = Get-Content -LiteralPath $EnvPath | Where-Object { $_ -match "^$([regex]::Escape($Name))=" } | Select-Object -Last 1
+    $line = Get-Content -LiteralPath $EnvPath -Encoding UTF8 | Where-Object { $_ -match "^$([regex]::Escape($Name))=" } | Select-Object -Last 1
     if ($null -eq $line) { return '' }
     return ([string]$line).Substring(([string]$line).IndexOf('=') + 1).Trim().Trim('"').Trim("'")
 }

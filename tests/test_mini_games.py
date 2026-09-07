@@ -1449,3 +1449,8 @@ def test_menu_and_global_ranking_render_as_local_png_without_ids(tmp_path):
         with Image.open(path) as image:
             assert image.width == renderer.WIDTH
             assert image.getbbox() is not None
+    with Image.open(board) as image:
+        assert image.mode == "RGBA"
+        assert image.getpixel((5, image.height // 4))[:3] != image.getpixel(
+            (5, image.height * 3 // 4)
+        )[:3]

@@ -7,11 +7,15 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from PIL import Image
+
+from bot.services.a_coast_archive_render import ACoastArchiveImageRenderer
 from bot.services.asoul import ScheduleItem
 from bot.services.asoul_render import ASoulImageRenderer
 from bot.services.asoul_web_render import ASoulWebRenderer
 from bot.services.community_web import CommunityWebRenderer
 from bot.services.mini_game_reports import MiniGameReportRenderer
+from bot.services.reports import ReportRenderer
 
 
 OUTPUT_DIR = Path("reports/qq_image_style_review")
@@ -172,9 +176,72 @@ def render_today_wife_sample() -> Path:
     return _keep(source, "today_wife.png")
 
 
+def render_refreshed_local_samples() -> tuple[Path, ...]:
+    report_renderer = ReportRenderer(OUTPUT_DIR, command_prefix="#")
+    game_renderer = MiniGameReportRenderer(OUTPUT_DIR, command_prefix="#")
+    profile_renderer = ACoastArchiveImageRenderer(OUTPUT_DIR)
+    cover = OUTPUT_DIR / "announcement_review_cover.png"
+    Image.new("RGB", (1800, 360), "#dceef1").save(cover)
+    text_announcement = report_renderer.render_global_announcement(
+        "今晚八点直播见\n愿每一份期待都有回声"
+    )
+    graphic_announcement = report_renderer.render_global_graphic_announcement(
+        "周末直播提醒",
+        "本周六 20:00 开始，开播后会同步发送直播间地址与注意事项。",
+        cover,
+    )
+    cover.unlink(missing_ok=True)
+    profile = profile_renderer.render_profile(
+        900000001,
+        "示例群友",
+        "2026-09-01T20:01:00+08:00",
+        "糖糖开篇：常在晚间参与聊天，也愿意接住群友抛来的话题。\n\n"
+        "正文观察：表达直接，提问与回应都很及时。\n\n"
+        "糖糖总评：是让聊天自然延续下去的那类成员。",
+        [
+            {"hour": hour, "content": "今晚直播吗？一起看呀" if hour % 3 else "收到，稍后见"}
+            for hour in range(24)
+        ],
+    )
+    mini_game_ranking = game_renderer.render_ranking(
+        {
+            "title": "小游戏总榜单",
+            "global": True,
+            "show_group_details": True,
+            "groups": [
+                {"group_id": 1001, "group_name": "示例一群"},
+                {"group_id": 1002, "group_name": "示例二群"},
+            ],
+            "sections": [
+                {
+                    "title": "幸运骰局",
+                    "value_label": "胜场",
+                    "rows": [
+                        {"rank": 1, "user_id": 1, "nickname": "今天吃什么", "games": 24, "value": 16, "group_ids": (1001, 1002)},
+                        {"rank": 2, "user_id": 2, "nickname": "晚风来信", "games": 18, "value": 11, "group_ids": (1002,)},
+                        {"rank": 3, "user_id": 3, "nickname": "海边散步", "games": 12, "value": 8, "group_ids": (1001,)},
+                    ],
+                }
+            ],
+        },
+        {},
+        {},
+    )
+    return (
+        _keep(text_announcement, "announcement_text.png"),
+        _keep(graphic_announcement, "announcement_graphic.png"),
+        _keep(profile, "speech_profile.png"),
+        _keep(mini_game_ranking, "mini_game_ranking.png"),
+    )
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    paths = [*asyncio.run(render_web_samples()), render_today_wife_sample()]
+    paths = [
+        *asyncio.run(render_web_samples()),
+        render_today_wife_sample(),
+        *render_refreshed_local_samples(),
+    ]
     for path in paths:
         print(path.resolve())
 

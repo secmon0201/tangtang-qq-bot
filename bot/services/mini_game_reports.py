@@ -7,7 +7,11 @@ from typing import Any, Mapping
 
 from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
-from bot.services.image_style import paste_horizontal_gradient
+from bot.services.image_style import (
+    AURORA_SIGNAL_COLORS,
+    paste_horizontal_gradient,
+    paste_multistop_gradient,
+)
 from bot.services.reports import ReportRenderer
 
 
@@ -2521,11 +2525,16 @@ class MiniGameReportRenderer(ReportRenderer):
             if show_group_details
             else "发送 #游戏列表 查看小游戏。",
         )
-        for section in sections:
+        for section_index, section in enumerate(sections):
             rows = list(section.get("rows", ()))
             title = str(section.get("title") or "榜单")
             value_label = str(section.get("value_label") or "次数")
-            draw.text((self.LEFT, y), title, font=self._font(25, True), fill=self.ACCENT)
+            draw.rounded_rectangle(
+                (self.LEFT, y + 4, self.LEFT + 6, y + 34),
+                radius=3,
+                fill=AURORA_SIGNAL_COLORS[section_index % len(AURORA_SIGNAL_COLORS)],
+            )
+            draw.text((self.LEFT + 18, y), title, font=self._font(25, True), fill=self.TEXT)
             y += 42
             if not rows:
                 self._draw_empty_card(draw, y, "暂无战绩")
@@ -2548,12 +2557,12 @@ class MiniGameReportRenderer(ReportRenderer):
             draw.text((self.LEFT, y), "涉及群聊", font=self._font(22, True), fill=self.MUTED)
             y += 34
             for group_id, code, name in group_labels.values():
-                draw.rounded_rectangle(
+                paste_multistop_gradient(
+                    image,
                     (self.LEFT, y, self.WIDTH - self.RIGHT, y + 58),
+                    ((0.0, "#ffffff"), (1.0, "#eef9f7")),
                     radius=8,
-                    fill=self.PANEL,
                     outline=self.TABLE_LINE,
-                    width=1,
                 )
                 self._draw_avatar_at(
                     image,
@@ -2593,13 +2602,18 @@ class MiniGameReportRenderer(ReportRenderer):
         group_labels: Mapping[int, tuple[int, str, str]],
         index: int,
     ) -> None:
-        fill = self.PANEL if index % 2 == 0 else self.ROW_ALT
-        draw.rounded_rectangle(
+        row_tones = ("#fff2f5", "#f3effb", "#edf9f7", "#fff8dd")
+        paste_multistop_gradient(
+            image,
             (self.LEFT, y, self.WIDTH - self.RIGHT, y + 150),
-            radius=18,
-            fill=fill,
+            ((0.0, "#ffffff"), (1.0, row_tones[index % len(row_tones)])),
+            radius=12,
             outline=self.TABLE_LINE,
-            width=1,
+        )
+        draw.rounded_rectangle(
+            (self.LEFT, y + 20, self.LEFT + 6, y + 130),
+            radius=3,
+            fill=AURORA_SIGNAL_COLORS[index % len(AURORA_SIGNAL_COLORS)],
         )
         rank = int(row.get("rank", index + 1))
         self._draw_rank_badge(draw, self.LEFT + 18, y + 23, rank)
@@ -2614,7 +2628,9 @@ class MiniGameReportRenderer(ReportRenderer):
             fill=self.MUTED,
         )
         value = f"{value_label} {int(row.get('value', 0))} 次"
-        self._draw_chip(draw, self.LEFT + 156, y + 88, value, self.KEY_FILL, self.ACCENT)
+        chip_fill = row_tones[index % len(row_tones)]
+        chip_text = AURORA_SIGNAL_COLORS[index % len(AURORA_SIGNAL_COLORS)]
+        self._draw_chip(draw, self.LEFT + 156, y + 88, value, chip_fill, chip_text)
         codes = [group_labels[group_id][1] for group_id in row.get("group_ids", ()) if group_id in group_labels]
         if codes:
             draw.text(
@@ -2625,5 +2641,8 @@ class MiniGameReportRenderer(ReportRenderer):
             )
 
     def _draw_rank_badge(self, draw: ImageDraw.ImageDraw, x: int, y: int, rank: int) -> None:
-        draw.ellipse((x, y, x + 40, y + 40), fill=self.CHIP, outline="#ffffff", width=2)
-        self._draw_centered(draw, x + 20, y + 20, str(rank), self._font(18, True), self.LABEL_TEXT)
+        colors = (AURORA_SIGNAL_COLORS[3], AURORA_SIGNAL_COLORS[1], AURORA_SIGNAL_COLORS[2])
+        fill = colors[rank - 1] if 1 <= rank <= 3 else "#f2eff7"
+        text = self.TEXT if rank == 1 else "#ffffff" if rank <= 3 else self.MUTED
+        draw.ellipse((x, y, x + 40, y + 40), fill=fill, outline="#ffffff", width=2)
+        self._draw_centered(draw, x + 20, y + 20, str(rank), self._font(18, True), text)

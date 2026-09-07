@@ -11,8 +11,15 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.config import settings
 from bot.services.emoji_text import EmojiTextDraw
-from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
-from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
+from bot.services.image_style import (
+    AURORA_SIGNAL_COLORS,
+    draw_gradient_text,
+    draw_signal_diamonds,
+    new_aurora_signal_canvas,
+    paste_horizontal_gradient,
+    paste_multistop_gradient,
+    transparent_rounded_corners,
+)
 
 
 def report_group_marker(index: int) -> str:
@@ -41,16 +48,16 @@ class ReportRenderer:
     FRAME_SPAN = 82
     CONTENT_FRAME_GAP = 16
 
-    BACKGROUND = "#fffafd"
+    BACKGROUND = "#f7f8fc"
     PANEL = "#ffffff"
-    HEADER = "#fff5f9"
-    HEADER_SUBTITLE = "#9b7c8c"
+    HEADER = "#f8f7fb"
+    HEADER_SUBTITLE = "#7e7b91"
     TABLE_HEADER = "#f25c91"
-    TABLE_LINE = "#f2dce6"
-    ROW_ALT = "#fff8fb"
-    TEXT = "#342a32"
-    MUTED = "#907885"
-    ACCENT = "#f35d91"
+    TABLE_LINE = "#e6e1ef"
+    ROW_ALT = "#f7fbfb"
+    TEXT = "#3f3e56"
+    MUTED = "#7e7b91"
+    ACCENT = "#f26f82"
     LABEL_TEXT = "#dc4f81"
     KEY_FILL = "#ffe5ef"
     LAVENDER = "#d995b4"
@@ -498,11 +505,16 @@ class ReportRenderer:
         paste_horizontal_gradient(
             image,
             (self.LEFT, y, canvas_width - self.RIGHT, y + box_height),
-            "#ffd3e4",
-            "#fff3f8",
+            "#fff1f5",
+            "#e8f8f5",
             radius=18,
-            outline="#edb7cb",
-            outline_width=2,
+            outline="#e3ddec",
+            outline_width=1,
+        )
+        draw.rounded_rectangle(
+            (self.LEFT, y + 18, self.LEFT + 6, y + box_height - 18),
+            radius=3,
+            fill=AURORA_SIGNAL_COLORS[0],
         )
         if sticker:
             sticker_box = 176
@@ -558,11 +570,18 @@ class ReportRenderer:
         footer_height = 82
         height = header_height + cover_height + 22 + card_height + footer_height
 
-        image = Image.new("RGB", (canvas_width, height), self.BACKGROUND)
+        image = new_aurora_signal_canvas(canvas_width, height, rail_width=12)
         draw = EmojiTextDraw(image)
-        draw.rectangle((0, 0, canvas_width, header_height), fill=self.HEADER)
-        draw.rectangle((margin, 34, margin + 8, 82), fill=self.ACCENT)
-        draw.text((margin + 26, 28), self.BRAND_HEADER, font=self._font(30, True), fill=self.TEXT)
+        paste_multistop_gradient(
+            image,
+            (36, 24, canvas_width - 36, header_height - 18),
+            ((0.0, "#fff0f4"), (0.52, "#faf7ff"), (1.0, "#e8f8f5")),
+            radius=16,
+            outline="#e5e0ed",
+        )
+        draw.rectangle((margin, 42, margin + 7, 88), fill=self.ACCENT)
+        draw.text((margin + 26, 34), self.BRAND_HEADER, font=self._font(30, True), fill=self.TEXT)
+        draw_signal_diamonds(draw, canvas_width - 58, 48, size=7, gap=7)
 
         cover_top = header_height
         cover_background = Image.new("RGBA", cover.size, self.BACKGROUND)
@@ -571,12 +590,12 @@ class ReportRenderer:
 
         card_top = cover_top + cover_height + 22
         card_bottom = card_top + card_height
-        draw.rounded_rectangle(
+        paste_multistop_gradient(
+            image,
             (margin, card_top, canvas_width - margin, card_bottom),
-            radius=20,
-            fill=self.PANEL,
+            ((0.0, "#ffffff"), (0.68, "#fbf9ff"), (1.0, "#eef9f7")),
+            radius=16,
             outline=self.TABLE_LINE,
-            width=2,
         )
         text_left = margin + 36
         text_y = card_top + 38
@@ -602,7 +621,7 @@ class ReportRenderer:
             )
 
         footer_top = card_bottom + 18
-        draw.rectangle((0, footer_top, canvas_width, height), fill=self.HEADER)
+        draw.rectangle((0, footer_top, canvas_width, height), fill="#f6f7fb")
         self._draw_centered(
             draw,
             canvas_width // 2,
@@ -691,29 +710,30 @@ class ReportRenderer:
         footer_top = content_top + body_height + 18
         panel_bottom = footer_top - 8
         height = footer_top + self.FOOTER_HEIGHT
-        image = Image.new("RGB", (canvas_width, height), self.BACKGROUND)
+        image = new_aurora_signal_canvas(canvas_width, height, rail_width=12)
         draw = EmojiTextDraw(image)
         self._draw_outer_frame(draw, height, canvas_width)
         if header_gradient:
-            paste_horizontal_gradient(
+            paste_multistop_gradient(
                 image,
                 (38, 44, canvas_width - 38, header_bottom),
-                "#f3a2bd",
-                "#fff5f9",
+                (
+                    (0.0, "#fff0f4"),
+                    (0.42, "#f8f4ff"),
+                    (0.74, "#f2f6ff"),
+                    (1.0, "#e5f7f3"),
+                ),
                 radius=18,
+                outline="#e4deec",
             )
         brand_font = self._font(14, True)
         brand_width = self._text_width(self.BRAND_HEADER, brand_font) + 36
-        draw.rounded_rectangle(
-            (self.LEFT, label_top, self.LEFT + brand_width, label_top + label_height),
-            radius=14,
-            fill="#ffffff",
-        )
+        draw.line((self.LEFT, label_top + 4, self.LEFT + 30, label_top + 4), fill=self.ACCENT, width=3)
         draw.text(
-            (self.LEFT + 18, label_top + 5),
+            (self.LEFT, label_top + 10),
             self.BRAND_HEADER,
             font=brand_font,
-            fill=self.ACCENT,
+            fill=self.MUTED,
         )
         if compact:
             if title:
@@ -736,34 +756,30 @@ class ReportRenderer:
                     fill=self.ACCENT,
                 )
         else:
-            draw.text(
+            draw_gradient_text(
+                image,
                 (self.LEFT, title_y),
                 self._ellipsize(title, title_font, title_width),
-                font=title_font,
-                fill=self.TEXT,
+                title_font,
             )
         draw.text((self.LEFT, subtitle_y), self._ellipsize(subtitle, subtitle_font, title_width), font=subtitle_font, fill=self.HEADER_SUBTITLE)
-        draw_stitched_mascot(draw, canvas_width - 126, 24, 52)
-        self._draw_heart(draw, canvas_width - 166, 48, 14, "#f7a4bd")
-        self._draw_cross(draw, canvas_width - 46, 52, 9)
-        self._draw_bandage(draw, canvas_width - 184, header_bottom - 19)
-        draw.rounded_rectangle(
+        draw_signal_diamonds(draw, canvas_width - 52, 48, size=7, gap=7)
+        paste_multistop_gradient(
+            image,
             (
                 self.LEFT - self.CONTENT_FRAME_GAP,
                 panel_outer_top,
                 canvas_width - self.RIGHT + self.CONTENT_FRAME_GAP,
                 panel_bottom,
             ),
+            ((0.0, "#ffffff"), (0.72, "#fcfbff"), (1.0, "#f1faf8")),
             radius=18,
-            fill="#fffefd",
             outline=self.TABLE_LINE,
-            width=1,
         )
         self._draw_corner_ribbons(draw, height, canvas_width)
         del footer_hint
         footer = f"{self.BRAND_FOOTER} · {settings.public_generator_credit or 'Generated locally'}"
         self._draw_centered(draw, canvas_width // 2, height - 29, footer, self._font(15), self.MUTED)
-        self._draw_bunny(draw, canvas_width - 64, height - 61, 17)
         return image, draw, content_top
 
     def _draw_corner_ribbons(
@@ -772,17 +788,14 @@ class ReportRenderer:
         height: int,
         width: int | None = None,
     ) -> None:
-        """Draw the small pink registration marks from the paper-card system."""
+        """Draw quiet four-color registration marks around the glass frame."""
         canvas_width = width or self.WIDTH
         band = self.FRAME_BAND
         inset = 18
         span = self.FRAME_SPAN
-        color = "#ff91b4"
-        muted = "#f6c6d7"
-        draw.line((inset, inset + span, inset, inset, inset + span, inset), fill=color, width=band, joint="curve")
-        draw.line((canvas_width - inset - 48, inset, canvas_width - inset, inset, canvas_width - inset, inset + 28), fill=muted, width=3, joint="curve")
-        draw.line((inset, height - inset - 28, inset, height - inset, inset + 52, height - inset), fill=muted, width=3, joint="curve")
-        draw_heart_tail(draw, 78, height - 42)
+        draw.line((inset, inset + span, inset, inset, inset + span, inset), fill=AURORA_SIGNAL_COLORS[1], width=band, joint="curve")
+        draw.line((canvas_width - inset - 48, inset, canvas_width - inset, inset), fill=AURORA_SIGNAL_COLORS[2], width=3)
+        draw.line((inset, height - inset, inset + 52, height - inset), fill=AURORA_SIGNAL_COLORS[3], width=3)
 
     def _draw_outer_frame(
         self,
@@ -794,10 +807,9 @@ class ReportRenderer:
         canvas_width = width or self.WIDTH
         left, top, right, bottom = 18, 18, canvas_width - 18, height - 18
         radius, mark_span, line_width = 26, self.FRAME_SPAN, 2
-        outline = "#f5dce7"
+        outline = "#e6e1ef"
 
-        # A square fill prevents a second, pale rounded silhouette behind the marks.
-        draw.rectangle((left, top, right, bottom), fill=self.PANEL)
+        draw.rounded_rectangle((left, top, right, bottom), radius=radius, fill="#fbfbfe")
         draw.line((left + mark_span, top, right - 48, top), fill=outline, width=line_width)
         draw.line((left, top + mark_span, left, bottom - 28), fill=outline, width=line_width)
         draw.line((left + 52, bottom, right - radius, bottom), fill=outline, width=line_width)

@@ -54,8 +54,11 @@ def test_global_announcement_poster_is_a_nonempty_png(tmp_path):
         assert image.width >= 480
         assert image.height > ReportRenderer.HEADER_HEIGHT
         assert image.getbbox() is not None
-        # The announcement poster has no top gradient bar; the header area is plain white.
-        assert image.getpixel((400, 100))[:3] == (255, 255, 255)
+        # Aurora Signal Glass keeps the compact header quiet but visibly tinted.
+        assert image.getpixel((400, 100))[:3] != (255, 255, 255)
+        assert image.getpixel((5, image.height // 4))[:3] != image.getpixel(
+            (5, image.height * 3 // 4)
+        )[:3]
 
 
 def test_global_announcement_width_adapts_to_longest_line(tmp_path):

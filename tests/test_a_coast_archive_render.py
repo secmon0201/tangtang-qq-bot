@@ -75,6 +75,9 @@ def test_profile_renderer_creates_an_adaptive_long_image_with_charts(tmp_path: P
         assert image.width == ACoastArchiveImageRenderer.WIDTH
         assert image.height > 1500
         assert image.getpixel((74, 148))[:3] == (255, 0, 0)
+        assert image.getpixel((5, image.height // 4))[:3] != image.getpixel(
+            (5, image.height * 3 // 4)
+        )[:3]
 
 
 def test_profile_renderer_omits_ai_narrative_panel_when_disabled(tmp_path: Path):

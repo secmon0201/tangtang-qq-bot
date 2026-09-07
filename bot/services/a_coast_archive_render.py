@@ -12,8 +12,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from bot.config import settings
 from bot.services.emoji_text import EmojiTextDraw
-from bot.services.character_marks import draw_heart_tail, draw_stitched_mascot
-from bot.services.image_style import paste_horizontal_gradient, transparent_rounded_corners
+from bot.services.image_style import (
+    AURORA_SIGNAL_COLORS,
+    draw_gradient_text,
+    draw_signal_diamonds,
+    new_aurora_signal_canvas,
+    paste_multistop_gradient,
+    transparent_rounded_corners,
+)
 
 
 class ACoastArchiveImageRenderer:
@@ -32,38 +38,38 @@ class ACoastArchiveImageRenderer:
     FRAME_SPAN = 82
     # AI profile text begins at x=62/72 and can use the full inner card width.
     PROFILE_TEXT_WIDTH = WIDTH - PADDING * 2 - 56
-    BACKGROUND = "#fff8fc"
-    PANEL = "#fffefe"
-    HEADER = "#fff4f8"
-    BORDER = "#f0d9e4"
-    ROW_ALT = "#fff8fb"
-    TEXT = "#342a32"
-    MUTED = "#907885"
-    ACCENT = "#df5687"
-    PROFILE_HEADER_FILL = "#fff1f6"
-    PROFILE_HEADER_BORDER = "#f3cfde"
-    PROFILE_HEADER_ACCENT = "#df5687"
-    TIMELINE_PANEL = "#fffafd"
-    TIMELINE_BORDER = "#f0d9e4"
-    TIMELINE_GRID = "#f8e8ee"
-    TIMELINE_ACCENT = "#d36188"
-    TIMELINE_LINE = "#e9789f"
-    TIMELINE_POINT = "#ffd7e5"
-    TIMELINE_POINT_OUTLINE = "#d36188"
-    RADAR_PANEL = "#fffafd"
-    RADAR_BORDER = "#eedce8"
-    RADAR_ROW = "#fff4f8"
-    RADAR_GRID = "#f6e6ee"
-    RADAR_AXIS = "#ebd6e2"
-    RADAR_FILL = "#f8dce7"
-    RADAR_LINE = "#da6b94"
-    RADAR_ACCENT = "#d65c8a"
-    RADAR_BAR = "#e98aab"
-    AI_PANEL = "#fff9fc"
-    AI_BORDER = "#f0d9e4"
-    AI_CARD = "#fff1f6"
-    AI_CARD_BORDER = "#f1d2df"
-    AI_ACCENT = "#d65c8a"
+    BACKGROUND = "#f7f8fc"
+    PANEL = "#ffffff"
+    HEADER = "#f8f7fb"
+    BORDER = "#e6e1ef"
+    ROW_ALT = "#f7fbfb"
+    TEXT = "#3f3e56"
+    MUTED = "#7e7b91"
+    ACCENT = "#f26f82"
+    PROFILE_HEADER_FILL = "#f9f7ff"
+    PROFILE_HEADER_BORDER = "#e4deec"
+    PROFILE_HEADER_ACCENT = "#8d67ce"
+    TIMELINE_PANEL = "#ffffff"
+    TIMELINE_BORDER = "#dceeea"
+    TIMELINE_GRID = "#e8f3f1"
+    TIMELINE_ACCENT = "#47c9b5"
+    TIMELINE_LINE = "#47c9b5"
+    TIMELINE_POINT = "#fff3c9"
+    TIMELINE_POINT_OUTLINE = "#f2ce63"
+    RADAR_PANEL = "#ffffff"
+    RADAR_BORDER = "#e4deec"
+    RADAR_ROW = "#f8f6fd"
+    RADAR_GRID = "#ece8f4"
+    RADAR_AXIS = "#ded8eb"
+    RADAR_FILL = "#e9def7"
+    RADAR_LINE = "#8d67ce"
+    RADAR_ACCENT = "#8d67ce"
+    RADAR_BAR = "#8d67ce"
+    AI_PANEL = "#ffffff"
+    AI_BORDER = "#f0dde3"
+    AI_CARD = "#fff3f6"
+    AI_CARD_BORDER = "#f1d9e0"
+    AI_ACCENT = "#f26f82"
 
     def __init__(
         self,
@@ -106,7 +112,7 @@ class ACoastArchiveImageRenderer:
         body_height = sum(row_heights) + self.ROW_GAP * max(0, len(row_heights) - 1)
         height = self.HEADER_HEIGHT + body_height + self.FOOTER_HEIGHT + 42
 
-        image = Image.new("RGB", (self.WIDTH, height), self.BACKGROUND)
+        image = new_aurora_signal_canvas(self.WIDTH, height, rail_width=12)
         draw = EmojiTextDraw(image)
         self._draw_header(
             image,
@@ -208,7 +214,7 @@ class ACoastArchiveImageRenderer:
         if include_ai_profile:
             height += profile_height + gap
 
-        image = Image.new("RGB", (self.WIDTH, height), self.BACKGROUND)
+        image = new_aurora_signal_canvas(self.WIDTH, height, rail_width=12)
         draw = EmojiTextDraw(image)
         self._draw_profile_header(image, draw, user_id, nickname, established_at, avatar_path)
 
@@ -254,19 +260,23 @@ class ACoastArchiveImageRenderer:
     ) -> None:
         left = self.PADDING
         right = self.WIDTH - self.PADDING
-        paste_horizontal_gradient(
+        paste_multistop_gradient(
             image,
             (left, 24, right, 208),
-            "#f3a6bf",
-            "#fff3f8",
+            (
+                (0.0, "#fff0f4"),
+                (0.44, "#f8f4ff"),
+                (0.74, "#f2f6ff"),
+                (1.0, "#e5f7f3"),
+            ),
             radius=16,
             outline=self.PROFILE_HEADER_BORDER,
             outline_width=2,
         )
         draw.text((left + 24, 40), self.BRAND_HEADER, font=self._font(13, True), fill=self.PROFILE_HEADER_ACCENT)
         title_font = self._font(38, True)
-        draw.text((left + 24, 62), "发言画像", font=title_font, fill=self.TEXT)
-        draw_stitched_mascot(draw, self.WIDTH - 118, 18, 50)
+        draw_gradient_text(image, (left + 24, 62), "发言画像", title_font)
+        draw_signal_diamonds(draw, self.WIDTH - 62, 44, size=7, gap=7)
 
         avatar_left, avatar_top, avatar_size = left + 24, 112, 72
         self._draw_avatar(image, draw, avatar_left, avatar_top, avatar_size, avatar_path, str(user_id))
@@ -395,8 +405,9 @@ class ACoastArchiveImageRenderer:
                 (bar_left, row_top + 10, bar_right, row_top + 21), radius=5, fill=self.RADAR_GRID
             )
             fill_right = bar_left + (bar_right - bar_left) * score / maximum
+            bar_color = AURORA_SIGNAL_COLORS[index % len(AURORA_SIGNAL_COLORS)]
             draw.rounded_rectangle(
-                (bar_left, row_top + 10, fill_right, row_top + 21), radius=5, fill=self.RADAR_BAR
+                (bar_left, row_top + 10, fill_right, row_top + 21), radius=5, fill=bar_color
             )
             draw.text(
                 (self.WIDTH - self.PADDING - 60, row_top + 5),
@@ -486,11 +497,17 @@ class ACoastArchiveImageRenderer:
         left, right = self.PADDING, self.WIDTH - self.PADDING
         draw.rounded_rectangle(
             (left, top, right, top + height),
-            radius=14,
+            radius=10,
             fill=fill or self.PANEL,
             outline=border or self.BORDER,
-            width=2,
+            width=1,
         )
+        accent = {
+            "发言倾向": AURORA_SIGNAL_COLORS[2],
+            "表达小雷达": AURORA_SIGNAL_COLORS[1],
+            "AI 发言画像": AURORA_SIGNAL_COLORS[0],
+        }.get(title, AURORA_SIGNAL_COLORS[3])
+        draw.rounded_rectangle((left, top + 20, left + 6, top + 66), radius=3, fill=accent)
         draw.text((left + 24, top + 20), title, font=self._font(26, True), fill=self.TEXT)
         draw.text((left + 24, top + 56), subtitle, font=self._font(16), fill=self.MUTED)
 
@@ -622,14 +639,18 @@ class ACoastArchiveImageRenderer:
         title_font: ImageFont.ImageFont,
         subtitle_font: ImageFont.ImageFont,
     ) -> None:
-        paste_horizontal_gradient(
+        paste_multistop_gradient(
             image,
             (self.PADDING, 24, self.WIDTH - self.PADDING, self.HEADER_HEIGHT - 16),
-            "#f3a6bf",
-            "#fff5f9",
+            (
+                (0.0, "#fff0f4"),
+                (0.44, "#f8f4ff"),
+                (0.74, "#f2f6ff"),
+                (1.0, "#e5f7f3"),
+            ),
             radius=18,
             outline=self.BORDER,
-            outline_width=2,
+            outline_width=1,
         )
         draw.text(
             (self.PADDING + 22, 36),
@@ -637,7 +658,7 @@ class ACoastArchiveImageRenderer:
             font=self._font(13, True),
             fill=self.ACCENT,
         )
-        draw.text((self.PADDING + 22, 56), title, font=title_font, fill=self.TEXT)
+        draw_gradient_text(image, (self.PADDING + 22, 56), title, title_font)
         avatar_left = self.PADDING + 22
         avatar_top = 107
         self._draw_avatar(
@@ -650,7 +671,7 @@ class ACoastArchiveImageRenderer:
             font=subtitle_font,
             fill=self.MUTED,
         )
-        draw_stitched_mascot(draw, self.WIDTH - 118, 16, 50)
+        draw_signal_diamonds(draw, self.WIDTH - 62, 42, size=7, gap=7)
 
     def _wrap_text(self, value: str, font: ImageFont.ImageFont, max_width: int) -> list[str]:
         if not value:
@@ -698,11 +719,9 @@ class ACoastArchiveImageRenderer:
 
     def _draw_corner_ribbons(self, draw: ImageDraw.ImageDraw, height: int) -> None:
         inset, span = 18, self.FRAME_SPAN
-        draw.line((inset, inset + span, inset, inset, inset + span, inset), fill="#ff91b4", width=self.FRAME_BAND, joint="curve")
-        draw.line((self.WIDTH - inset - 42, inset, self.WIDTH - inset, inset, self.WIDTH - inset, inset + 26), fill="#f7c8d8", width=3, joint="curve")
-        draw.line((inset, height - inset - 26, inset, height - inset, inset + 44, height - inset), fill="#f7c8d8", width=3, joint="curve")
-        self._draw_bunny(draw, self.WIDTH - 64, height - 58, 17)
-        draw_heart_tail(draw, 78, height - 42)
+        draw.line((inset, inset + span, inset, inset, inset + span, inset), fill=AURORA_SIGNAL_COLORS[1], width=self.FRAME_BAND, joint="curve")
+        draw.line((self.WIDTH - inset - 42, inset, self.WIDTH - inset, inset), fill=AURORA_SIGNAL_COLORS[2], width=3)
+        draw.line((inset, height - inset, inset + 44, height - inset), fill=AURORA_SIGNAL_COLORS[3], width=3)
 
     def _draw_bunny(self, draw: ImageDraw.ImageDraw, center_x: int, center_y: int, size: int) -> None:
         ink = "#dc789c"

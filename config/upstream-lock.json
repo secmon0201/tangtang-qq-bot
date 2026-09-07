@@ -6,14 +6,14 @@
       "path": "GsUID.Core",
       "url": "https://github.com/Genshin-bots/gsuid_core.git",
       "branch": "master",
-      "commit": "f4389d6571488215423c34759f5df90046c5f586"
+      "commit": "af716ae3a19f1bb36f04ad692a18aca9bdd5df26"
     },
     {
       "name": "GenshinUID connector",
       "path": "GsUID.Core/gsuid_core/plugins/GenshinUID",
       "url": "https://github.com/KimigaiiWuyi/GenshinUID.git",
       "branch": "v4",
-      "commit": "ce3a742665db0721db6f6b17db7b4453ec31e91a"
+      "commit": "938a4520ccda7907e2972e88238729504dfd0a5d"
     },
     {
       "name": "NTEUID",

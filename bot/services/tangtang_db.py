@@ -484,6 +484,11 @@ class TangtangDb:
             )
             return "claimed"
 
+    def proactive_last_attempt(self, group_id: int) -> float:
+        with self._connect() as conn:
+            row = conn.execute("SELECT last_reply_at FROM tangtang_proactive_state WHERE group_id=?", (group_id,)).fetchone()
+            return float(row[0]) if row else 0.0
+
     def insert_group_message(
         self,
         *,

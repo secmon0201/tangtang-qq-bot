@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from typing import Any
 
-from nonebot import on_message
+from nonebot import on_message, get_driver, get_bots
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.message import event_postprocessor
 
 from bot.config import settings
 from bot.application.personas import persona_engine
+from bot.application.proactive_chat import ProactiveCoordinator, proactive_store
 from bot.application.local_features import (
     feature_label,
     request_from_decision,
@@ -225,6 +227,14 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     config = runtime_config()
     context = persona_engine().snapshot(event, config.model, True)
+    if proactive_store().selection(int(event.group_id))[0] != "legacy":
+        original = getattr(event, "original_message", event.message)
+        if context.persona.call_keyword in event.get_plaintext() or any(
+            segment.type == "at" and str(segment.data.get("qq")) == str(bot.self_id) for segment in original
+        ):
+            return
+        proactive_coordinator.observe(bot, event, config)
+        return
     dispatcher.submit(int(event.group_id), lambda: service.handle_proactive(bot, event, config, context=context),
         proactive=True, request_id=context.request_id, current=lambda: persona_engine().current(context))
 
@@ -254,3 +264,29 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
             message_id=str(getattr(event, "message_id", "") or ""),
             media_references=media_references,
         )
+
+
+def scheduled_chat_enabled(group_id: int) -> bool:
+    return (not automation_is_paused()
+            and persona_engine().chat_enabled(group_id, True))
+
+
+proactive_coordinator = ProactiveCoordinator(
+    proactive_store(), service, dispatcher, persona_engine(), enabled=scheduled_chat_enabled,
+    connected=lambda bot: get_bots().get(str(bot.self_id)) is bot,
+    groups=lambda: tuple(group_domains().all_group_ids()))
+_proactive_task = None
+
+
+@get_driver().on_startup
+async def start_proactive_timer() -> None:
+    global _proactive_task
+    _proactive_task = asyncio.create_task(proactive_coordinator.run())
+
+
+@get_driver().on_shutdown
+async def stop_proactive_timer() -> None:
+    if _proactive_task:
+        _proactive_task.cancel()
+        await asyncio.gather(_proactive_task, return_exceptions=True)
+    proactive_coordinator.pending.clear()

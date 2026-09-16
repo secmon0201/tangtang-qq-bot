@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.params import CommandArg
@@ -16,6 +18,9 @@ from bot.services.env_sync import update_env_value
 from bot.services.runtime import database, passive_settings
 from bot.services.tangtang_chat import TangtangConfig
 from bot.services.tangtang_runtime import config_loader as loader
+from bot.application.proactive_chat import proactive_store
+from bot.services.proactive_policy import LABELS, STRATEGIES
+from bot.services.runtime import group_domains
 
 
 db = database()
@@ -51,13 +56,17 @@ def _status_text(
 def _current_status_text(
     config: TangtangConfig, title: str = "糖糖主动回复当前配置"
 ) -> str:
-    return _status_text(
+    legacy = _status_text(
         config,
         title,
         system_enabled=passive_settings().is_chat_globally_enabled(
             "proactive_chat"
         ),
     )
+    store = proactive_store()
+    rows = [store.status(g, time.time()) + ("；群开关=开" if group_domains().feature_enabled(g, "proactive_chat") else "；群开关=关")
+            for g in group_domains().all_group_ids()]
+    return legacy + "\n以上概率/间隔仅适用旧规则。新策略固定分组，不自动分档。\n" + "\n".join(rows)
 
 
 def _write_env(key: str, value: str, config: TangtangConfig | None = None) -> str | None:
@@ -90,6 +99,25 @@ async def _(event: MessageEvent, args=CommandArg()):
         await proactive_reply.finish(_current_status_text(config))
 
     action = tokens[0].lower()
+    if action == "策略" and len(tokens) in {2, 3}:
+        strategy = next((key for key, label in LABELS.items() if tokens[1] in {key, label}), "")
+        if strategy not in STRATEGIES:
+            await proactive_reply.finish("策略可选：旧规则、活跃群、低流量群。")
+        managed = tuple(group_domains().all_group_ids())
+        target = tokens[2] if len(tokens) == 3 else str(current_group(event) or "")
+        if target == "全部":
+            targets = managed
+        elif target.isdigit() and int(target) in managed:
+            targets = (int(target),)
+        else:
+            await proactive_reply.finish("请在已接管群内使用，或指定已接管群号/全部。")
+        store = proactive_store()
+        for group_id in targets:
+            store.set_policy(group_id, strategy, time.time())
+        if target == "全部":
+            store.set_policy(0, strategy, time.time())
+        db.audit(user_id(event), "proactive_strategy", current_group(event), f"strategy={strategy}; groups={len(targets)}")
+        await proactive_reply.finish(f"已将{len(targets)}个群设为{LABELS[strategy]}。群开关保持原设置，冷却和历史保留。")
     if action in {"开启", "打开", "on"} and len(tokens) == 1:
         error = _write_env("TANGTANG_PROACTIVE_ENABLED", "true")
         if error:
@@ -160,5 +188,5 @@ async def _(event: MessageEvent, args=CommandArg()):
         )
 
     await proactive_reply.finish(
-        "用法：#糖糖主动回复 状态|开启|关闭|概率 0-100%|冷却 0-1440分钟|间隔 0-10000条"
+        "用法：#糖糖主动回复 状态|开启|关闭|概率 0-100%|冷却 0-1440分钟|间隔 0-10000条；策略 旧规则|活跃群|低流量群 [群号|全部]"
     )

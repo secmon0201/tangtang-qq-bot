@@ -7,8 +7,10 @@ from types import SimpleNamespace
 from time import time
 
 import pytest
+import nonebot
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment
 
+nonebot.init()
 from bot.plugins.tangtang_chat import is_call_event, is_proactive_event
 from bot.services.replies import has_reply_segment
 from bot.services.tangtang_chat import (
@@ -530,6 +532,42 @@ def test_proactive_prompt_uses_proactive_header(tmp_path, monkeypatch):
     assert "没有人呼叫糖糖" in prompt
     assert "普通聊天默认只发一条" in prompt
     assert "[当前呼叫]" not in prompt
+
+
+def test_scheduled_proactive_uses_admission_instead_of_legacy_probability(tmp_path, monkeypatch):
+    from bot.services.proactive_policy import ProactiveTurn, proactive_turn_for
+    service, sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    config = enabled_config(TANGTANG_PROACTIVE_ENABLED="true", TANGTANG_PROACTIVE_PROBABILITY="0",
+                            TANGTANG_PROACTIVE_MESSAGE_INTERVAL="10000")
+    outcomes = []
+    turn = ProactiveTurn("active_v1", lambda: True, lambda: True, lambda event, detail: outcomes.append(event))
+    event = group_message(group_id=1001, text="今天讨论的新剧情很有趣")
+    with proactive_turn_for(turn):
+        asyncio.run(service.handle_proactive(SimpleNamespace(self_id=2), event, config))
+    assert provider.calls == 1 and len(sent) == 1
+    assert "proactive_reply" in outcomes
+    assert service.proactive_last_attempt(1001) > 0
+
+
+def test_scheduled_quota_denial_never_calls_model(tmp_path, monkeypatch):
+    from bot.services.proactive_policy import ProactiveTurn, proactive_turn_for
+    service, sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    config = enabled_config(TANGTANG_PROACTIVE_ENABLED="true")
+    turn = ProactiveTurn("active_v1", lambda: False, lambda: True, lambda event, detail: None)
+    with proactive_turn_for(turn):
+        asyncio.run(service.handle_proactive(SimpleNamespace(self_id=2), group_message(group_id=1001,text="今天天气不错"),config))
+    assert provider.calls == 0 and not sent
+
+
+def test_scheduled_context_excludes_old_text_and_images(tmp_path, monkeypatch):
+    from bot.services.proactive_policy import ProactiveTurn, proactive_turn_for
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(1001, "群友", "很旧的上下文", user_id=3,message_id="old",created_at="2020-01-01T12:00:00+08:00",
+                                 media_references=(ImageReference("current",1,"https://example.invalid/old.png"),))
+    turn = ProactiveTurn("active_v1", lambda: True, lambda: True, lambda event, detail: None)
+    with proactive_turn_for(turn):
+        assert service._group_context_lines(1001) == []
+        assert service._context_image_references(1001,exclude_message_id="new",limit=2) == ()
 
 
 def test_prompt_uses_authoritative_current_group_identity(tmp_path, monkeypatch):

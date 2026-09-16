@@ -23,6 +23,7 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
 from bot.services.pacing import guard_outbound_for
+from bot.services.proactive_policy import proactive_turn
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
@@ -1269,7 +1270,9 @@ class TangtangService:
 
     def _turn_current(self) -> bool:
         context = self._turn.get()
-        return not context or not self.personas or self.personas.current(context)
+        scheduled = proactive_turn()
+        return ((not context or not self.personas or self.personas.current(context))
+                and (scheduled is None or scheduled.current()))
 
     async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
         context = context or (self.personas.snapshot(event, config.model, proactive) if self.personas else None)
@@ -1365,14 +1368,25 @@ class TangtangService:
     ) -> list[str]:
         """Persisted recent group messages, falling back to the memory queue."""
 
+        scheduled = proactive_turn()
+        if scheduled is not None:
+            limit = min(limit, 20)
         try:
             rows = self._base_db.recent_group_messages(group_id, limit)
         except Exception as exc:
             logger.warning("Tangtang group context read failed: {}", exc)
             rows = []
+        if scheduled is not None:
+            rows = self._fresh_context_rows(rows)
+            return [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows]
         if rows:
             return [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows]
         return list(self._group_context.get(group_id, ()))
+
+    @staticmethod
+    def _fresh_context_rows(rows: list[dict]) -> list[dict]:
+        cutoff = time.time() - 300
+        return [row for row in rows if datetime.fromisoformat(row["created_at"]).timestamp() >= cutoff]
 
     def _user_history_lines(
         self,
@@ -1406,10 +1420,16 @@ class TangtangService:
         selected_batches: list[tuple[ImageReference, ...]] = []
         selected_count = 0
         queue = self._group_media_context.get(int(group_id), ())
+        allowed_ids = None
+        if proactive_turn() is not None:
+            rows = self._fresh_context_rows(self._base_db.recent_group_messages(group_id, 20))
+            allowed_ids = {str(row["message_id"]) for row in rows}
         for index, (message_id, references) in enumerate(reversed(queue), 1):
             if index > CONTEXT_IMAGE_MESSAGE_WINDOW:
                 break
             if message_id and message_id == exclude_message_id:
+                continue
+            if allowed_ids is not None and message_id not in allowed_ids:
                 continue
             remaining = limit - selected_count
             if remaining <= 0:
@@ -1550,6 +1570,12 @@ class TangtangService:
         tokens: dict[str, Any],
         detail: str = "",
     ) -> None:
+        scheduled = proactive_turn()
+        if scheduled is not None:
+            try:
+                scheduled.outcome(event_kind, detail)
+            except Exception as exc:
+                logger.warning("Proactive outcome ledger write failed: {}", type(exc).__name__)
         try:
             now = datetime.now(ZoneInfo(settings.timezone))
             context = self._turn.get()
@@ -1705,6 +1731,8 @@ class TangtangService:
             fixed_parts.append(
                 "没有人呼叫糖糖，优先保持[沉默]；只有话题真的值得接话时才[接话]。"
             )
+            if proactive_turn() is not None and proactive_turn().strategy == "low_traffic_v1":
+                fixed_parts.append("这是少人聊天场景，一个群友的有内容发言也值得回应；不要仅因缺少多人讨论而沉默，仍可对无意义内容保持沉默。")
             fixed_parts.append("")
         fixed_parts.append(
             "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
@@ -2011,6 +2039,14 @@ class TangtangService:
     ) -> None:
         await self._with_persona(bot, event, config, True, context)
 
+    def proactive_text_allowed(self, text: str) -> bool:
+        return not (_black_meme_instruction(text)
+                    or _match_detail(self._hard_terms(), self._hard_patterns(), text)
+                    or _match_detail(self._soft_terms(), self._soft_patterns(), text))
+
+    def proactive_last_attempt(self, group_id: int) -> float:
+        return self._base_db.proactive_last_attempt(group_id)
+
     async def _handle_proactive_current(
         self,
         bot: Any,
@@ -2050,6 +2086,12 @@ class TangtangService:
             )
             return
         probability, cooldown_seconds, message_interval = config.proactive_values_for(group_id)
+        scheduled = proactive_turn()
+        if scheduled is not None:
+            if not scheduled.admit():
+                return
+            # Keep the legacy cooldown current for immediate strategy rollback.
+            probability, cooldown_seconds, message_interval = 1.0, 0, 0
         decision = self._base_db.claim_proactive_reply(
             group_id=group_id,
             now=time.time(),

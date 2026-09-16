@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import Message
 
 from bot.services.chat_dispatch import ChatDispatcher
 from bot.services.persona_engine import PersonaEngine
+from bot.services.persona_expressions import expression_key, expression_request
 from bot.services.persona_profiles import VoiceProfile
 from bot.services.persona_store import PersonaStore
 from bot.services.speech import SpeechService
@@ -125,6 +126,48 @@ def test_malformed_control_is_not_published():
     assert not parse_reply_plan(json.dumps({"decision":"reply", "messages":["你好"], "text_fallback":["[CQ:at,qq=all]"]})).decided
     oversized = parse_reply_plan(json.dumps({"decision":"reply", "messages":["好" * 400], "voice":"accept"}), max_chars=30)
     assert not choose_delivery(oversized, "发语音吧", available=True, random_candidate=True).voice
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("娅娅发个表情包", "explicit"), ("娅娅来张思考表情", "explicit"),
+    ("给我一个表情包", "explicit"), ("表情包来一个", "explicit"),
+    ("不要发个表情包就敷衍我", "none"), ("别发那么多表情", "none"),
+    ("表情包的概率太高了", "ordinary"), ("为什么发这么多表情", "ordinary"),
+])
+def test_expression_intent(text, expected):
+    assert expression_request(text) == expected
+
+
+def test_ordinary_expression_probability_is_halved():
+    assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 50
+    assert expression_key("别发表情", "smile", 0) == ""
+    assert expression_key("今天好", "", 0) == ""
+    assert expression_key("发个探头表情包", "", 0.999) == "peek"
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+@async_test
+async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, monkeypatch, enabled):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    engine.feature_enabled = lambda group, feature: enabled if feature == "persona_expressions" else True
+    provider = Provider({"decision": "silent", "messages": []})
+    service, config = service_for(tmp_path, engine, provider)
+    config = replace(config, call_ignore_probability_by_group={1001: 1.0})
+    sent = []
+    async def send(bot, action, **params):
+        sent.append(params["message"])
+        return {"message_id": 77}
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: 0.999)
+    await service.handle(None, event("娅娅发个探头表情包"), config)
+    assert not provider.seen
+    assert len(sent) == (2 if enabled else 1)
+    if enabled:
+        assert sent[-1].type == "image"
+        assert "peek.jpg" in str(sent[-1])
+    else:
+        assert "没有可用" in str(sent[0])
 
 
 def test_selection_revisions_and_storage_isolate_personas(tmp_path):

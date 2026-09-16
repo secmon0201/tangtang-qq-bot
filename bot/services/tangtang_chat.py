@@ -27,6 +27,7 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
+from bot.services.persona_expressions import expression_key, expression_request
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -1838,6 +1839,16 @@ class TangtangService:
             self._write_usage(config, group_id, user_id, "hard_block", mode=None, tokens={})
             return
         group_identity_answer = self._group_identity_answer(group_id, call_text)
+        context = self._turn.get()
+        if context and self.personas and expression_request(text) == "explicit" and voice_request(text) != "voice":
+            key = expression_key(text, "", 0.0)
+            available = self.personas.expression(context, key) is not None
+            answer = "给你。" if available else "现在没有可用的角色表情。"
+            await self._send_and_record(bot, event, config, answer, reply_kind="canned",
+                mode="local", tokens={}, call_text=call_text,
+                reply_plan=ReplyPlan(True, (answer,), voice="text", expression=key,
+                                     structured=True), voice_candidate=False)
+            return
         if group_identity_answer is not None:
             await self._send_and_record(
                 bot,
@@ -2262,12 +2273,18 @@ class TangtangService:
             plan = reply_plan or ReplyPlan(True, parts, text_fallback=parts, structured=True)
             decision = choose_delivery(plan, source, available=voice_status == "可用",
                 random_candidate=candidate, unavailable_reason=voice_status)
+            if decision.explicit:
+                self._write_usage(config, group_id, user_id, "voice_decision", mode=mode,
+                    tokens={}, detail=f"status={voice_status}; choice={plan.voice}; "
+                    f"structured={plan.structured}; delivery={'voice' if decision.voice else 'text'}")
             parts = decision.fallback
             if decision.voice:
                 voice_delivery = await speech.deliver(bot, context, decision.text,
                     explicit=decision.explicit, current=lambda: self._turn_current()
                     and self.personas.feature_enabled(group_id, "persona_voice")
                     and self.personas.store.option("speech_enabled", True))
+                self._write_usage(config, group_id, user_id, "voice_result", mode=mode,
+                    tokens={}, detail=f"status={voice_delivery.status}; reason={voice_delivery.reason}")
                 if voice_delivery.status in {"uncertain", "cancelled", "duplicate"}:
                     self._write_usage(config, group_id, user_id, "voice_" + voice_delivery.status, mode=mode, tokens=tokens)
                     return
@@ -2278,7 +2295,8 @@ class TangtangService:
                         parts = (voice_delivery.reason, *parts)
                     voice_delivery = None
             if not voice_delivery:
-                expression = self.personas.expression(context, plan.expression)
+                key = expression_key(source, plan.expression, random.random())
+                expression = self.personas.expression(context, key)
         if not config.reply_bubbles_enabled:
             parts = ("\n".join(parts),)
         delivery_rows: list[dict[str, Any]] = []
@@ -2299,18 +2317,12 @@ class TangtangService:
                 else:
                     result = await call_qq_action(
                         bot, "send_group_msg", group_id=group_id,
-            if decision.explicit:
-                self._write_usage(config, group_id, user_id, "voice_decision", mode=mode,
-                    tokens={}, detail=f"status={voice_status}; choice={plan.voice}; "
-                    f"structured={plan.structured}; delivery={'voice' if decision.voice else 'text'}")
                         message=part if proactive or index > 0 else quote_message(event, part),
                     )
                 if context and not self._platform_message_id(result):
                     # No acknowledgement is not proof of delivery. Do not grow,
                     # retry, or send subsequent bubbles after an ambiguous send.
                     self.personas.store.journal(
-                self._write_usage(config, group_id, user_id, "voice_result", mode=mode,
-                    tokens={}, detail=f"status={voice_delivery.status}; reason={voice_delivery.reason}")
                         context.request_id, context.persona.key, group_id,
                         "uncertain", part, detail="missing_text_acknowledgement",
                     )

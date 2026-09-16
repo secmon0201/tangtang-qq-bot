@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS topics(id INTEGER PRIMARY KEY, source TEXT NOT NULL, 
  content_hash TEXT NOT NULL, UNIQUE(source,url));
 CREATE TABLE IF NOT EXISTS topic_use(persona TEXT NOT NULL, group_id INTEGER NOT NULL,
  topic_id INTEGER NOT NULL, used_at REAL NOT NULL, PRIMARY KEY(persona,group_id,topic_id));
+CREATE TABLE IF NOT EXISTS expression_catalog(persona TEXT NOT NULL, expression_id TEXT NOT NULL,
+ name TEXT NOT NULL, file TEXT NOT NULL, use_case TEXT NOT NULL, avoid_case TEXT NOT NULL,
+ PRIMARY KEY(persona, expression_id));
 """
 
 
@@ -91,6 +94,14 @@ class PersonaStore:
 
     def revision(self) -> int:
         return int(self.option("revision", 0))
+
+    def sync_expression_catalog(self, persona: str, rows: list[dict]) -> None:
+        with self.connect() as conn:
+            conn.executemany(
+                "INSERT INTO expression_catalog(persona,expression_id,name,file,use_case,avoid_case) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(persona,expression_id) DO UPDATE SET name=excluded.name,file=excluded.file,use_case=excluded.use_case,avoid_case=excluded.avoid_case",
+                [(persona, str(r["id"]), str(r["name"]), str(r["file"]), str(r["use"]), str(r["avoid"])) for r in rows],
+            )
 
     def observe(self, *, persona: str, group_id: int, user_id: int, request_id: str,
                 source: str, reply: str, now: float) -> None:

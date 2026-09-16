@@ -2190,6 +2190,8 @@ class TangtangService:
                 voice_candidate = self.personas.speech.random_candidate(group_id, random.random())
                 prompt += "\n" + self.personas.extra_prompt(context, current_text)
                 prompt += delivery_instruction(voice_status, voice_candidate, self.personas.expression_ids(context))
+                if self.personas:
+                    prompt += "\n" + self.personas.expression_prompt(context)
             if not self._turn_current():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()

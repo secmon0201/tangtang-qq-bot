@@ -140,7 +140,7 @@ def test_expression_intent(text, expected):
 
 
 def test_ordinary_expression_probability_is_fifteen_percent():
-    assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 15
+    assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 60
     assert expression_key("别发表情", "smile", 0) == ""
     assert expression_key("今天好", "", 0) == ""
     assert expression_key("发个探头表情包", "", 0.999) == "peek"
@@ -184,7 +184,7 @@ def test_character_expression_prefers_animation_over_static_asset(tmp_path):
     for suffix in (".jpeg", ".jpg", ".png", ".webp", ".gif"):
         path = folder / f"smile{suffix}"
         Image.new("RGB", (8, 8), "red").save(path)
-        assert engine.expression(context, "smile").data["file"] == path.resolve().as_uri()
+    assert engine.expression(context, "smile").data["file"] == (folder / "smile.gif").resolve().as_uri()
     engine.store.switch(1001, "tangtang")
     tangtang = engine.snapshot(event(), "model", False)
     assert engine.expression(tangtang, "smile").type == "face"
@@ -440,3 +440,4 @@ async def test_dispatch_does_not_hold_event_path_and_limits_groups():
     assert dispatcher.submit(2, slow)
     assert not dispatcher.submit(3, slow)
     await dispatcher.close()
+

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import json
 import time
 import uuid
 from typing import Callable
@@ -64,7 +65,29 @@ class PersonaEngine:
     def expression_ids(self, context: ChatContext) -> tuple[str, ...]:
         if not self.feature_enabled(context.group_id, "persona_expressions"):
             return ()
+        if context.persona.key == "denia":
+            catalog = self._expression_catalog(context)
+            if catalog:
+                self.store.sync_expression_catalog(context.persona.key, catalog)
+                return tuple(item["id"] for item in catalog)
         return ("smile", "laugh", "think", "peek")
+
+    def expression_prompt(self, context: ChatContext) -> str:
+        if context.persona.key != "denia":
+            return "可用表情 ID：" + "、".join(self.expression_ids(context))
+        rows = self._expression_catalog(context)
+        return "可用角色表情（只选 ID；按描述和适用场景选择，严肃或不合适场景不要用）：" + "；".join(
+            f"{row['id']}（{row['name']}：{row['use']}；避免：{row['avoid']}）" for row in rows
+        )
+
+    @staticmethod
+    def _expression_catalog(context: ChatContext) -> list[dict]:
+        path = context.persona.resource_dir / "expression_catalog.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [item for item in payload if isinstance(item, dict) and isinstance(item.get("id"), str)]
 
     def expression(self, context: ChatContext, key: str):
         if key not in self.expression_ids(context):
@@ -72,8 +95,10 @@ class PersonaEngine:
         if context.persona.key == "tangtang":
             return MessageSegment.face({"smile": 0, "laugh": 13, "think": 32, "peek": 21}[key])
         # Send the original file so animated assets are not flattened by rendering.
-        for suffix in (".gif", ".webp", ".png", ".jpg", ".jpeg"):
-            path = context.persona.resource_dir / "expressions" / f"{key}{suffix}"
+        catalog = self._expression_catalog(context)
+        filename = next((item["file"] for item in catalog if item["id"] == key), key + ".jpg")
+        for suffix in ("", ".gif", ".webp", ".png", ".jpg", ".jpeg"):
+            path = context.persona.resource_dir / "expressions" / (filename if not suffix else f"{key}{suffix}")
             if path.is_file():
                 return MessageSegment.image(path.resolve().as_uri())
         return None

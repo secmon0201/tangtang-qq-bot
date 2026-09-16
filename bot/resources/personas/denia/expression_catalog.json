@@ -3,392 +3,830 @@
     "id": "laugh",
     "file": "laugh.jpg",
     "name": "laugh",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "peek",
     "file": "peek.jpg",
     "name": "peek",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 20
+    "use": "加入轻松话题、好奇围观、卖萌或俏皮回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或敏感话题。",
+    "frames": 20,
+    "emotion": [
+      "俏皮",
+      "好奇"
+    ],
+    "intensity": 0.5,
+    "action": "靠近镜头、探头或做手势",
+    "group": "playful",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "smile",
     "file": "smile.jpg",
     "name": "smile",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "think",
     "file": "think.jpg",
     "name": "think",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "需要考虑、分析、比较或暂时没有确定答案时。",
+    "avoid": "已经明确答复、紧急求助或纯粹庆祝时。",
+    "frames": 1,
+    "emotion": [
+      "思考",
+      "犹豫"
+    ],
+    "intensity": 0.4,
+    "action": "托腮或认真思考",
+    "group": "thinking",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_005",
     "file": "expr_005.png",
     "name": "不知所措",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_006",
     "file": "expr_006.png",
     "name": "假装思考",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "需要考虑、分析、比较或暂时没有确定答案时。",
+    "avoid": "已经明确答复、紧急求助或纯粹庆祝时。",
+    "frames": 1,
+    "emotion": [
+      "思考",
+      "犹豫"
+    ],
+    "intensity": 0.4,
+    "action": "托腮或认真思考",
+    "group": "thinking",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_007",
     "file": "expr_007.png",
     "name": "吐舌",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_008",
     "file": "expr_008.png",
     "name": "含泪笑",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_009",
     "file": "expr_009.png",
     "name": "哭泣",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_010",
     "file": "expr_010.gif",
     "name": "嘟嘴",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 26
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 26,
+    "emotion": [
+      "平静"
+    ],
+    "intensity": 0.35,
+    "action": "面部表情",
+    "group": "neutral",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_011",
     "file": "expr_011.png",
     "name": "失神",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_012",
     "file": "expr_012.png",
     "name": "委屈",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_013",
     "file": "expr_013.png",
     "name": "尬笑",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_014",
     "file": "expr_014.png",
     "name": "开心1",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_015",
     "file": "expr_015.png",
     "name": "开心2",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_016",
     "file": "expr_016.png",
     "name": "强颜欢笑",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_017",
     "file": "expr_017.png",
     "name": "微笑2",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_018",
     "file": "expr_018.jpg",
     "name": "微笑3",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_019",
     "file": "expr_019.png",
     "name": "微笑4",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_020",
     "file": "expr_020.png",
     "name": "微笑5",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_021",
     "file": "expr_021.png",
     "name": "思考",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "需要考虑、分析、比较或暂时没有确定答案时。",
+    "avoid": "已经明确答复、紧急求助或纯粹庆祝时。",
+    "frames": 1,
+    "emotion": [
+      "思考",
+      "犹豫"
+    ],
+    "intensity": 0.4,
+    "action": "托腮或认真思考",
+    "group": "thinking",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_022",
     "file": "expr_022.png",
     "name": "思考2",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "需要考虑、分析、比较或暂时没有确定答案时。",
+    "avoid": "已经明确答复、紧急求助或纯粹庆祝时。",
+    "frames": 1,
+    "emotion": [
+      "思考",
+      "犹豫"
+    ],
+    "intensity": 0.4,
+    "action": "托腮或认真思考",
+    "group": "thinking",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_023",
     "file": "expr_023.gif",
     "name": "惊吓",
-    "use": "对意外、震惊或突然消息作出夸张反应时使用。",
-    "avoid": "平静解释、严肃安慰或事实确认场景。",
-    "frames": 19
+    "use": "意外消息、突然变化、夸张反应或震惊语境。",
+    "avoid": "平静说明、严肃安慰、事实确认或正式通知。",
+    "frames": 19,
+    "emotion": [
+      "惊讶",
+      "害怕"
+    ],
+    "intensity": 0.8,
+    "action": "睁大眼睛或受到惊吓",
+    "group": "surprise",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_024",
     "file": "expr_024.png",
     "name": "惊恐",
-    "use": "对意外、震惊或突然消息作出夸张反应时使用。",
-    "avoid": "平静解释、严肃安慰或事实确认场景。",
-    "frames": 1
+    "use": "意外消息、突然变化、夸张反应或震惊语境。",
+    "avoid": "平静说明、严肃安慰、事实确认或正式通知。",
+    "frames": 1,
+    "emotion": [
+      "惊讶",
+      "害怕"
+    ],
+    "intensity": 0.8,
+    "action": "睁大眼睛或受到惊吓",
+    "group": "surprise",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_025",
     "file": "expr_025.png",
     "name": "慈母笑",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_026",
     "file": "expr_026.gif",
     "name": "手动微笑",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 31
+    "use": "加入轻松话题、好奇围观、卖萌或俏皮回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或敏感话题。",
+    "frames": 31,
+    "emotion": [
+      "俏皮",
+      "好奇"
+    ],
+    "intensity": 0.5,
+    "action": "靠近镜头、探头或做手势",
+    "group": "playful",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_027",
     "file": "expr_027.gif",
     "name": "掩饰",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 27
+    "use": "加入轻松话题、好奇围观、卖萌或俏皮回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或敏感话题。",
+    "frames": 27,
+    "emotion": [
+      "平静"
+    ],
+    "intensity": 0.35,
+    "action": "面部表情",
+    "group": "neutral",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_028",
     "file": "expr_028.gif",
     "name": "无奈",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 46
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 46,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_029",
     "file": "expr_029.png",
     "name": "无奈2",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_030",
     "file": "expr_030.jpg",
     "name": "无语",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_031",
     "file": "expr_031.png",
     "name": "无语",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_032",
     "file": "expr_032.png",
     "name": "无语2",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_033",
     "file": "expr_033.png",
     "name": "早上好",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "平静"
+    ],
+    "intensity": 0.35,
+    "action": "面部表情",
+    "group": "neutral",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_034",
     "file": "expr_034.png",
     "name": "有心事",
-    "use": "表达与图片一致的情绪时使用；语气轻松且不影响信息传达。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_035",
     "file": "expr_035.gif",
     "name": "流汗",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 30
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 30,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_036",
     "file": "expr_036.png",
     "name": "生闷气",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_037",
     "file": "expr_037.gif",
     "name": "皱眉",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 54
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 54,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_038",
     "file": "expr_038.png",
     "name": "皱眉",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_039",
     "file": "expr_039.png",
     "name": "脆弱",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_040",
     "file": "expr_040.png",
     "name": "被吓到",
-    "use": "对意外、震惊或突然消息作出夸张反应时使用。",
-    "avoid": "平静解释、严肃安慰或事实确认场景。",
-    "frames": 1
+    "use": "意外消息、突然变化、夸张反应或震惊语境。",
+    "avoid": "平静说明、严肃安慰、事实确认或正式通知。",
+    "frames": 1,
+    "emotion": [
+      "惊讶",
+      "害怕"
+    ],
+    "intensity": 0.8,
+    "action": "睁大眼睛或受到惊吓",
+    "group": "surprise",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_041",
     "file": "expr_041.png",
     "name": "调皮",
-    "use": "轻松、开心、友善回应或玩笑时使用。",
-    "avoid": "严肃求助、哀伤安慰、需要完整说明或可能让人误解的场景。",
-    "frames": 1
+    "use": "轻松问候、附和、玩笑、鼓励或友善回应。",
+    "avoid": "严肃求助、悲伤安慰、正式公告或需要完整说明时。",
+    "frames": 1,
+    "emotion": [
+      "开心",
+      "友善"
+    ],
+    "intensity": 0.55,
+    "action": "微笑或露出愉快表情",
+    "group": "positive",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_042",
     "file": "expr_042.jpg",
     "name": "质疑",
-    "use": "困惑、无奈、质疑或尴尬的轻松语境。",
-    "avoid": "用户真实困难、悲伤或需要明确答复时。",
-    "frames": 1
+    "use": "轻松吐槽、困惑、无奈、质疑或尴尬语境。",
+    "avoid": "悲伤安慰、严肃纠错、用户求助或重要事实说明。",
+    "frames": 1,
+    "emotion": [
+      "困惑",
+      "无奈"
+    ],
+    "intensity": 0.55,
+    "action": "皱眉、尴尬、流汗或若有所思",
+    "group": "awkward",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_043",
     "file": "expr_043.png",
     "name": "遗憾",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_044",
     "file": "expr_044.png",
     "name": "难过",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_045",
     "file": "expr_045.png",
     "name": "难过1",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_046",
     "file": "expr_046.png",
     "name": "难过2",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_047",
     "file": "expr_047.png",
     "name": "难过3",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_048",
     "file": "expr_048.png",
     "name": "难过4",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   },
   {
     "id": "expr_049",
     "file": "expr_049.png",
     "name": "难过5",
-    "use": "表达难过、委屈、遗憾或需要温和共情时使用。",
-    "avoid": "对方求助、严肃通知或机器人没有共情依据时。",
-    "frames": 1
+    "use": "表达遗憾、委屈或对轻度负面消息进行温和共情。",
+    "avoid": "用户正在真实求助、危机内容、喜庆消息或需要轻快回应时。",
+    "frames": 1,
+    "emotion": [
+      "难过",
+      "委屈"
+    ],
+    "intensity": 0.65,
+    "action": "含泪、低落或悲伤表情",
+    "group": "sad",
+    "confidence": 0.84,
+    "analysis_method": "multimodal_visual_inspection_v1"
   }
 ]

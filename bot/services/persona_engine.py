@@ -76,8 +76,8 @@ class PersonaEngine:
         if context.persona.key != "denia":
             return "可用表情 ID：" + "、".join(self.expression_ids(context))
         rows = self._expression_catalog(context)
-        return "可用角色表情（只选 ID；按描述和适用场景选择，严肃或不合适场景不要用）：" + "；".join(
-            f"{row['id']}（{row['name']}：{row['use']}；避免：{row['avoid']}）" for row in rows
+        return "可用角色表情（只选 ID；按情绪、动作、强度和场景选择，严肃或不合适场景不要用）：" + "；".join(
+            f"{row['id']}（{row['name']}；情绪={','.join(row.get('emotion', []))}；动作={row.get('action','')}；强度={row.get('intensity',0.0)}；适用={row['use']}；避免={row['avoid']}）" for row in rows
         )
 
     @staticmethod

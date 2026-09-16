@@ -10,6 +10,7 @@ from functools import wraps
 
 import pytest
 from nonebot.adapters.onebot.v11 import Message
+from PIL import Image
 
 from bot.services.chat_dispatch import ChatDispatcher
 from bot.services.persona_engine import PersonaEngine
@@ -143,6 +144,50 @@ def test_ordinary_expression_probability_is_fifteen_percent():
     assert expression_key("别发表情", "smile", 0) == ""
     assert expression_key("今天好", "", 0) == ""
     assert expression_key("发个探头表情包", "", 0.999) == "peek"
+
+
+@pytest.mark.parametrize("suffix", [".gif", ".webp", ".png", ".jpg", ".jpeg"])
+def test_character_expression_sends_original_image(tmp_path, suffix):
+    engine, _ = make_runtime(tmp_path)
+    engine.profiles["denia"] = replace(engine.profiles["denia"], resource_dir=tmp_path)
+    engine.store.switch(1001, "denia")
+    context = engine.snapshot(event(), "model", False)
+    folder = tmp_path / "expressions"
+    folder.mkdir()
+    path = folder / f"smile{suffix}"
+    frame = Image.new("RGB", (8, 8), "red")
+    options = {"save_all": True, "append_images": [Image.new("RGB", (8, 8), "blue")],
+               "duration": 120, "loop": 0} if suffix == ".gif" else {}
+    frame.save(path, **options)
+    original = path.read_bytes()
+    segment = engine.expression(context, "smile")
+    assert segment.type == "image"
+    assert segment.data["file"] == path.resolve().as_uri()
+    assert path.read_bytes() == original
+    if suffix == ".gif":
+        with Image.open(path) as image:
+            assert image.n_frames == 2
+            assert image.info["duration"] == 120
+    assert engine.expression(context, "think") is None
+    assert engine.expression(context, "../smile") is None
+    engine.feature_enabled = lambda *_: False
+    assert engine.expression(context, "smile") is None
+
+
+def test_character_expression_prefers_animation_over_static_asset(tmp_path):
+    engine, _ = make_runtime(tmp_path)
+    engine.profiles["denia"] = replace(engine.profiles["denia"], resource_dir=tmp_path)
+    engine.store.switch(1001, "denia")
+    context = engine.snapshot(event(), "model", False)
+    folder = tmp_path / "expressions"
+    folder.mkdir()
+    for suffix in (".jpeg", ".jpg", ".png", ".webp", ".gif"):
+        path = folder / f"smile{suffix}"
+        Image.new("RGB", (8, 8), "red").save(path)
+        assert engine.expression(context, "smile").data["file"] == path.resolve().as_uri()
+    engine.store.switch(1001, "tangtang")
+    tangtang = engine.snapshot(event(), "model", False)
+    assert engine.expression(tangtang, "smile").type == "face"
 
 
 @pytest.mark.parametrize("enabled", [True, False])

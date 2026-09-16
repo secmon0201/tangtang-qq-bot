@@ -71,8 +71,12 @@ class PersonaEngine:
             return None
         if context.persona.key == "tangtang":
             return MessageSegment.face({"smile": 0, "laugh": 13, "think": 32, "peek": 21}[key])
-        path = context.persona.resource_dir / "expressions" / f"{key}.jpg"
-        return MessageSegment.image(path.resolve().as_uri()) if path.is_file() else None
+        # Send the original file so animated assets are not flattened by rendering.
+        for suffix in (".gif", ".webp", ".png", ".jpg", ".jpeg"):
+            path = context.persona.resource_dir / "expressions" / f"{key}{suffix}"
+            if path.is_file():
+                return MessageSegment.image(path.resolve().as_uri())
+        return None
 
     def extra_prompt(self, context: ChatContext, query: str) -> str:
         parts = ["关系以本群群友为边界；不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]

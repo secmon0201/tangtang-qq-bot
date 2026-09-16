@@ -161,12 +161,14 @@ def test_voice_available_by_binding_not_persona_name(tmp_path):
     assert speech.status("denia", 1001) == "已关闭"
 
 
+@pytest.mark.parametrize("ignore_probability", [0.0, 1.0])
 @async_test
-async def test_accepted_voice_replaces_text_and_records_only_delivered(tmp_path, monkeypatch):
+async def test_accepted_voice_replaces_text_and_records_only_delivered(tmp_path, monkeypatch, ignore_probability):
     engine, backend = make_runtime(tmp_path)
     engine.store.switch(1001, "denia")
     provider = Provider({"decision": "reply", "messages": ["今天也有好好休息呢。"], "voice": "accept", "text_fallback": ["今天也有好好休息呢。"], "expression": "smile"})
     service, config = service_for(tmp_path, engine, provider)
+    config = replace(config, call_ignore_probability_by_group={1001: ignore_probability})
     sent = []
     async def send(bot, action, **params):
         sent.append(params["message"])

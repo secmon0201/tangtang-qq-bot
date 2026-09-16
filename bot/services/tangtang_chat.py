@@ -26,7 +26,7 @@ from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_profiles import ChatContext
-from bot.services.speech_policy import choose_delivery, delivery_instruction
+from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -1875,10 +1875,12 @@ class TangtangService:
             if handled:
                 return
         if (
-            config.call_ignore_probability_for(group_id) > 0
+            voice_request(text) != "voice"
+            and config.call_ignore_probability_for(group_id) > 0
             and random.random() < config.call_ignore_probability_for(group_id)
         ):
-            self._write_usage(config, group_id, user_id, "skip", mode=None, tokens={})
+            self._write_usage(config, group_id, user_id, "skip", mode=None, tokens={},
+                              detail="call_ignore_probability")
             return
         if _matches(self._soft_terms(), self._soft_patterns(), text):
             if (
@@ -2297,12 +2299,18 @@ class TangtangService:
                 else:
                     result = await call_qq_action(
                         bot, "send_group_msg", group_id=group_id,
+            if decision.explicit:
+                self._write_usage(config, group_id, user_id, "voice_decision", mode=mode,
+                    tokens={}, detail=f"status={voice_status}; choice={plan.voice}; "
+                    f"structured={plan.structured}; delivery={'voice' if decision.voice else 'text'}")
                         message=part if proactive or index > 0 else quote_message(event, part),
                     )
                 if context and not self._platform_message_id(result):
                     # No acknowledgement is not proof of delivery. Do not grow,
                     # retry, or send subsequent bubbles after an ambiguous send.
                     self.personas.store.journal(
+                self._write_usage(config, group_id, user_id, "voice_result", mode=mode,
+                    tokens={}, detail=f"status={voice_delivery.status}; reason={voice_delivery.reason}")
                         context.request_id, context.persona.key, group_id,
                         "uncertain", part, detail="missing_text_acknowledgement",
                     )

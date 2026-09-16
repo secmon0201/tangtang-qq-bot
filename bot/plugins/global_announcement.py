@@ -701,7 +701,7 @@ async def global_announcement_web_send_image(
 
 @driver.server_app.post("/internal/codex/global-announcement")
 async def receive_global_announcement(request: Request) -> dict[str, Any]:
-    """Deliver a local request to the configured default SQLite cluster."""
+    """Deliver an authenticated local request to managed groups or the default cluster."""
     if not settings.codex_completion_notify_enabled:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -724,6 +724,15 @@ async def receive_global_announcement(request: Request) -> dict[str, Any]:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="JSON body must be an object",
         )
+    target_group_ids = None
+    if "target_group_ids" in payload:
+        requested = payload["target_group_ids"]
+        managed = set(domains.all_group_ids())
+        if (not isinstance(requested, list) or not requested
+                or any(type(group_id) is not int or group_id not in managed for group_id in requested)):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="target_group_ids must be a non-empty list of active managed group IDs")
+        target_group_ids = tuple(dict.fromkeys(requested))
     text = payload.get("text")
     image_raw = payload.get("image_path")
     if (text is None) == (image_raw is None):
@@ -754,7 +763,8 @@ async def receive_global_announcement(request: Request) -> dict[str, Any]:
             if not isinstance(image_raw, str) or not image_raw.strip():
                 raise ValueError("image_path must be a non-empty string")
             sent, failed = await deliver_global_image(
-                resolve_global_image(image_raw.strip()), at_all=at_all
+                resolve_global_image(image_raw.strip()), at_all=at_all,
+                target_group_ids=target_group_ids,
             )
         else:
             if not isinstance(text, str):
@@ -771,6 +781,7 @@ async def receive_global_announcement(request: Request) -> dict[str, Any]:
                 member=sticker,
                 sticker_name=sticker_name,
                 at_all=at_all,
+                target_group_ids=target_group_ids,
             )
     except ValueError as exc:
         raise HTTPException(

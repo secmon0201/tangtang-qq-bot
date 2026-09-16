@@ -2,6 +2,7 @@ from PIL import Image
 import asyncio
 from io import BytesIO
 import json
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,31 @@ from starlette.datastructures import UploadFile
 TARGET_GROUP_IDS = (910000101, 910000102, 910000103, 910000104, 910000105)
 from bot.services.reports import ReportRenderer
 from bot.services import roles
+
+
+@pytest.mark.parametrize("requested", [[910000101, 910000101, 910000102], [], [910000999], [True], None])
+def test_internal_announcement_explicit_targets_are_validated(monkeypatch, tmp_path, requested):
+    plugin = announcement_plugin()
+    monkeypatch.setattr(plugin, "settings", SimpleNamespace(codex_completion_notify_enabled=True))
+    monkeypatch.setattr(plugin, "_authorized", lambda request: True)
+    monkeypatch.setattr(plugin, "domains", SimpleNamespace(all_group_ids=lambda: TARGET_GROUP_IDS))
+    monkeypatch.setattr(plugin, "resolve_global_image", lambda value: tmp_path / "notice.png")
+    sent = []
+    async def deliver(path, **kwargs):
+        sent.append(kwargs)
+        return len(kwargs["target_group_ids"]), 0
+    monkeypatch.setattr(plugin, "deliver_global_image", deliver)
+    async def payload():
+        return {"image_path": "notice.png", "target_group_ids": requested}
+    if requested == [910000101, 910000101, 910000102]:
+        result = asyncio.run(plugin.receive_global_announcement(SimpleNamespace(json=payload)))
+        assert result["sent"] == 2
+        assert sent == [{"at_all": False, "target_group_ids": (910000101, 910000102)}]
+    else:
+        with pytest.raises(plugin.HTTPException) as error:
+            asyncio.run(plugin.receive_global_announcement(SimpleNamespace(json=payload)))
+        assert error.value.status_code == 422
+        assert not sent
 
 
 def announcement_plugin():

@@ -9,13 +9,10 @@ import httpx
 from nonebot import logger
 
 from bot.application.personas import persona_engine
-from bot.integrations.speech_runtime import SpeechRuntime
-from bot.config import ROOT
 from bot.services.asoul import ASoulService, CALENDAR_URL
 from bot.services.persona_background import PersonaBackground
 from bot.services.persona_topics import PersonaTopics
 from bot.services.runtime import database, group_domains
-from bot.services.speech import load_voice_profiles
 from bot.services.tangtang_chat import TangtangProvider
 from bot.services.tangtang_runtime import config_loader
 
@@ -53,30 +50,8 @@ async def start_background() -> None:
     engine = persona_engine()
     engine.topics = PersonaTopics(engine.store)
     worker = PersonaBackground(engine, TangtangProvider(), config_loader)
-    runtime = SpeechRuntime(ROOT)
-    profile_path = ROOT / "data" / "personas" / "voices.json"
-    loaded_signature = None
     last_refresh = 0.0
     while True:
-        try:
-            signature = profile_path.stat().st_mtime_ns if profile_path.exists() else 0
-            if signature != loaded_signature:
-                loaded_signature = signature
-                # Invalidate before reading: a broken replacement must never
-                # leave the previous voice silently active.
-                engine.speech.ready.clear()
-                engine.speech.profiles.clear()
-                engine.speech.bindings.clear()
-                engine.speech.configuration_fault = True
-                engine.store.set_option("voice_profiles_revision", signature)
-                profiles, bindings = await asyncio.to_thread(load_voice_profiles, profile_path)
-                engine.speech.profiles, engine.speech.bindings = profiles, bindings
-                engine.speech.configuration_fault = False
-            if engine.store.option("speech_enabled", True) and engine.speech.profiles and not engine.speech.ready:
-                await runtime.ensure_started()
-            await engine.speech.health_check()
-        except Exception as exc:
-            logger.warning("Persona speech background recovered: {}", type(exc).__name__)
         try:
             active = {g for g in group_domains().all_group_ids() if engine.chat_enabled(g, False) or engine.chat_enabled(g, True)}
             if active and engine.store.option("background_enabled", True):

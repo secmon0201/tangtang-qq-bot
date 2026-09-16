@@ -223,6 +223,8 @@ def test_root_contains_no_scattered_batch_shortcuts():
         "02-重启全部.bat",
         "03-关闭全部.bat",
         "11-仅重启机器人.bat",
+        "12-启动语音.bat",
+        "13-关闭语音.bat",
         "21-启动异环登录隧道.bat",
         "22-关闭异环登录隧道.bat",
         "23-设置异环登录地址.bat",
@@ -242,6 +244,25 @@ def test_nonebot_background_logs_use_utf8():
     assert '$env:PYTHONUNBUFFERED = "1"' in script
     assert '$env:PYTHONFAULTHANDLER = "1"' in script
     assert '@("-u", "-X", "faulthandler", "-m", "bot")' in script
+
+
+def test_full_stack_starts_and_stops_independent_speech_runtime():
+    start = source("scripts/start_all.ps1")
+    stop = source("scripts/stop_all.ps1")
+    assert "start_speech.ps1" in start
+    assert "stop_speech.ps1') -PreserveEnabledState" in stop
+    assert start.index("start_speech.ps1") < start.index("start.ps1")
+    assert stop.index("stop.ps1") < stop.index("stop_speech.ps1")
+    verify = source("scripts/verify_full_stack.ps1")
+    assert "service.json" in verify
+    assert "SpeechRuntime" in verify
+    assert "-or -not $speechReady" not in verify
+    assert "text fallback active" in verify
+    assert '-Enable' in source("启动工具/12-启动语音.bat")
+    stop_speech = source("scripts/stop_speech.ps1")
+    assert stop_speech.index("speech_switch.py") < stop_speech.index("Stop-Process")
+    assert "sovits_bootstrap.py" in stop_speech
+    assert "Wait-Process" in stop_speech
 
 
 def test_nonebot_background_start_archives_previous_logs_and_records_lifecycle():

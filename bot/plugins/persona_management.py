@@ -9,6 +9,9 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message
 from nonebot.params import CommandArg
 
 from bot.application.personas import persona_engine
+from bot.application.speech_background import SpeechSupervisor
+from bot.config import ROOT
+from bot.integrations.speech_runtime import SpeechRuntime
 from bot.services.qq_platform import QQPlatform, QQPlatformError
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database
@@ -64,13 +67,15 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
 
 
 _background = None
+_speech_background = None
 
 
 @get_driver().on_startup
 async def start_persona_background() -> None:
     from bot.application.persona_background import start_background
-    global _background
+    global _background, _speech_background
     _background = asyncio.create_task(start_background())
+    _speech_background = asyncio.create_task(SpeechSupervisor(ROOT, persona_engine().speech, SpeechRuntime(ROOT)).run())
 
 
 @get_driver().on_shutdown
@@ -79,4 +84,7 @@ async def stop_persona_background() -> None:
     if _background:
         _background.cancel()
         await asyncio.gather(_background, return_exceptions=True)
+    if _speech_background:
+        _speech_background.cancel()
+        await asyncio.gather(_speech_background, return_exceptions=True)
     await persona_engine().speech.close()

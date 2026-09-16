@@ -10,6 +10,10 @@ class SovitsBackend:
     def __init__(self) -> None:
         self._loaded: tuple[str, str] | None = None
 
+    def reset(self) -> None:
+        """A fresh warmup must select weights again after a runtime restart."""
+        self._loaded = None
+
     async def health(self, voice: VoiceProfile) -> bool:
         try:
             async with httpx.AsyncClient(timeout=3, trust_env=False) as client:

@@ -32,6 +32,10 @@ class Backend:
         self.invalid = False
         self.concurrent = 0
         self.peak = 0
+        self.resets = 0
+
+    def reset(self):
+        self.resets += 1
 
     async def health(self, voice):
         return self.available
@@ -157,5 +161,6 @@ def test_invalid_warmup_audio_backs_off_and_recovery_requires_new_synthesis(tmp_
         await service.health_check()
         await settle()
         assert len(backend.calls) == 3 and service.status("denia", 1001) == "可用"
+        assert backend.resets == 3
         await service.close()
     asyncio.run(run())

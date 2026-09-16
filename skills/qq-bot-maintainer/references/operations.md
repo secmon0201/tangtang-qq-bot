@@ -34,6 +34,8 @@
 
 ## Operator shortcuts
 
+Speech-only shortcuts are `12-启动语音.bat` (explicitly enable the global speech gate and start the runtime) and `13-关闭语音.bat` (disable that gate before stopping the owned launcher and server processes). Full startup respects the saved gate; full shutdown preserves it. The independent speech supervisor checks every 10 seconds, recovers exited runtimes with at least 120 seconds between launch attempts, and requires real synthesis warmup. Inspect `data/tts/readiness.json` with its timestamp and bot PID. Speech failure must not block unrelated startup or commands.
+
 Daily shortcuts are `01-启动全部`, `02-重启全部`, and `03-关闭全部`. Use `11-仅重启机器人` for ordinary Python changes. `31-启动守护程序` and `32-关闭守护程序` are watchdog diagnostics. Shortcuts `21` through `27` are disaster-recovery Quick Tunnel controls only when the fixed Named Tunnel is unavailable; they are not part of normal operation.
 
 The three full-stack shortcuts are thin wrappers over `scripts\start_all.ps1`, `scripts\restart_all.ps1`, and `scripts\stop_all.ps1`. Start and restart must finish with `scripts\verify_full_stack.ps1`: exactly one configured transport, the NoneBot listener, one correctly owned OneBot client, a valid watchdog process and timely healthy heartbeat, the GsUID Core listener, the SnowLuma WebUI when selected, and an empty `logs\bot.err.log`.

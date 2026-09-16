@@ -26,6 +26,7 @@ Maintenance contract for the current repository root. Resolve it from the active
 - Local takeover reads and transforms upstream data/resources and stops only owned commands at the NoneBot boundary. Unmatched messages continue upstream. `bot/integrations` adapters are process-local and fail loudly on incompatible upstream APIs; they never write upstream source.
 - Features remain independent through install, removal, invocation, and execution. External dependency checks on a message/event path must be fail-fast; reconnects, retries, and health probes run as bounded single-flight background work with a retry interval or backoff so a failed integration cannot delay unrelated matchers.
 - QQ/SnowLuma login is user-operated. Never ask for or handle credentials.
+- Speech shortcuts `12`/`13` explicitly enable or disable the speech gate; daily startup preserves a saved off choice, and full shutdown preserves the gate. Stop both owned Python launcher and server processes. Keep speech recovery and warmup independent of topic/growth tasks and unrelated startup.
 - Runtime cleanup keeps one current avatar per QQ, screenshot outputs for `REPORT_RETENTION_HOURS`, and GsUID logs for 30 days under a 256 MiB cap. It never touches player data or `data/backups`; backup deletion requires a read-only audit and an explicit retention decision.
 
 ## Workflow

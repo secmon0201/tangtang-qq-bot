@@ -151,6 +151,11 @@ class SpeechService:
             job.active = False
             job.result.cancel()
 
+    def invalidate_runtime(self) -> None:
+        """Revoke previous readiness and pending warmup after a process change."""
+        for key in set(self._healthy) | set(self.ready) | set(self._warmups):
+            self._invalidate_readiness(key)
+
     def _warmup_current(self, job: _SpeechJob) -> bool:
         return (job.active and not self.configuration_fault
                 and self.store.option("speech_enabled", True)
@@ -216,6 +221,9 @@ class SpeechService:
                         continue
                     # Warmup shares the only synthesis slot, bypasses reply
                     # caches, and has no group quota, history or send capability.
+                    reset = getattr(self.backend, "reset", None)
+                    if reset is not None:
+                        reset()
                     audio = await self.backend.synthesize(job.text, job.voice)
                     self._validate_audio(audio)
                     path = None

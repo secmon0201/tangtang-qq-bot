@@ -67,6 +67,19 @@ if ([string]$settings.Values['GSUID_CORE_PORT'] -match '^\d+$') {
 $coreListener = @(Get-NetTCPConnection -State Listen -LocalPort $corePort -ErrorAction SilentlyContinue).Count -gt 0
 $botErrorPath = Join-Path $root 'logs\bot.err.log'
 $botErrorEmpty = -not (Test-Path -LiteralPath $botErrorPath) -or (Get-Item -LiteralPath $botErrorPath).Length -eq 0
+$speechReady = 'not configured'
+$speechConfigPath = Join-Path $root 'data\tts\service.json'
+if (Test-Path -LiteralPath $speechConfigPath) {
+    try {
+        $speechConfig = Get-Content -LiteralPath $speechConfigPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $speechGateJson = & (Join-Path $root '.venv\Scripts\python.exe') (Join-Path $root 'scripts\speech_switch.py') status
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot read speech gate.' }
+        $speechEnabled = $speechConfig.enabled -and ($speechGateJson | ConvertFrom-Json).enabled
+        $speechReady = if (-not $speechEnabled) { 'disabled' }
+            elseif (@(Get-NetTCPConnection -State Listen -LocalPort ([int]$speechConfig.port) -ErrorAction SilentlyContinue).Count -gt 0) { 'listening; see #persona status for synthesis readiness' }
+            else { 'preparing or unavailable; text fallback active' }
+    } catch { $speechReady = 'configuration fault; text fallback active' }
+}
 $status = [pscustomobject]@{
     Transport = $settings.Transport
     TransportProcessCount = $processes.Count
@@ -78,6 +91,7 @@ $status = [pscustomobject]@{
     WatchdogHeartbeat = $watchdogHeartbeatReady
     GsUIDCore = $coreListener
     BotErrorLogEmpty = $botErrorEmpty
+    SpeechRuntime = $speechReady
 }
 
 if (-not $healthy -or -not $watchdogReady -or -not $watchdogHeartbeatReady -or -not $coreListener -or -not $botErrorEmpty) {

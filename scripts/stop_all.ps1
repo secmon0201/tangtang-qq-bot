@@ -33,7 +33,10 @@ Write-Host '[6/8] Stopping the bot...'
 Write-Host '[7/8] Stopping GsUID Core...'
 & (Join-Path $PSScriptRoot 'stop_gsuid_core.ps1')
 
-Write-Host '[8/8] Verifying process state...'
+Write-Host '[8/9] Stopping local GPT-SoVITS speech...'
+& (Join-Path $PSScriptRoot 'stop_speech.ps1') -PreserveEnabledState
+
+Write-Host '[9/9] Verifying process state...'
 $shutdownIssues = [System.Collections.Generic.List[string]]::new()
 $pythonPath = [regex]::Escape((Join-Path $root '.venv\Scripts\python.exe'))
 $botResidual = @(Get-CimInstance Win32_Process | Where-Object {

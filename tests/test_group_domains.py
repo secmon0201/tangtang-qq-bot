@@ -4,6 +4,7 @@ from bot.db import Database
 from bot.services.group_domains import (
     FEATURE_SPECS,
     GroupDomainService,
+    parse_compact_ranking_command,
     parse_named_cluster_ranking_command,
 )
 
@@ -120,8 +121,24 @@ def test_named_cluster_keeps_configured_member_order(tmp_path):
 
 def test_named_cluster_ranking_parser_preserves_static_cluster_command():
     assert parse_named_cluster_ranking_command("#A海岸发言排行 月") == ("A海岸", "月")
+    assert parse_named_cluster_ranking_command("#A海岸发言排行日") == ("A海岸", "日")
+    assert parse_named_cluster_ranking_command("#A海岸发言排行周") == ("A海岸", "周")
+    assert parse_named_cluster_ranking_command("#A海岸发言排行月") == ("A海岸", "月")
+    assert parse_named_cluster_ranking_command("#A海岸发言排行总") == ("A海岸", "总")
     assert parse_named_cluster_ranking_command("#测试集群发言榜") == ("测试集群", "")
+    assert parse_named_cluster_ranking_command("#A海岸发言统计日") == ("A海岸", "日")
     assert parse_named_cluster_ranking_command("#集群发言排行 月") is None
+
+
+def test_compact_ranking_parser_supports_group_and_cluster_aliases():
+    assert parse_compact_ranking_command("#发言排行日") == ("发言排行", "日")
+    assert parse_compact_ranking_command("#发言榜周") == ("发言榜", "周")
+    assert parse_compact_ranking_command("#发言统计月") == ("发言统计", "月")
+    assert parse_compact_ranking_command("#统计总") == ("统计", "总")
+    assert parse_compact_ranking_command("#集群发言排行日") == ("集群发言排行", "日")
+    assert parse_compact_ranking_command("#集群发言统计周") == ("集群发言统计", "周")
+    assert parse_compact_ranking_command("#集群统计总") == ("集群统计", "总")
+    assert parse_compact_ranking_command("#发言排行 日") is None
 
 
 def test_cluster_name_cannot_duplicate_an_existing_alias(tmp_path):

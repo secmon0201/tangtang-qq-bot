@@ -27,6 +27,19 @@ def test_local_zhijiang_knowledge_covers_current_generation_and_culture():
     assert search("粉丝名")[0].entry_id == "fan-name-slogan"
 
 
+def test_local_zhijiang_knowledge_records_xinyi_and_sinuo_livestream_memes():
+    xinyi = search("发动ruby咬鼠你们")[0]
+    assert xinyi.entry_id == "fiona-profile"
+    assert {"略宜区", "偷电", "老鼠", "小海豹"} <= set(xinyi.tags)
+    assert "待公开直播原片或切片复核" in xinyi.source_note
+
+    sinuo_hits = search("思诺直播间", limit=3)
+    sinuo = next(entry for entry in sinuo_hits if entry.entry_id == "gladys-profile")
+    assert sinuo.source_url == "https://live.bilibili.com/30858592"
+    assert {"铁柱", "四看一", "只把笑脸给她的电脑和手机", "30858592"} <= set(sinuo.tags)
+    assert search("30858592")[0].entry_id == "gladys-profile"
+
+
 def test_local_zhijiang_knowledge_matches_natural_language_questions():
     assert search("嘉然是谁")[0].entry_id == "diana-profile"
     assert search("介绍一下贝拉")[0].entry_id == "bella-profile"

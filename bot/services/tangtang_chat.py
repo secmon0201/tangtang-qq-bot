@@ -36,6 +36,14 @@ from bot.services.tangtang_media import (
     VisionImage,
     extract_image_references,
 )
+from bot.services.tangtang_models import (
+    TangtangModelCatalog,
+    TangtangModelProfile,
+    VISION_DETAIL_LEVELS,
+    activate_model_profile,
+    model_catalog,
+    resolve_model_profile,
+)
 from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.tangtang_reply import (
     ReplyPlan,
@@ -58,6 +66,7 @@ SOFT_BLACKLIST_PATH = RESOURCE_DIR / "soft_blacklist.txt"
 LINES_PATH = RESOURCE_DIR / "lines.txt"
 
 GROUP_CONTEXT_MESSAGES = 30
+CONTEXT_IMAGE_MESSAGE_WINDOW = 10
 CALL_REPEAT_MERGE_SECONDS = 60
 ZHIJIANG_KNOWLEDGE_LIMIT = 3
 ZHIJIANG_KNOWLEDGE_MAX_CHARS = 700
@@ -407,9 +416,9 @@ class TangtangConfig:
             vision_max_image_bytes=8 * 1024 * 1024,
             vision_max_total_bytes=16 * 1024 * 1024,
             vision_max_pixels=20_000_000,
-            vision_max_dimension=2048,
+            vision_max_dimension=1000,
             vision_timeout_seconds=10,
-            vision_detail="auto",
+            vision_detail="low",
             reply_bubbles_enabled=False,
             reply_max_bubbles=6,
             reply_delay_min_ms=0,
@@ -426,6 +435,7 @@ class TangtangConfig:
         values: Mapping[str, Any],
         managed_group_ids: tuple[int, ...],
     ) -> "TangtangConfig":
+        values = resolve_model_profile(values)
         enabled = _bool(values, "TANGTANG_ENABLED", False)
         mode = _raw(values, "TANGTANG_MODE", "d").lower()
         if mode not in {"d", "c"}:
@@ -504,9 +514,11 @@ class TangtangConfig:
         tools_enabled = _bool(values, "TANGTANG_TOOLS_ENABLED", True)
         tool_loop_max = _int(values, "TANGTANG_TOOL_LOOP_MAX", 3, 1, 8)
         vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
-        vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "auto").lower()
-        if vision_detail not in {"auto", "low", "high"}:
-            raise ValueError("TANGTANG_VISION_DETAIL must be auto, low or high")
+        vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "low").lower()
+        if vision_detail not in VISION_DETAIL_LEVELS:
+            raise ValueError(
+                "TANGTANG_VISION_DETAIL must be auto, low, high or original"
+            )
         vision_values = {
             "vision_enabled": vision_enabled,
             "vision_max_images": _int(values, "TANGTANG_VISION_MAX_IMAGES", 4, 1, 8),
@@ -520,7 +532,7 @@ class TangtangConfig:
                 values, "TANGTANG_VISION_MAX_PIXELS", 20_000_000, 10_000, 100_000_000
             ),
             "vision_max_dimension": _int(
-                values, "TANGTANG_VISION_MAX_DIMENSION", 2048, 256, 4096
+                values, "TANGTANG_VISION_MAX_DIMENSION", 1000, 256, 4096
             ),
             "vision_timeout_seconds": _int(
                 values, "TANGTANG_VISION_TIMEOUT_SECONDS", 10, 1, 30
@@ -607,7 +619,7 @@ class TangtangConfig:
             )
         api_url = _raw(values, "TANGTANG_API_URL")
         api_key = _raw(values, "TANGTANG_API_KEY")
-        model = _raw(values, "TANGTANG_MODEL", "deepseek-v4-flash-vision-exp")
+        model = _raw(values, "TANGTANG_MODEL", "deepseek-flash")
         if not api_url or not api_key or not model:
             raise ValueError("TANGTANG_API_URL, TANGTANG_API_KEY and TANGTANG_MODEL are required")
         api_style = _raw(values, "TANGTANG_API_STYLE", "responses").lower()
@@ -748,6 +760,25 @@ class TangtangConfigLoader:
             self._config = TangtangConfig.disabled("configuration_error")
             logger.warning(f"Tangtang configuration invalid; feature disabled: {exc}")
         return self._config
+
+    def model_profiles(self) -> tuple[TangtangModelProfile, ...]:
+        try:
+            return self.model_profile_catalog().profiles
+        except ValueError as exc:
+            if str(exc) == "no Tangtang model profiles are configured":
+                return ()
+            raise
+
+    def model_profile_catalog(self) -> TangtangModelCatalog:
+        catalog = model_catalog(dotenv_values(self.path))
+        if catalog is None:
+            raise ValueError("no Tangtang model profiles are configured")
+        return catalog
+
+    def activate_model_profile(self, name: str) -> TangtangConfig:
+        activate_model_profile(self.path, name)
+        self._signature = None
+        return self.load()
 
 
 class _TextFileCache:
@@ -1301,21 +1332,22 @@ class TangtangService:
             int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
         )
         queue.append(f"{nickname}: {text}")
-        if media_references:
-            owned_references = tuple(
-                ImageReference(
-                    reference.source,
-                    reference.ordinal,
-                    reference.value,
-                    sender_id=reference.sender_id or int(user_id),
-                    sender_name=reference.sender_name or nickname,
-                )
-                for reference in media_references
+        owned_references = tuple(
+            ImageReference(
+                reference.source,
+                reference.ordinal,
+                reference.value,
+                sender_id=reference.sender_id or int(user_id),
+                sender_name=reference.sender_name or nickname,
             )
-            media_queue = self._group_media_context.setdefault(
-                int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
-            )
-            media_queue.append((str(message_id or ""), owned_references))
+            for reference in media_references
+        )
+        # Empty entries preserve message positions, so older images cannot
+        # leak into the fixed recent-message window.
+        media_queue = self._group_media_context.setdefault(
+            int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
+        )
+        media_queue.append((str(message_id or ""), owned_references))
         try:
             self.db.insert_group_message(
                 group_id=int(group_id),
@@ -1374,7 +1406,9 @@ class TangtangService:
         selected_batches: list[tuple[ImageReference, ...]] = []
         selected_count = 0
         queue = self._group_media_context.get(int(group_id), ())
-        for message_id, references in reversed(queue):
+        for index, (message_id, references) in enumerate(reversed(queue), 1):
+            if index > CONTEXT_IMAGE_MESSAGE_WINDOW:
+                break
             if message_id and message_id == exclude_message_id:
                 continue
             remaining = limit - selected_count
@@ -1677,7 +1711,10 @@ class TangtangService:
             "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。语气词（如“哈哈哈、嘿嘿、哼”）"
             "不要每条都带、不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略；"
             "普通聊天默认只发一条，确有两个意思才发第二条；不要按标点机械拆分，"
-            "也不要解释判断。"
+            "别解释。"
+        )
+        fixed_parts.append(
+            "未提供视觉输入的[图片]不可见，不知道就说不知道，不能猜。"
         )
         fixed_parts.append(reply_style_instruction(call_text))
         fixed_text = "\n".join(fixed_parts)

@@ -15,9 +15,9 @@ from bot.services.tangtang_media import (
 )
 
 
-def _data_url() -> str:
+def _data_url(width: int = 4, height: int = 3) -> str:
     output = io.BytesIO()
-    Image.new("RGB", (4, 3), "red").save(output, format="PNG")
+    Image.new("RGB", (width, height), "red").save(output, format="PNG")
     return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
 
 
@@ -50,16 +50,31 @@ def test_extract_image_references_keeps_current_then_reply_and_deduplicates():
     ]
 
 
-def test_data_url_is_validated_and_normalised_for_vision():
+def test_image_at_dimension_limit_keeps_original_bytes_and_mime_type():
     resolver = TangtangMediaResolver(max_images=1)
+    value = _data_url(1000, 1000)
     result = asyncio.run(
-        resolver.resolve_references((ImageReference("current", 1, _data_url()),))
+        resolver.resolve_references((ImageReference("current", 1, value),))
     )
     assert result.failures == ()
     assert len(result.images) == 1
-    assert result.images[0].data_url.startswith("data:image/jpeg;base64,")
+    assert result.images[0].data_url == value
+    assert result.images[0].mime_type == "image/png"
     assert result.images[0].byte_count > 0
     assert len(result.images[0].sha256) == 64
+
+
+def test_default_normalisation_scales_only_images_over_1000_pixels():
+    resolver = TangtangMediaResolver(max_images=1)
+    result = asyncio.run(
+        resolver.resolve_references(
+            (ImageReference("current", 1, _data_url(2000, 1500)),)
+        )
+    )
+    encoded = result.images[0].data_url.split(",", 1)[1]
+    with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
+        assert image.size == (1000, 750)
+        assert image.format == "JPEG"
 
 
 def test_cached_image_uses_current_reference_sender_instead_of_cached_sender():

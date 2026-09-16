@@ -10,7 +10,13 @@ from bot.db import Database, utc_now
 
 
 _NAMED_CLUSTER_RANKING_RE = re.compile(
-    r"^#\s*(?P<name>.+?)(?:发言排行|发言榜|统计)(?:\s+(?P<args>.*))?$",
+    r"^#\s*(?P<name>.+?)(?:发言排行|发言榜|发言统计|统计)"
+    r"(?:(?:\s+(?P<args>.*))|(?P<compact_args>日|周|月|总))?$",
+    re.IGNORECASE,
+)
+_COMPACT_RANKING_RE = re.compile(
+    r"^#\s*(?P<command>集群发言排行|集群发言榜|集群发言统计|集群统计|"
+    r"发言排行|发言榜|发言统计|统计)(?P<scope>日|周|月|总)$",
     re.IGNORECASE,
 )
 
@@ -28,7 +34,17 @@ def parse_named_cluster_ranking_command(text: str) -> tuple[str, str] | None:
     name = " ".join(match.group("name").split())
     if not name or normalize_cluster_label(name) == normalize_cluster_label("集群"):
         return None
-    return name, str(match.group("args") or "").strip()
+    args = match.group("args") or match.group("compact_args") or ""
+    return name, str(args).strip()
+
+
+def parse_compact_ranking_command(text: str) -> tuple[str, str] | None:
+    """Parse fixed ranking commands whose scope is attached without a space."""
+
+    match = _COMPACT_RANKING_RE.fullmatch(str(text).strip())
+    if match is None:
+        return None
+    return str(match.group("command")), str(match.group("scope"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -589,5 +605,6 @@ __all__ = [
     "GroupDomain",
     "GroupDomainService",
     "normalize_cluster_label",
+    "parse_compact_ranking_command",
     "parse_named_cluster_ranking_command",
 ]

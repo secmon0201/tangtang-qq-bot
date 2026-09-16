@@ -46,6 +46,7 @@ _ALLOWED_KEYS = frozenset(
         *TEMPLATE_ENV_KEYS.values(),
         *PROACTIVE_ENV_KEYS.values(),
         "GAME_API_ENABLED",
+        "TANGTANG_MODEL_ACTIVE_PROFILE",
     )
 )
 _KEY_RE = re.compile(r"^\s*(?P<key>[A-Za-z0-9_]+)\s*=(?P<value>.*)$")
@@ -71,17 +72,18 @@ def _write_lines(path: Path, lines: list[str]) -> None:
         raise
 
 
-def update_env_value(key: str, value: str) -> bool:
+def update_env_value(key: str, value: str, *, path: Path | None = None) -> bool:
     """Replace one .env value in place; appends when the key is missing."""
 
     key = key.strip().upper()
     if key not in _ALLOWED_KEYS:
         raise ValueError(f"env key is not writable through commands: {key}")
+    env_path = ENV_PATH if path is None else Path(path)
     with _lock:
-        if not ENV_PATH.exists():
-            _write_lines(ENV_PATH, [f"{key}={value}"])
+        if not env_path.exists():
+            _write_lines(env_path, [f"{key}={value}"])
             return True
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        lines = env_path.read_text(encoding="utf-8").splitlines()
         changed = False
         for index, line in enumerate(lines):
             match = _KEY_RE.match(line)
@@ -91,7 +93,7 @@ def update_env_value(key: str, value: str) -> bool:
                 break
         if not changed:
             lines.append(f"{key}={value}")
-        _write_lines(ENV_PATH, lines)
+        _write_lines(env_path, lines)
     logger.info("Env synced: {}={}", key, value)
     return True
 

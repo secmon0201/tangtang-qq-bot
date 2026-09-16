@@ -63,7 +63,11 @@ from bot.services.community_web import (
 from bot.services.qq_platform import call_qq_action
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, group_domains, passive_settings
-from bot.services.group_domains import GroupDomain, parse_named_cluster_ranking_command
+from bot.services.group_domains import (
+    GroupDomain,
+    parse_compact_ranking_command,
+    parse_named_cluster_ranking_command,
+)
 from bot.services.stats import StatsService
 from bot.services.whitelist_menu import (
     build_whitelist_menu_text,
@@ -207,9 +211,9 @@ def user_help_text() -> str:
     ]
     if settings.stats_realtime_enabled:
         commands.extend((
-            f"{prefix}发言排行 [日/周/月/总]", f"{prefix}发言榜 [日/周/月/总]", f"{prefix}统计 [日/周/月/总]",
-            f"{prefix}集群发言排行 [日/周/月/总]", f"{prefix}集群发言榜 [日/周/月/总]", f"{prefix}集群统计 [日/周/月/总]",
-            f"{prefix}<集群名>发言排行 [日/周/月/总]",
+            f"{prefix}发言排行 [日/周/月/总]", f"{prefix}发言榜 [日/周/月/总]", f"{prefix}发言统计 [日/周/月/总]", f"{prefix}统计 [日/周/月/总]",
+            f"{prefix}集群发言排行 [日/周/月/总]", f"{prefix}集群发言榜 [日/周/月/总]", f"{prefix}集群发言统计 [日/周/月/总]", f"{prefix}集群统计 [日/周/月/总]",
+            f"{prefix}<集群名>发言排行 [日/周/月/总]", f"{prefix}<集群名>发言统计 [日/周/月/总]",
             f"{prefix}发言记录 <QQ号|@成员> [页码]", f"{prefix}发言搜索 <QQ号|@成员> <关键词> [页码]",
             f"{prefix}发言画像 <QQ号|@成员>", f"{prefix}画像 <QQ号|@成员>",
         ))
@@ -770,7 +774,7 @@ def super_admin_help_pages() -> list[tuple[str, str, list[tuple[str, str, str]]]
                 ),
                 (
                     "全局运行条件",
-                    f"{prefix}系统设置 游戏接口 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 被呼叫会话 状态|开|关\n{prefix}系统设置 糖糖主动聊天 状态|开|关\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
+                    f"{prefix}系统设置 游戏接口 状态|开|关\n{prefix}系统设置 小游戏 全局 状态|开|关\n{prefix}系统设置 被呼叫会话 状态|开|关\n{prefix}系统设置 糖糖主动聊天 状态|开|关\n{prefix}糖糖模型 状态|<档案名>\n{prefix}系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM",
                     "全局运行条件不会改写各群已保存的开关意图；重新开启后，各群按原状态恢复。",
                 ),
                 (
@@ -1118,7 +1122,7 @@ async def finish_message_ranking(
 
 group_ranking = on_command(
     "发言排行",
-    aliases={"发言榜", "统计"},
+    aliases={"发言榜", "发言统计", "统计"},
     rule=Rule(lambda: settings.stats_realtime_enabled),
     priority=5,
     block=True,
@@ -1133,7 +1137,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
 
 cluster_ranking = on_command(
     "集群发言排行",
-    aliases={"集群发言榜", "集群统计"},
+    aliases={"集群发言榜", "集群发言统计", "集群统计"},
     rule=Rule(lambda: settings.stats_realtime_enabled),
     priority=5,
     block=True,
@@ -1144,6 +1148,37 @@ cluster_ranking._tangtang_skip_quote = True
 @cluster_ranking.handle()
 async def _(event: MessageEvent, args: Message = CommandArg()):
     await finish_message_ranking(cluster_ranking, event, args, cluster=True)
+
+
+def compact_ranking_rule(event: MessageEvent) -> bool:
+    return parse_compact_ranking_command(event.get_plaintext()) is not None
+
+
+compact_ranking = on_message(
+    rule=Rule(compact_ranking_rule),
+    priority=5,
+    block=True,
+)
+compact_ranking._tangtang_skip_quote = True
+
+
+async def finish_compact_ranking(matcher: object, event: MessageEvent) -> None:
+    parsed = parse_compact_ranking_command(event.get_plaintext())
+    if parsed is None:
+        return
+    command, scope = parsed
+    await finish_message_ranking(
+        matcher,
+        event,
+        Message(scope),
+        cluster=command.startswith("集群"),
+        command_name=command,
+    )
+
+
+@compact_ranking.handle()
+async def _(event: MessageEvent):
+    await finish_compact_ranking(compact_ranking, event)
 
 
 def named_cluster_ranking_rule(event: MessageEvent) -> bool:

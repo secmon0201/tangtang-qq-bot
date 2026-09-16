@@ -172,6 +172,60 @@ def test_a_coast_command_uses_generic_cluster_name_lookup(monkeypatch):
     )
 
 
+def test_compact_a_coast_command_uses_daily_scope(monkeypatch):
+    domain = SimpleNamespace(domain_id=7, mode="cluster", name="A海岸", alias="")
+    calls = []
+
+    class Event:
+        user_id = 42
+
+        @staticmethod
+        def get_plaintext():
+            return "#A海岸发言排行日"
+
+    class Domains:
+        @staticmethod
+        def cluster_by_name_or_alias(name):
+            assert name == "A海岸"
+            return domain
+
+    class Matcher:
+        async def finish(self, message):
+            raise AssertionError(message)
+
+    async def finish_ranking(matcher, event, args, cluster, **kwargs):
+        calls.append((matcher, event, str(args), cluster, kwargs))
+
+    monkeypatch.setattr(commands, "group_domains", lambda: Domains())
+    monkeypatch.setattr(commands, "finish_message_ranking", finish_ranking)
+
+    asyncio.run(commands.finish_named_cluster_ranking(Matcher(), Event()))
+
+    assert calls[0][2:] == (
+        "日",
+        True,
+        {"target_domain": domain, "command_name": "A海岸发言排行"},
+    )
+
+
+def test_compact_fixed_ranking_commands_route_to_the_matching_scope(monkeypatch):
+    calls = []
+
+    class Event:
+        @staticmethod
+        def get_plaintext():
+            return "#集群发言统计周"
+
+    async def finish_ranking(matcher, event, args, cluster, **kwargs):
+        calls.append((str(args), cluster, kwargs))
+
+    monkeypatch.setattr(commands, "finish_message_ranking", finish_ranking)
+
+    asyncio.run(commands.finish_compact_ranking(object(), Event()))
+
+    assert calls == [("周", True, {"command_name": "集群发言统计"})]
+
+
 def test_named_cluster_matcher_ignores_unknown_names(monkeypatch):
     class Event:
         @staticmethod

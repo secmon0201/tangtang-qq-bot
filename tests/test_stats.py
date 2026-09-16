@@ -86,6 +86,19 @@ def test_bot_outbound_messages_are_counted_only_after_a_confirmed_group_send(tmp
     assert db.today_counts(1001, sent_at.date())[0]["message_count"] == 1
 
 
+def test_bot_outbound_messages_use_runtime_group_provider(tmp_path):
+    db = Database(tmp_path / "bot.db")
+    db.configure_groups((1001, 1002))
+    service = StatsService(db, group_provider=lambda: (1001,))
+    bot = SimpleNamespace(self_id="999")
+    sent_at = datetime(2026, 7, 28, 10, 0, tzinfo=service.zone)
+
+    assert service.record_outbound_success(
+        bot, "send_group_msg", {"group_id": 1001}, {"message_id": 55}, sent_at
+    )
+    assert db.today_counts(1001, sent_at.date())[0]["user_id"] == 999
+
+
 def test_napcat_log_backfill_reads_self_sent_a_coast_messages_from_start_day(tmp_path):
     db = Database(tmp_path / "bot.db")
     db.configure_groups((1001, 1002))

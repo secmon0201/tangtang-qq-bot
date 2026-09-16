@@ -18,6 +18,12 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 ALLOWED_IMAGE_MIME_TYPES = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/gif"}
 )
+IMAGE_FORMAT_MIME_TYPES = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp",
+    "GIF": "image/gif",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +113,7 @@ class TangtangMediaResolver:
         max_image_bytes: int = 8 * 1024 * 1024,
         max_total_bytes: int = 16 * 1024 * 1024,
         max_pixels: int = 20_000_000,
-        max_dimension: int = 2048,
+        max_dimension: int = 1000,
         timeout_seconds: int = 10,
     ) -> None:
         self.max_images = max_images
@@ -252,17 +258,29 @@ class TangtangMediaResolver:
             width, height = opened.size
             if width <= 0 or height <= 0 or width * height > self.max_pixels:
                 raise ValueError("image dimensions exceed configured limit")
-            opened.seek(0)
-            image = ImageOps.exif_transpose(opened).convert("RGB")
-            image.thumbnail((self.max_dimension, self.max_dimension), Image.Resampling.LANCZOS)
-            output = io.BytesIO()
-            image.save(output, format="JPEG", quality=88, optimize=True)
-        encoded = output.getvalue()
+            mime_type = IMAGE_FORMAT_MIME_TYPES.get(str(opened.format or "").upper())
+            if mime_type is None:
+                raise ValueError("unsupported image format")
+            if width <= self.max_dimension and height <= self.max_dimension:
+                opened.verify()
+                encoded = raw
+            else:
+                opened.seek(0)
+                image = ImageOps.exif_transpose(opened).convert("RGB")
+                image.thumbnail(
+                    (self.max_dimension, self.max_dimension),
+                    Image.Resampling.LANCZOS,
+                )
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=88, optimize=True)
+                encoded = output.getvalue()
+                mime_type = "image/jpeg"
         return VisionImage(
             source=reference.source,
             ordinal=reference.ordinal,
-            data_url="data:image/jpeg;base64," + base64.b64encode(encoded).decode("ascii"),
-            mime_type="image/jpeg",
+            data_url=f"data:{mime_type};base64,"
+            + base64.b64encode(encoded).decode("ascii"),
+            mime_type=mime_type,
             sha256=hashlib.sha256(raw).hexdigest(),
             byte_count=len(raw),
             sender_id=reference.sender_id,

@@ -914,6 +914,7 @@ def test_hot_comment_page_filters_uid_before_content_and_keeps_only_hottest_nest
                 },
                 {
                     "rpid": 3,
+                    "ctime": 1_800_000_003,
                     "member": {"mid": "200", "uname": "乃琳"},
                     "content": {"message": "一级回复"},
                 },
@@ -957,6 +958,88 @@ def test_hot_comment_page_filters_uid_before_content_and_keeps_only_hottest_nest
         '[{"type":"emoji","text":"[嘉然_暗中观察]",'
         '"url":"https://example.test/emote.png"},{"type":"text","text":"置顶回复"}]'
     )
+    assert rows[2]["published_at"] == "1800000003"
+
+
+def test_comment_monitor_pushes_current_comments_when_resource_changes_after_baseline(tmp_path):
+    service = ASoulService(Database(tmp_path / "bot.db"))
+    first_scan_at = 1_800_000_000
+    old_resource = {
+        "id": "old",
+        "uid": "100",
+        "author": "测试UP",
+        "text": "旧动态",
+        "url": "https://t.bilibili.com/old",
+        "notification_kind": "dynamic",
+        "published_at": str(first_scan_at - 60),
+        "comment_oid": "1",
+        "comment_type": "17",
+    }
+    new_resource = {
+        **old_resource,
+        "id": "new",
+        "text": "新动态",
+        "url": "https://t.bilibili.com/new",
+        "published_at": str(first_scan_at + 10),
+        "comment_oid": "2",
+    }
+    entry = {}
+    replies = [
+        {
+            "id": "baseline",
+            "author_uid": "100",
+            "author": "测试UP",
+            "text": "启动前评论",
+            "published_at": str(first_scan_at - 30),
+        }
+    ]
+
+    async def hot_comments(_resource):
+        return list(replies)
+
+    service.fetch_hot_comments = hot_comments  # type: ignore[method-assign]
+
+    assert asyncio.run(
+        service._poll_latest_comment_updates([old_resource], entry, first_scan_at)
+    ) == []
+    replies[:] = [
+        {
+            "id": "new-comment",
+            "author_uid": "100",
+            "author": "测试UP",
+            "text": "动态发布后的新评论",
+            "published_at": str(first_scan_at + 20),
+        },
+        {
+            "id": "missing-ctime",
+            "author_uid": "100",
+            "author": "测试UP",
+            "text": "缺少时间但动态是新的",
+        },
+        {
+            "id": "stale-comment",
+            "author_uid": "100",
+            "author": "测试UP",
+            "text": "时间早于上次扫描",
+            "published_at": str(first_scan_at - 1),
+        },
+    ]
+
+    updates = asyncio.run(
+        service._poll_latest_comment_updates([new_resource], entry, first_scan_at + 30)
+    )
+
+    assert updates == [
+        "【B站评论区回复】测试UP\n在测试UP的动态底下的回复\n缺少时间但动态是新的\nhttps://t.bilibili.com/new",
+        "【B站评论区回复】测试UP\n在测试UP的动态底下的回复\n动态发布后的新评论\nhttps://t.bilibili.com/new",
+    ]
+    assert entry["comment_monitor"]["seen_reply_ids"] == [
+        "new-comment",
+        "missing-ctime",
+        "stale-comment",
+    ]
+    assert entry["comment_initialized_at"] == first_scan_at
+    assert entry["comment_last_scanned_at"] == first_scan_at + 30
 
 
 def test_comment_polling_rotates_two_targets_per_cycle(tmp_path, monkeypatch):
@@ -1010,3 +1093,6 @@ def test_comment_polling_rotates_two_targets_per_cycle(tmp_path, monkeypatch):
     assert cycles == [{"1", "2"}, {"3", "4"}, {"1", "5"}]
     state = service.db.asoul_state(asoul_module.MONITOR_KEY, {})
     assert state["comment_scan_index"] == 1
+    initialized_at = {state[uid]["comment_initialized_at"] for uid in ("1", "2", "3", "4", "5")}
+    assert len(initialized_at) == 1
+    assert initialized_at.pop() >= now

@@ -840,6 +840,7 @@ class ASoulService:
                         "profile": str(member.get("sign") or ""),
                         "text": text,
                         "rich_nodes": rich_nodes,
+                        "published_at": str(row.get("ctime") or ""),
                     }
                 )
         return [row for row in observed if row["id"]]
@@ -908,19 +909,55 @@ class ASoulService:
             )
         )
 
+    @staticmethod
+    def _comment_is_new_since(
+        reply: dict[str, str],
+        resource: dict[str, str],
+        last_scanned_at: int,
+    ) -> bool:
+        if last_scanned_at <= 0:
+            return True
+        try:
+            reply_published_at = int(reply.get("published_at") or 0)
+        except (TypeError, ValueError):
+            reply_published_at = 0
+        if reply_published_at > 0:
+            return reply_published_at >= last_scanned_at
+        try:
+            resource_published_at = int(resource.get("published_at") or 0)
+        except (TypeError, ValueError):
+            resource_published_at = 0
+        return resource_published_at >= last_scanned_at
+
     async def _poll_latest_comment_updates(
         self,
         dynamics: list[dict[str, str]],
         entry: dict[str, Any],
         observed_at: int,
     ) -> list[str]:
+        monitor = entry.get("comment_monitor")
+        try:
+            initialized_at = int(entry.get("comment_initialized_at") or 0)
+        except (TypeError, ValueError):
+            initialized_at = 0
+        monitor_initialized = initialized_at > 0 or isinstance(monitor, dict)
+        try:
+            last_scanned_at = int(
+                entry.get("comment_last_scanned_at")
+                or (monitor.get("last_scanned_at") if isinstance(monitor, dict) else 0)
+                or initialized_at
+                or 0
+            )
+        except (TypeError, ValueError):
+            last_scanned_at = 0
         resource = self.latest_comment_resource(dynamics, observed_at)
         if resource is None:
             entry.pop("comment_monitor", None)
+            entry.setdefault("comment_initialized_at", observed_at)
+            entry["comment_last_scanned_at"] = observed_at
             return []
         replies = await self.fetch_hot_comments(resource)
         current_ids = [row["id"] for row in replies]
-        monitor = entry.get("comment_monitor")
         if not isinstance(monitor, dict) or monitor.get("resource_id") != resource["id"]:
             entry["comment_monitor"] = {
                 "resource_id": resource["id"],
@@ -928,15 +965,26 @@ class ASoulService:
                 "initialized": True,
                 "last_scanned_at": observed_at,
             }
-            return []
-        stored_ids = monitor.get("seen_reply_ids", monitor.get("reply_ids", []))
-        known_ids = {str(value) for value in stored_ids if str(value)}
-        unseen = [row for row in replies if row["id"] not in known_ids]
-        monitor["seen_reply_ids"] = list(
-            dict.fromkeys(current_ids + list(known_ids))
-        )[:COMMENT_SEEN_LIMIT]
-        monitor.pop("reply_ids", None)
-        monitor["last_scanned_at"] = observed_at
+            unseen = (
+                [
+                    row
+                    for row in replies
+                    if self._comment_is_new_since(row, resource, last_scanned_at)
+                ]
+                if monitor_initialized
+                else []
+            )
+        else:
+            stored_ids = monitor.get("seen_reply_ids", monitor.get("reply_ids", []))
+            known_ids = {str(value) for value in stored_ids if str(value)}
+            unseen = [row for row in replies if row["id"] not in known_ids]
+            monitor["seen_reply_ids"] = list(
+                dict.fromkeys(current_ids + list(known_ids))
+            )[:COMMENT_SEEN_LIMIT]
+            monitor.pop("reply_ids", None)
+            monitor["last_scanned_at"] = observed_at
+        entry.setdefault("comment_initialized_at", observed_at)
+        entry["comment_last_scanned_at"] = observed_at
         messages: list[str] = []
         context = self._comment_context(resource)
         for row in reversed(unseen):
@@ -1117,6 +1165,10 @@ class ASoulService:
         )
         comment_scan_uids: frozenset[str] = frozenset()
         if settings.asoul_bili_push_comment and comment_targets:
+            for uid in comment_targets:
+                target_entry = state.setdefault(uid, {})
+                if isinstance(target_entry, dict):
+                    target_entry.setdefault("comment_initialized_at", observed_at)
             start = int(state.get("comment_scan_index") or 0) % len(comment_targets)
             count = min(COMMENT_SCAN_TARGETS_PER_POLL, len(comment_targets))
             comment_scan_uids = frozenset(

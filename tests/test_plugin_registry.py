@@ -38,6 +38,7 @@ def test_transport_and_feature_flags_are_resolved_without_importing_plugins():
     assert {spec.key for spec in enabled} >= {
         "runtime_maintenance",
         "tangtang_proactive",
+        "tangtang_model_switch",
         "stats",
         "a_coast_archive",
     }

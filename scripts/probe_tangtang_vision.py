@@ -12,8 +12,10 @@ import httpx
 from dotenv import dotenv_values
 from PIL import Image
 
+from bot.services.tangtang_models import VISION_DETAIL_LEVELS, resolve_model_profile
 
-DEFAULT_MODEL = "deepseek-v4-flash-vision-exp"
+
+DEFAULT_MODEL = "deepseek-flash"
 
 
 def _test_image() -> str:
@@ -28,7 +30,12 @@ def _endpoint(api_url: str, api_style: str) -> str:
     return url if url.endswith(suffix) else url + suffix
 
 
-def _payload(model: str, api_style: str, reasoning_effort: str) -> dict[str, Any]:
+def _payload(
+    model: str,
+    api_style: str,
+    reasoning_effort: str,
+    vision_detail: str,
+) -> dict[str, Any]:
     image_url = _test_image()
     prompt = "这是一张测试色块。只回答它的主要颜色，不要解释。"
     if api_style == "responses":
@@ -42,25 +49,13 @@ def _payload(model: str, api_style: str, reasoning_effort: str) -> dict[str, Any
                         {
                             "type": "input_image",
                             "image_url": image_url,
-                            "detail": "low",
+                            "detail": vision_detail,
                         },
                     ],
                 }
             ],
-            "max_output_tokens": 64,
+            "max_output_tokens": 512,
             "reasoning": {"effort": reasoning_effort},
-            "tools": [
-                {
-                    "type": "function",
-                    "name": "probe_noop",
-                    "description": "Compatibility probe only; do not call this tool.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False,
-                    },
-                }
-            ],
         }
     return {
         "model": model,
@@ -71,46 +66,38 @@ def _payload(model: str, api_style: str, reasoning_effort: str) -> dict[str, Any
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
-                        "image_url": {"url": image_url, "detail": "low"},
+                        "image_url": {"url": image_url, "detail": vision_detail},
                     },
                 ],
             }
         ],
-        "max_completion_tokens": 64,
+        "max_completion_tokens": 512,
         "thinking": {
             "type": "disabled" if reasoning_effort == "none" else "enabled"
         },
-        "tools": [
-            {
-                "type": "function",
-                "function": {
-                    "name": "probe_noop",
-                    "description": "Compatibility probe only; do not call this tool.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False,
-                    },
-                },
-            }
-        ],
     }
 
 
 async def _run(env_path: Path, model_override: str) -> int:
-    values = dotenv_values(env_path)
+    values = resolve_model_profile(dotenv_values(env_path))
     api_url = str(values.get("TANGTANG_API_URL") or "").strip()
     api_key = str(values.get("TANGTANG_API_KEY") or "").strip()
     api_style = str(values.get("TANGTANG_API_STYLE") or "responses").strip().lower()
     reasoning_effort = str(
         values.get("TANGTANG_REASONING_EFFORT") or "none"
     ).strip().lower()
-    model = model_override or DEFAULT_MODEL
+    vision_detail = str(
+        values.get("TANGTANG_VISION_DETAIL") or "low"
+    ).strip().lower()
+    model = model_override or str(values.get("TANGTANG_MODEL") or DEFAULT_MODEL).strip()
     if not api_url or not api_key:
         print(json.dumps({"ok": False, "error": "missing Tangtang API configuration"}))
         return 2
     if api_style not in {"responses", "chat_completions"}:
         print(json.dumps({"ok": False, "error": "unsupported API style"}))
+        return 2
+    if vision_detail not in VISION_DETAIL_LEVELS:
+        print(json.dumps({"ok": False, "error": "unsupported vision detail"}))
         return 2
     try:
         async with httpx.AsyncClient(timeout=45) as client:
@@ -120,7 +107,7 @@ async def _run(env_path: Path, model_override: str) -> int:
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json=_payload(model, api_style, reasoning_effort),
+                json=_payload(model, api_style, reasoning_effort, vision_detail),
             )
     except httpx.HTTPError as exc:
         print(json.dumps({"ok": False, "error": type(exc).__name__}))
@@ -131,6 +118,7 @@ async def _run(env_path: Path, model_override: str) -> int:
         "model": model,
         "api_style": api_style,
         "reasoning_effort": reasoning_effort,
+        "vision_detail": vision_detail,
     }
     if response.is_success:
         data = response.json()
@@ -151,7 +139,7 @@ async def _run(env_path: Path, model_override: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe Tangtang vision-model compatibility")
     parser.add_argument("--env", type=Path, default=Path(".env"))
-    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--model", default="")
     args = parser.parse_args()
     return asyncio.run(_run(args.env, args.model))
 

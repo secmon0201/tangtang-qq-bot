@@ -6,11 +6,11 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.exception import MockApiException
 
 from bot.services.pacing import api_call_is_paced, prepare_outbound_response, wait_for_api_turn, assert_outbound_current, OUTBOUND_RESPONSE_ACTIONS
-from bot.services.runtime import database
+from bot.services.runtime import database, group_domains
 from bot.services.stats import StatsService
 
 
-outbound_stats_service = StatsService(database())
+outbound_stats_service = StatsService(database(), group_provider=group_domains().all_group_ids)
 
 
 @Bot.on_calling_api

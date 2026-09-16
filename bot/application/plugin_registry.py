@@ -64,6 +64,14 @@ PLUGIN_SPECS = (
     PluginSpec("tangtang_chat", "bot.plugins.tangtang_chat", "糖糖聊天", "糖糖", ("onebot",)),
     PluginSpec("persona_management", "bot.plugins.persona_management", "人格与语音管理", "糖糖", ("onebot",)),
     PluginSpec(
+        "tangtang_model_switch",
+        "bot.plugins.tangtang_model_switch",
+        "糖糖模型切换",
+        "糖糖",
+        ("onebot",),
+        after=("tangtang_chat",),
+    ),
+    PluginSpec(
         "tangtang_proactive",
         "bot.plugins.tangtang_proactive",
         "糖糖主动回复配置",

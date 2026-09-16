@@ -215,6 +215,20 @@ def test_config_validation():
         enabled_config(TANGTANG_API_KEY="")
 
 
+def test_config_defaults_to_deepseek_flash_for_dialog():
+    config = TangtangConfig.from_values(
+        {
+            "TANGTANG_ENABLED": "true",
+            "TANGTANG_GROUP_IDS": "1001",
+            "TANGTANG_API_URL": "https://example.invalid/responses",
+            "TANGTANG_API_KEY": "test-only",
+        },
+        (1001,),
+    )
+
+    assert config.model == "deepseek-flash"
+
+
 def test_persona_does_not_claim_a_coast_as_default_identity():
     persona = (RESOURCE_DIR / "persona.md").read_text(encoding="utf-8")
     identity = (RESOURCE_DIR / "identity.md").read_text(encoding="utf-8")
@@ -232,6 +246,8 @@ def test_proactive_config_defaults_and_validation():
     assert config.proactive_cooldown_seconds == 900
     assert config.proactive_message_interval == 30
     assert config.humanize_enabled is True
+    assert config.vision_detail == "low"
+    assert config.vision_max_dimension == 1000
 
     config = enabled_config(TANGTANG_HUMANIZE_ENABLED="false")
     assert config.humanize_enabled is False
@@ -1528,7 +1544,13 @@ def test_provider_payloads_include_real_multimodal_image_parts():
         "type": "text",
         "text": "[当前消息图片 1（发送者：tester）]",
     }
-    assert chat["messages"][1]["content"][-1]["type"] == "image_url"
+    assert chat["messages"][1]["content"][-1] == {
+        "type": "image_url",
+        "image_url": {
+            "url": image.data_url,
+            "detail": "low",
+        },
+    }
 
 
 def test_model_reply_sends_ordered_bubbles_and_quotes_only_first(tmp_path, monkeypatch):
@@ -1764,6 +1786,37 @@ def test_context_images_keep_their_original_senders(tmp_path, monkeypatch):
     assert "最近群聊上下文图片 1（发送者：甲）" in prompt
     assert "最近群聊上下文图片 2（发送者：乙）" in prompt
     assert "不要把引用消息的发送者当成其他上下文图片的发送者" in prompt
+
+
+def test_context_images_only_use_the_ten_most_recent_messages(tmp_path, monkeypatch):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(
+        1001,
+        "较早群友",
+        "[图片]",
+        message_id="old-image",
+        media_references=(ImageReference("current", 1, "https://example.test/old.png"),),
+    )
+    for index in range(9):
+        service.record_group_message(
+            1001, "群友", f"纯文字 {index}", message_id=f"text-{index}"
+        )
+    service.record_group_message(
+        1001,
+        "最近群友",
+        "[图片]",
+        message_id="recent-image",
+        media_references=(ImageReference("current", 1, "https://example.test/recent.png"),),
+    )
+
+    references = service._context_image_references(
+        1001, exclude_message_id="call", limit=4
+    )
+
+    assert [item.value for item in references] == ["https://example.test/recent.png"]
+    prompt = service._build_prompt(group_message(group_id=1001, text="糖糖看看"), enabled_config())
+    assert "未提供视觉输入的[图片]不可见" in prompt
+    assert "不知道就说不知道，不能猜" in prompt
 
 
 def test_chat_payload_supports_tools_and_history():

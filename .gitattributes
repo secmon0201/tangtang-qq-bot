@@ -32,3 +32,9 @@
 *.exe binary
 *.dll binary
 *.node binary
+
+# Preserve exact upstream bytes covered by the persona asset manifest.
+bot/resources/personas/denia/canonical-events.md -text whitespace=cr-at-eol
+bot/resources/personas/denia/canonical-facts.md -text whitespace=cr-at-eol
+bot/resources/personas/denia/dialogue-corpus.md -text whitespace=cr-at-eol
+bot/resources/personas/denia/UPSTREAM-LICENSE.txt -text whitespace=cr-at-eol

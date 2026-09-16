@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from collections import deque
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -20,8 +21,12 @@ from nonebot import logger
 
 from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
+from bot.services.pacing import guard_outbound_for
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
+from bot.services.persona_engine import PersonaEngine
+from bot.services.persona_profiles import ChatContext
+from bot.services.speech_policy import choose_delivery, delivery_instruction
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -31,6 +36,7 @@ from bot.services.tangtang_media import (
 )
 from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.tangtang_reply import (
+    ReplyPlan,
     parse_reply_plan,
     reply_bubble_limit,
     reply_style_instruction,
@@ -1186,9 +1192,12 @@ class TangtangService:
         sleeper: Callable[[float], Awaitable[Any]] | None = None,
         memory_kernel: TangtangMemoryKernel | None = None,
         group_identity_provider: GroupIdentityProvider | None = None,
+        persona_engine: PersonaEngine | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
-        self.db = db or TangtangDb()
+        self._base_db = db or TangtangDb()
+        self.personas = persona_engine
+        self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
         self.media_resolver = media_resolver
@@ -1211,7 +1220,37 @@ class TangtangService:
         self._last_canned: dict[int, str] = {}
         self._recent_call_texts: dict[tuple[int, str], float] = {}
         self._in_flight: set[int] = set()
-        self.memory = memory_kernel or TangtangMemoryKernel(self.db, self._now)
+        self._base_memory = memory_kernel or TangtangMemoryKernel(self._base_db, self._now)
+
+    @property
+    def db(self) -> TangtangDb:
+        context = self._turn.get()
+        return self.personas.history(context.persona.key, self._base_db) if self.personas and context else self._base_db
+
+    @property
+    def memory(self) -> TangtangMemoryKernel:
+        context = self._turn.get()
+        if self.personas and context and context.persona.key != "tangtang":
+            return self.personas.memory(context.persona.key, self._base_db, self._now)
+        return self._base_memory
+
+    def _turn_current(self) -> bool:
+        context = self._turn.get()
+        return not context or not self.personas or self.personas.current(context)
+
+    async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
+        context = context or (self.personas.snapshot(event, config.model, proactive) if self.personas else None)
+        token = self._turn.set(context)
+        try:
+            if context and (not self._turn_current() or not self.personas.store.claim_request(context.request_id, time.time())):
+                return
+            if context:
+                config = replace(config, call_keyword=context.persona.call_keyword)
+            handler = self._handle_proactive_current if proactive else self._handle_current
+            with guard_outbound_for(self._turn_current):
+                await handler(bot, event, config)
+        finally:
+            self._turn.reset(token)
 
     @staticmethod
     def _clean_group_identity_value(value: str, limit: int = 80) -> str:
@@ -1293,7 +1332,7 @@ class TangtangService:
         """Persisted recent group messages, falling back to the memory queue."""
 
         try:
-            rows = self.db.recent_group_messages(group_id, limit)
+            rows = self._base_db.recent_group_messages(group_id, limit)
         except Exception as exc:
             logger.warning("Tangtang group context read failed: {}", exc)
             rows = []
@@ -1383,6 +1422,11 @@ class TangtangService:
         return self.media_resolver
 
     def _persona_text(self) -> str:
+        context = self._turn.get()
+        if context and context.persona.key != "tangtang":
+            text = context.persona.prompt()
+            self.memory.ensure_self_version(text)
+            return text
         parts = [
             text.strip()
             for text in (
@@ -1410,7 +1454,11 @@ class TangtangService:
         return _regex_patterns(self._soft.text())
 
     def _pick_canned(self, group_id: int) -> str | None:
-        lines = _line_list(self._lines.text())
+        context = self._turn.get()
+        if context and context.persona.key != "tangtang":
+            lines = _line_list((context.persona.resource_dir / "lines.txt").read_text(encoding="utf-8"))
+        else:
+            lines = _line_list(self._lines.text())
         if not lines:
             return None
         previous = self._last_canned.get(int(group_id))
@@ -1445,7 +1493,7 @@ class TangtangService:
         if not normalized:
             return False
         try:
-            return self.db.has_recent_group_reply_text(
+            return self._base_db.has_recent_group_reply_text(int(group_id), str(text).strip(), limit=10) or self.db.has_recent_group_reply_text(
                 int(group_id), str(text).strip(), limit=10
             )
         except Exception as exc:
@@ -1768,7 +1816,10 @@ class TangtangService:
                 labels.append(label)
         return "、".join(labels) if labels else "纯文本"
 
-    async def handle(self, bot: Any, event: Any, config: TangtangConfig) -> None:
+    async def handle(self, bot: Any, event: Any, config: TangtangConfig, *, context: ChatContext | None = None) -> None:
+        await self._with_persona(bot, event, config, False, context)
+
+    async def _handle_current(self, bot: Any, event: Any, config: TangtangConfig) -> None:
         group_id = int(event.group_id)
         user_id = int(event.user_id)
         text = event.get_plaintext().strip()
@@ -1901,6 +1952,12 @@ class TangtangService:
         )
 
     async def handle_proactive(
+        self, bot: Any, event: Any, config: TangtangConfig,
+        *, context: ChatContext | None = None,
+    ) -> None:
+        await self._with_persona(bot, event, config, True, context)
+
+    async def _handle_proactive_current(
         self,
         bot: Any,
         event: Any,
@@ -1939,7 +1996,7 @@ class TangtangService:
             )
             return
         probability, cooldown_seconds, message_interval = config.proactive_values_for(group_id)
-        decision = self.db.claim_proactive_reply(
+        decision = self._base_db.claim_proactive_reply(
             group_id=group_id,
             now=time.time(),
             probability=probability,
@@ -2025,6 +2082,20 @@ class TangtangService:
                 black_meme_instruction=black_meme_instruction,
                 media_resolution=media_resolution,
             )
+            context = self._turn.get()
+            voice_candidate = False
+            voice_status = "未绑定声线"
+            if context and self.personas:
+                if context.persona.key != "tangtang":
+                    prompt = prompt.replace("再按糖糖人格决定", "再按达妮娅人格决定").replace("没有人呼叫糖糖", "没有人呼叫娅娅")
+                    prompt += "\n日常用自然短句，但不套用糖糖的极短字数要求；需要认真说明时可以展开。"
+                voice_status = self.personas.speech.status(context.persona.key, group_id,
+                    group_enabled=self.personas.feature_enabled(group_id, "persona_voice"))
+                voice_candidate = self.personas.speech.random_candidate(group_id, random.random())
+                prompt += "\n" + self.personas.extra_prompt(context, current_text)
+                prompt += delivery_instruction(voice_status, voice_candidate, self.personas.expression_ids(context))
+            if not self._turn_current():
+                return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
             history: list[dict[str, Any]] = []
             if media_resolution.images:
@@ -2066,13 +2137,16 @@ class TangtangService:
                 max_bubbles=reply_bubble_limit(call_text, config.reply_max_bubbles),
                 max_chars=config.max_response_chars,
             )
+            if context and not plan.structured and plan.decided:
+                self._write_usage(config, group_id, user_id, "invalid_reply_structure", mode=mode, tokens=usage)
+                return
             messages = (
                 humanize_messages(plan.messages)
-                if config.humanize_enabled
+                if config.humanize_enabled and (not context or context.persona.key == "tangtang")
                 else plan.messages
             )
             if not plan.decided or not messages:
-                if force_reply:
+                if force_reply and not (context and self.personas):
                     line = self._pick_canned(group_id) or "我在，怎么啦？"
                     await self._send_and_record(
                         bot,
@@ -2104,6 +2178,8 @@ class TangtangService:
                 call_text=call_text,
                 proactive=proactive,
                 messages=messages,
+                reply_plan=replace(plan, messages=messages),
+                voice_candidate=voice_candidate,
             )
         except Exception as exc:
             logger.warning(
@@ -2164,10 +2240,43 @@ class TangtangService:
         call_text: str | None = None,
         proactive: bool = False,
         messages: tuple[str, ...] | None = None,
+        reply_plan: ReplyPlan | None = None,
+        voice_candidate: bool | None = None,
     ) -> None:
         group_id = int(event.group_id)
         user_id = int(event.user_id)
         parts = tuple(messages or (answer,))
+        context = self._turn.get()
+        voice_delivery = None
+        expression = None
+        if context and self.personas:
+            if not self._turn_current():
+                return
+            speech = self.personas.speech
+            source = call_text if call_text is not None else event.get_plaintext().strip()
+            voice_status = speech.status(context.persona.key, group_id,
+                group_enabled=self.personas.feature_enabled(group_id, "persona_voice"))
+            candidate = speech.random_candidate(group_id, random.random()) if voice_candidate is None else voice_candidate
+            plan = reply_plan or ReplyPlan(True, parts, text_fallback=parts, structured=True)
+            decision = choose_delivery(plan, source, available=voice_status == "可用",
+                random_candidate=candidate, unavailable_reason=voice_status)
+            parts = decision.fallback
+            if decision.voice:
+                voice_delivery = await speech.deliver(bot, context, decision.text,
+                    explicit=decision.explicit, current=lambda: self._turn_current()
+                    and self.personas.feature_enabled(group_id, "persona_voice")
+                    and self.personas.store.option("speech_enabled", True))
+                if voice_delivery.status in {"uncertain", "cancelled", "duplicate"}:
+                    self._write_usage(config, group_id, user_id, "voice_" + voice_delivery.status, mode=mode, tokens=tokens)
+                    return
+                if voice_delivery.status == "delivered":
+                    parts = (decision.text,)
+                else:
+                    if decision.explicit:
+                        parts = (voice_delivery.reason, *parts)
+                    voice_delivery = None
+            if not voice_delivery:
+                expression = self.personas.expression(context, plan.expression)
         if not config.reply_bubbles_enabled:
             parts = ("\n".join(parts),)
         delivery_rows: list[dict[str, Any]] = []
@@ -2180,17 +2289,24 @@ class TangtangService:
                 )
                 if delay_ms > 0:
                     await self._sleep(delay_ms / 1000)
+            if not voice_delivery and not self._turn_current():
+                break
             try:
-                result = await call_qq_action(
-                    bot,
-                    "send_group_msg",
-                    group_id=group_id,
-                    message=(
-                        part
-                        if proactive or index > 0
-                        else quote_message(event, part)
-                    ),
-                )
+                if voice_delivery:
+                    result = {"message_id": voice_delivery.message_id}
+                else:
+                    result = await call_qq_action(
+                        bot, "send_group_msg", group_id=group_id,
+                        message=part if proactive or index > 0 else quote_message(event, part),
+                    )
+                if context and not self._platform_message_id(result):
+                    # No acknowledgement is not proof of delivery. Do not grow,
+                    # retry, or send subsequent bubbles after an ambiguous send.
+                    self.personas.store.journal(
+                        context.request_id, context.persona.key, group_id,
+                        "uncertain", part, detail="missing_text_acknowledgement",
+                    )
+                    raise ValueError("missing text delivery acknowledgement")
                 delivered.append(part)
                 delivery_rows.append(
                     {
@@ -2250,6 +2366,12 @@ class TangtangService:
                 created_at=created_at,
             )
             self.db.insert_reply_parts(call_id, delivery_rows, created_at=created_at)
+            context = self._turn.get()
+            if context and self.personas:
+                self.personas.observe(context, source_text, delivered_text)
+                if context.persona.key != "tangtang":
+                    self.db.insert_group_message(group_id=group_id, user_id=user_id,
+                        nickname="群友", text=source_text, message_id=context.request_id, created_at=created_at)
             if config.memory_enabled:
                 self.memory.observe_user_message(
                     group_id=group_id,
@@ -2257,10 +2379,15 @@ class TangtangService:
                     message_id=str(getattr(event, "message_id", "") or ""),
                     text=source_text,
                 )
-            if config.persona_state_enabled:
+            if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
                 self.memory.update_states_after_reply(group_id, user_id, source_text)
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", exc)
+        if expression is not None and self._turn_current():
+            try:
+                await call_qq_action(bot, "send_group_msg", group_id=group_id, message=expression)
+            except Exception:
+                logger.debug("Optional persona expression unavailable")
         self._write_usage(
             config,
             group_id,

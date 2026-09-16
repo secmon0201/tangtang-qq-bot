@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+import time
 
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent
 from nonebot.params import CommandArg
+from bot.application.personas import persona_engine
 
 from bot.services.group_domains import FEATURES, GroupDomainService
 from bot.services.hourly_announcements import HourlyAnnouncementService
@@ -213,6 +215,9 @@ async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None
     if action is not None:
         feature_key, enabled = action
         domains.set_feature(group_id, feature_key, enabled)
+        if feature_key.startswith("persona_") or feature_key in {"mention_chat", "proactive_chat"}:
+            engine = persona_engine()
+            engine.store.set_option("group_settings_changed", group_id)
         db.audit(
             int(event.user_id),
             "group_feature_update",
@@ -245,6 +250,23 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
             "#系统设置 被动互动 <群号> 状态|<参数> <值>\n"
             "#系统设置 准时报点 状态|开|关|时段 HH:MM HH:MM"
         )
+
+    if tokens[0] in {"人格后台整理", "语音"}:
+        engine = persona_engine()
+        key = "background_enabled" if tokens[0] == "人格后台整理" else "speech_enabled"
+        action = tokens[1] if len(tokens) == 2 else "状态"
+        if action == "状态":
+            enabled = engine.store.option(key, True)
+            used = engine.store.budget_used("background", "global", time.time())
+            detail = engine.store.option("background_status", "等待后台任务") if key == "background_enabled" else "；".join(f"{profile.name}：{engine.speech.status(profile.key, 0)}" for profile in engine.profiles.values())
+            limit = engine.store.option("background_global_limit", 12)
+            await system_settings.finish(f"{tokens[0]}：{'开' if enabled else '关'}\n{detail}\n今日后台模型调用：{used}/{limit}")
+        enabled = _switch(action)
+        if enabled is None or len(tokens) != 2:
+            await system_settings.finish(f"用法：#系统设置 {tokens[0]} 状态|开|关")
+        engine.store.set_option(key, enabled)
+        db.audit(int(event.user_id), "persona_global_setting", detail=f"{key}={enabled}")
+        await system_settings.finish(f"{tokens[0]}已{'开启' if enabled else '关闭'}。")
 
     if tokens[0].casefold() in {"nte", "鸣潮", "ww", "游戏接口"}:
         action = tokens[1] if len(tokens) == 2 else "状态"
@@ -283,6 +305,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()) -> None:
                 f"用法：#系统设置 {label} 状态|开|关"
             )
         passive.set_chat_globally_enabled(feature_key, enabled)
+        persona_engine().store.set_option("chat_gate_changed", feature_key)
         db.audit(
             int(event.user_id),
             "system_chat_global_update",

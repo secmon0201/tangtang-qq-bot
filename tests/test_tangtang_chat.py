@@ -394,7 +394,8 @@ def test_call_event_rule(monkeypatch):
         SimpleNamespace(load=lambda: enabled_config()),
     )
     assert is_call_event(group_message(group_id=1001, text="糖糖在吗"))
-    assert is_call_event(group_message(group_id=1001, to_me=True, text="hello"))
+    assert is_call_event(group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello"))
+    assert not is_call_event(group_message(group_id=1001, to_me=True, text="hello"))
     assert not is_call_event(group_message(group_id=1001, text="普通消息"))
     assert not is_call_event(group_message(group_id=1002, text="糖糖在吗"))
     assert not is_call_event(group_message(group_id=1001, text="#糖糖"))
@@ -404,6 +405,19 @@ def test_call_event_rule(monkeypatch):
         group_message(group_id=1001, text="糖糖在吗", timestamp=int(time()) - 300)
     )
     assert not is_call_event(group_message(group_id=1001, text="报名 517"))
+
+
+def test_active_denias_call_word_and_wrong_names(monkeypatch):
+    enable_plugin_group_features(monkeypatch, 1001)
+    monkeypatch.setattr("bot.plugins.tangtang_chat.loader", SimpleNamespace(load=lambda: enabled_config(TANGTANG_PROACTIVE_ENABLED="true")))
+    monkeypatch.setattr("bot.plugins.tangtang_chat.persona_engine", lambda: SimpleNamespace(profile=lambda group: SimpleNamespace(call_keyword="娅娅")))
+    monkeypatch.setattr("bot.plugins.tangtang_chat.automation_is_paused", lambda: False)
+    assert is_call_event(group_message(group_id=1001, text="娅娅在吗"))
+    assert is_call_event(group_message(group_id=1001, text="[CQ:at,qq=2]在吗"))
+    for text in ("糖糖在吗", "达妮娅在吗"):
+        message = group_message(group_id=1001, text=text, to_me=True)
+        assert not is_call_event(message)
+        assert is_proactive_event(message)
 
 
 def test_proactive_event_rule(monkeypatch):
@@ -417,7 +431,7 @@ def test_proactive_event_rule(monkeypatch):
     )
     assert is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
     assert not is_proactive_event(group_message(group_id=1001, text="糖糖在吗"))
-    assert not is_proactive_event(group_message(group_id=1001, to_me=True, text="hello"))
+    assert not is_proactive_event(group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello"))
     assert not is_proactive_event(group_message(group_id=1001, text="#帮助"))
     assert not is_proactive_event(group_message(group_id=1001, text="nte帮助"))
     assert not is_proactive_event(group_message(group_id=1001, text="NTE角色列表"))
@@ -657,7 +671,8 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
         async def send(self, message: str) -> None:
             sent.append(message)
 
-    async def fake_classify(config, text):
+    async def fake_classify(config, text, *, persona_name="糖糖"):
+        assert persona_name == "糖糖"
         return (
             FeatureDecision(
                 tier="clear",
@@ -834,7 +849,7 @@ def test_parallel_compatibility_with_passive_matcher(monkeypatch):
     keyword_call = group_message(group_id=1001, text="糖糖在吗")
     assert is_call_event(keyword_call)
     assert is_passive_reaction_event(keyword_call)
-    at_call = group_message(group_id=1001, to_me=True, text="hello")
+    at_call = group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello")
     assert is_call_event(at_call)
     assert not is_passive_reaction_event(at_call)
 

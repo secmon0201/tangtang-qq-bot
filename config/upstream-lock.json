@@ -6,14 +6,14 @@
       "path": "GsUID.Core",
       "url": "https://github.com/Genshin-bots/gsuid_core.git",
       "branch": "master",
-      "commit": "af716ae3a19f1bb36f04ad692a18aca9bdd5df26"
+      "commit": "dbaa8787661566dea8dce486f5d1c80631b0adb6"
     },
     {
       "name": "GenshinUID connector",
       "path": "GsUID.Core/gsuid_core/plugins/GenshinUID",
       "url": "https://github.com/KimigaiiWuyi/GenshinUID.git",
       "branch": "v4",
-      "commit": "938a4520ccda7907e2972e88238729504dfd0a5d"
+      "commit": "35f73c7a625aaac950d8bd0a19f9704da0baba65"
     },
     {
       "name": "NTEUID",
@@ -27,7 +27,7 @@
       "path": "GsUID.Core/gsuid_core/plugins/XutheringWavesUID",
       "url": "https://github.com/Loping151/XutheringWavesUID.git",
       "branch": "main",
-      "commit": "96a2702fd443e8e3da6071611ebab80143643605"
+      "commit": "fd8c625bf4cd9b7aa87dd1d94ee9dc553bb77a63"
     },
     {
       "name": "RoverSign",

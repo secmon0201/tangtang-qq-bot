@@ -11,12 +11,17 @@ _DETAIL_REQUEST_RE = re.compile(
     r"详细|展开|长篇|完整|全面|深入|逐步|一步一步|教程|分析|梳理|总结|"
     r"讲清楚|解释清楚|具体讲|仔细说|多说点"
 )
+_CONTROL_MARKER = re.compile(r"\[CQ:|\[(?:消息|接话|沉默)\]|</?(?:analysis|think)>|\"(?:decision|text_fallback)\"\s*:")
 
 
 @dataclass(frozen=True, slots=True)
 class ReplyPlan:
     decided: bool
     messages: tuple[str, ...]
+    voice: str = "auto"
+    text_fallback: tuple[str, ...] = ()
+    expression: str = ""
+    structured: bool = False
 
     @property
     def text(self) -> str:
@@ -86,17 +91,51 @@ def parse_reply_plan(
         messages = _marked_messages(body) or (body,)
     cleaned: list[str] = []
     remaining = max(1, int(max_chars))
+    truncated = len(messages) > max(1, int(max_bubbles))
     for message in messages[: max(1, int(max_bubbles))]:
         value = str(message).strip()
         if not value:
             continue
         if len(value) > remaining:
+            truncated = True
             value = "…" if remaining == 1 else value[: remaining - 1].rstrip() + "…"
         cleaned.append(value)
         remaining -= len(value)
         if remaining <= 0:
             break
-    return ReplyPlan(bool(cleaned), tuple(cleaned))
+    payload = _reply_object(body)
+    voice = str(payload.get("voice", "auto")) if payload else "auto"
+    fallback = payload.get("text_fallback", []) if payload else []
+    valid = bool(payload) and payload.get("decision") == "reply" and voice in {"auto", "accept", "decline", "text"}
+    if not isinstance(fallback, list) or any(not isinstance(v, str) for v in fallback):
+        valid = False
+        fallback = []
+    if any(_CONTROL_MARKER.search(v) for v in (*cleaned, *fallback)):
+        return ReplyPlan(False, ())
+    if sum(len(v) for v in fallback) > max_chars or len(fallback) > max_bubbles:
+        fallback = []
+        voice = "text"
+    if truncated:
+        # Preserve the existing text length limit, but never speak a shortened
+        # answer as though it were the complete final text.
+        voice = "text"
+    # Malformed control payloads must never be shown as a chat message.
+    if json_messages is None and (body.startswith("{") or body.startswith("```json")):
+        return ReplyPlan(False, ())
+    return ReplyPlan(bool(cleaned), tuple(cleaned), voice if valid else "text",
+                     tuple(v.strip() for v in fallback if v.strip())[:max_bubbles],
+                     str(payload.get("expression", "")) if payload else "", valid)
+
+
+def _reply_object(text: str) -> dict:
+    candidate = text.strip()
+    if candidate.startswith("```json") and candidate.endswith("```"):
+        candidate = candidate[7:-3].strip()
+    try:
+        payload = json.loads(candidate)
+    except (ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def _json_messages(body: str) -> tuple[str, ...] | None:

@@ -7,6 +7,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from bot.config import ROOT, settings
+from bot.services.persona_mood import mood_decay
 
 DEFAULT_DB_PATH = ROOT / "data" / "tangtang" / "tangtang.db"
 
@@ -428,6 +429,9 @@ class TangtangDb:
                 "INSERT OR IGNORE INTO tangtang_persona_state (group_id, updated_at) VALUES (?, ?)",
                 (int(group_id), now),
             )
+            old = conn.execute("SELECT valence,energy,updated_at FROM tangtang_persona_state WHERE group_id=?", (int(group_id),)).fetchone()
+            conn.execute("UPDATE tangtang_persona_state SET valence=?,energy=? WHERE group_id=?",
+                         (mood_decay(old[0], old[2], now), mood_decay(old[1], old[2], now), int(group_id)))
             conn.execute(
                 "UPDATE tangtang_persona_state SET interaction_count = interaction_count + 1, "
                 "valence = MIN(1.0, MAX(0.0, valence + ?)), "

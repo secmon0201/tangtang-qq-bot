@@ -62,6 +62,7 @@ PLUGIN_SPECS = (
     PluginSpec("qq_platform_health", "bot.plugins.qq_platform_health", "QQ 平台健康检查", "运行维护", ("onebot",)),
     PluginSpec("random_reactions", "bot.plugins.random_reactions", "随机互动与复读", "群聊互动", ("onebot",)),
     PluginSpec("tangtang_chat", "bot.plugins.tangtang_chat", "糖糖聊天", "糖糖", ("onebot",)),
+    PluginSpec("persona_management", "bot.plugins.persona_management", "人格与语音管理", "糖糖", ("onebot",)),
     PluginSpec(
         "tangtang_proactive",
         "bot.plugins.tangtang_proactive",

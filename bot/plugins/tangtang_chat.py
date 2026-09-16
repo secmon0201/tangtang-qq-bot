@@ -9,12 +9,14 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.message import event_postprocessor
 
 from bot.config import settings
+from bot.application.personas import persona_engine
 from bot.application.local_features import (
     feature_label,
     request_from_decision,
     run_feature_call,
 )
 from bot.services.runtime import database, group_domains, passive_settings
+from bot.services.chat_dispatch import dispatcher
 from bot.services.game_api_gate import GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
@@ -48,9 +50,10 @@ async def _feature_router(
         if current_domain is not None and current_domain.mode == "cluster"
         else ()
     )
-    decision = classify_local_feature(text, cluster_labels=cluster_labels)
+    decision = classify_local_feature(text, cluster_labels=cluster_labels, call_keyword=config.call_keyword)
     if decision is None:
-        decision, usage = await feature_classifier.classify(config, text)
+        profile = next(p for p in persona_engine().profiles.values() if p.call_keyword == config.call_keyword)
+        decision, usage = await feature_classifier.classify(config, text, persona_name=profile.name)
     else:
         usage = {}
     if decision is None:
@@ -111,6 +114,7 @@ service = TangtangService(
     loader=loader,
     feature_router=_feature_router,
     group_identity_provider=_group_identity,
+    persona_engine=persona_engine(),
 )
 
 
@@ -144,16 +148,18 @@ def is_call_event(event: MessageEvent) -> bool:
         return False
     if _is_stale(event):
         return False
-    text = event.get_plaintext().strip()
+    original = getattr(event, "original_message", event.message)
+    text = original.extract_plain_text().strip()
+    mentioned = any(segment.type == "at" and str(segment.data.get("qq")) == str(event.self_id) for segment in original)
     if not text:
-        return bool(event.is_tome())
+        return mentioned
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
     if _GAME_CODE_RE.match(text) or GAME_COMMAND_RE.match(text):
         return False
-    if event.is_tome():
+    if mentioned:
         return True
-    keyword = config.call_keyword
+    keyword = persona_engine().profile(int(event.group_id)).call_keyword
     return bool(keyword) and keyword in text
 
 
@@ -199,7 +205,8 @@ async def _(bot: Bot, event: GroupMessageEvent):
     if db.passive_filter_contains(int(event.user_id)):
         return
     config = runtime_config()
-    await service.handle(bot, event, config)
+    context = persona_engine().snapshot(event, config.model, False)
+    dispatcher.submit(int(event.group_id), lambda: service.handle(bot, event, config, context=context))
 
 
 # Proactive replies also run before the passive matcher and never block it, so
@@ -216,7 +223,8 @@ async def _(bot: Bot, event: GroupMessageEvent):
     if db.passive_filter_contains(int(event.user_id)):
         return
     config = runtime_config()
-    await service.handle_proactive(bot, event, config)
+    context = persona_engine().snapshot(event, config.model, True)
+    dispatcher.submit(int(event.group_id), lambda: service.handle_proactive(bot, event, config, context=context))
 
 
 @event_postprocessor

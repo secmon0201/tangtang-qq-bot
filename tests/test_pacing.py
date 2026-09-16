@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from types import SimpleNamespace
 from time import time
 
@@ -72,3 +73,21 @@ def test_scheduled_notifications_skip_humanized_delay(monkeypatch):
     monkeypatch.setattr(pacing.asyncio, "sleep", fail_sleep)
 
     assert asyncio.run(pacing.prepare_outbound_response("send_group_msg"))
+
+
+def test_persona_switch_during_pacing_cancels_before_platform_call(monkeypatch):
+    valid = True
+    async def prepare(action):
+        return True
+    async def wait():
+        nonlocal valid
+        valid = False
+    async def send(*args, **kwargs):
+        pytest.fail("stale request reached platform")
+    monkeypatch.setattr(pacing, "prepare_outbound_response", prepare)
+    monkeypatch.setattr(pacing, "wait_for_api_turn", wait)
+    async def run():
+        with pacing.guard_outbound_for(lambda: valid):
+            with pytest.raises(pacing.OutboundCancelled):
+                await pacing.paced_call_api(SimpleNamespace(call_api=send), "send_group_msg", group_id=1001)
+    asyncio.run(run())

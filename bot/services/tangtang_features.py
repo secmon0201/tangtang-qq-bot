@@ -84,7 +84,7 @@ def has_feature_hint(text: str) -> bool:
 
 
 def classify_local_feature(
-    text: str, *, cluster_labels: Iterable[str] = ()
+    text: str, *, cluster_labels: Iterable[str] = (), call_keyword: str = "糖糖"
 ) -> FeatureDecision | None:
     """Resolve explicit feature requests locally while preserving persona feedback."""
 
@@ -105,7 +105,7 @@ def classify_local_feature(
         re.match(r"^(?:给我看|查一下|查下|来一份|来一个|发一下)", after_subject)
     )
     if not requested:
-        remainder = normalized.replace("糖糖", "", 1)
+        remainder = normalized.replace(call_keyword, "", 1)
         direct_remainder = re.sub(
             r"(?:我|的|本人|自己|个人|某人|这人|他|她|对方|群里|本群|当前群|"
             r"今天|今日|这周|本周|这个月|本月|总|累计|历史|集群)",
@@ -135,7 +135,7 @@ def classify_local_feature(
         action="cluster_ranking" if cluster else "group_ranking",
         scope=scope,
         cluster=cluster,
-        line=f"好呀，糖糖这就看看{target}{scope_label}谁最能聊。",
+        line=(f"好呀，糖糖这就看看{target}{scope_label}谁最能聊。" if call_keyword == "糖糖" else f"唔，看看{target}{scope_label}谁最能聊。"),
     )
 
 
@@ -147,6 +147,7 @@ class TangtangFeatureClassifier:
         self,
         config: TangtangConfig,
         text: str,
+        *, persona_name: str = "糖糖",
     ) -> tuple[FeatureDecision | None, dict[str, Any]]:
         routing_config = replace(
             config,
@@ -156,8 +157,8 @@ class TangtangFeatureClassifier:
         try:
             raw, usage = await self.provider.generate(
                 routing_config,
-                _ROUTER_PERSONA,
-                self._prompt(text),
+                _ROUTER_PERSONA.replace("糖糖", persona_name),
+                self._prompt(text).replace("糖糖对用户", persona_name + "对用户"),
             )
         except Exception as exc:
             logger.warning(

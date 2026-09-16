@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from bot.services.persona_mood import mood_decay
+
 import hashlib
 import re
 from dataclasses import dataclass
@@ -157,7 +159,7 @@ class TangtangMemoryKernel:
         persona = self.db.persona_state(group_id)
         familiarity = float(relationship.get("familiarity") or 0.0)
         warmth = float(relationship.get("warmth") or 0.5)
-        valence = float(persona.get("valence") or 0.5)
+        valence = mood_decay(float(persona.get("valence") or 0.5), str(persona.get("updated_at") or ""), self._now())
         relation_label = (
             "刚认识" if familiarity < 0.15 else
             "逐渐熟悉" if familiarity < 0.5 else
@@ -167,7 +169,7 @@ class TangtangMemoryKernel:
         mood_label = "有点低落" if valence < 0.4 else "平静" if valence < 0.65 else "心情不错"
         return (
             "[当前关系与状态（只影响语气，不要直接说出数值或标签）]\n"
-            f"关系：{relation_label}，态度：{warmth_label}，群内状态：{mood_label}。"
+            f"关系：{relation_label}，态度：{warmth_label}，群内状态：{mood_label}。保持群友关系，不发展排他或恋爱关系。"
         )
 
     def update_states_after_reply(

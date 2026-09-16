@@ -1,0 +1,36 @@
+{
+  "runtime": {
+    "repository": "https://github.com/RVC-Boss/GPT-SoVITS",
+    "revision": "48b1a0169a28582a8984402f82cf438d3bfa6aca",
+    "python": "3.10.18",
+    "torch": "2.6.0+cpu",
+    "torchaudio": "2.6.0+cpu",
+    "device": "cpu",
+    "model_family": "v2ProPlus",
+    "archive_sha256": "dbd12e475a313d41243eee9e871c22050584d1df0c4cb29b8d7fbd27607c3493"
+  },
+  "voice": {
+    "repository": "https://modelscope.cn/models/villia/dania",
+    "files": {
+      "dania-e15.ckpt": "021de96fd53115fd5acac114d6be2c7cc1201bbf64e62f8985abbc76b35014c6",
+      "dania_e16_s2192.pth": "668b7ff9d01aeaa36acdff65b1126cb65a5f1ebf8f93c08108130b856b1030cd",
+      "output.wav_0009342720_0009558400.wav": "98cde6a626505e531d0297b5e9ad99f0aec274077ef6bc9540c83dad89c945c8"
+    }
+  },
+  "prerequisites": {
+    "repository": "https://modelscope.cn/models/XXXXRT/GPT-SoVITS-Pretrained",
+    "files": {
+      "pretrained_models/chinese-hubert-base/config.json": "c3e5060a1277e0f078cc6be9da4528a605dba6ece93018981fe2c820e5c7b103",
+      "pretrained_models/chinese-roberta-wwm-ext-large/config.json": "3d57de2fd7e80d0e5c8ff194f0bbb6baa10df7e43fc262a0cc71298a78b0a3e5",
+      "G2PWModel.zip": "46292be0374a49308069233cd5c147ae4c41806558e4781a2467a31a4d8099da",
+      "pretrained_models/fast_langdetect/lid.176.bin": "7e69ec5451bc261cc7844e49e4792a85d7f09c06789ec800fc4a44aec362764e",
+      "pretrained_models/fast_langdetect/lid.176.ftz": "8f3472cfe8738a7b6099e8e999c3cbfae0dcd15696aac7d7738a8039db603e83",
+      "nltk_data.zip": "eb3ec26ace3f9ccbb08a6d333e26f0941c47e230ece0717dc992bdb7e99808dd",
+      "pretrained_models/chinese-hubert-base/preprocessor_config.json": "dcd684124d06722947939d41ea6ae58dbf10968c60a11a29f23ddc602c64a29b",
+      "pretrained_models/sv/pretrained_eres2netv2w24s4ep4.ckpt": "4f5a0bf73c61eb41b174e1bb54e7ee3c83233892be8e0af1f187024e8e581a35",
+      "pretrained_models/chinese-hubert-base/pytorch_model.bin": "24164f129c66499d1346e2aa55f183250c223161ec2770c0da3d3b08cf432d3c",
+      "pretrained_models/chinese-roberta-wwm-ext-large/pytorch_model.bin": "e53a693acc59ace251d143d068096ae0d7b79e4b1b503fa84c9dcf576448c1d8",
+      "pretrained_models/chinese-roberta-wwm-ext-large/tokenizer.json": "173796956820ea27bd14f76bf28162607ff4254807e2948253eb5b46f5bb643b"
+    }
+  }
+}

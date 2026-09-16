@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from time import monotonic, time
-from typing import Any, Iterator
+from typing import Any, Iterator, Callable
 
 from bot.config import settings
 from bot.services.game_api_gate import GAME_COMMAND_RE
@@ -15,6 +15,7 @@ from bot.services.game_api_gate import GAME_COMMAND_RE
 _api_lock = asyncio.Lock()
 _last_api_call = 0.0
 _api_call_is_paced: ContextVar[bool] = ContextVar("api_call_is_paced", default=False)
+_outbound_guard: ContextVar[Callable[[], bool] | None] = ContextVar("outbound_guard", default=None)
 _outbound_response: ContextVar["OutboundResponse | None"] = ContextVar(
     "outbound_response", default=None
 )
@@ -30,6 +31,25 @@ OUTBOUND_RESPONSE_ACTIONS = frozenset(
     }
 )
 PASSIVE_SEND_MAX_AGE_SECONDS = 120
+
+
+class OutboundCancelled(RuntimeError):
+    """The originating request became stale before the actual platform call."""
+
+
+@contextmanager
+def guard_outbound_for(predicate: Callable[[], bool]) -> Iterator[None]:
+    token = _outbound_guard.set(predicate)
+    try:
+        yield
+    finally:
+        _outbound_guard.reset(token)
+
+
+def assert_outbound_current() -> None:
+    predicate = _outbound_guard.get()
+    if predicate is not None and not predicate():
+        raise OutboundCancelled("request persona or settings changed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +149,8 @@ async def paced_call_api(bot: Any, action: str, **params: Any) -> Any:
     if not await prepare_outbound_response(action):
         return None
     await wait_for_api_turn()
+    if action in OUTBOUND_RESPONSE_ACTIONS:
+        assert_outbound_current()
     token = _api_call_is_paced.set(True)
     try:
         return await bot.call_api(action, **params)

@@ -1,0 +1,46 @@
+{
+  "repository": "https://github.com/SSDeutschland/Denia-chat",
+  "revision": "becf50be0f9ce78c7678ac75dc9c0dbbbf2de9f4",
+  "files": [
+    {
+      "source": "denia/共享/语料/语料库_标签版.md",
+      "path": "dialogue-corpus.md",
+      "sha256": "af4ed9101fbd9d2e2bbe2c46cc0a1df1e1e66a33b8b64f9d0883faad789e49d0"
+    },
+    {
+      "source": "denia/共享/记忆-虚质之前/核心事实.md",
+      "path": "canonical-facts.md",
+      "sha256": "dc263094388d21964e651b54e9e2eae2effbae7fec2ad55b3cb80ccef676c371"
+    },
+    {
+      "source": "denia/共享/记忆-虚质之前/关键事件.md",
+      "path": "canonical-events.md",
+      "sha256": "be1043b7d5999ccf6f285fd7cd7306bc3169720fe937b25f9c0949ad06c89189"
+    },
+    {
+      "source": "LICENSE",
+      "path": "UPSTREAM-LICENSE.txt",
+      "sha256": "bd6cb794ace54836b29a5c3180d28b43c7057066ee946197474c8e6bf13ce704"
+    },
+    {
+      "source": "denia/共享/工具/表情包/微笑.jpg",
+      "path": "expressions/smile.jpg",
+      "sha256": "676cacb47807267a6f6300fb4f01d8eac62a94e118a8c8ce61ef389dcda7e73e"
+    },
+    {
+      "source": "denia/共享/工具/表情包/大笑.jpg",
+      "path": "expressions/laugh.jpg",
+      "sha256": "133a4568f8ce5279f44549020c340097233cc7583893bdedef61cad8399d2cea"
+    },
+    {
+      "source": "denia/共享/工具/表情包/思考.jpg",
+      "path": "expressions/think.jpg",
+      "sha256": "cbf64df81bed6ad8a80325c640b6783cebc129941b7e81eeb128b0022d2e98a4"
+    },
+    {
+      "source": "denia/共享/工具/表情包/探头.jpg",
+      "path": "expressions/peek.jpg",
+      "sha256": "f36bd7d97ef7296b49e0e10ee882172907c517fdcd5b654bdb1a114e1d92fe11"
+    }
+  ]
+}

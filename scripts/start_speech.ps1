@@ -6,7 +6,7 @@ $speechRoot = Split-Path -Parent $PSScriptRoot
 $speechData = Join-Path $speechRoot 'data\tts'
 $speechConfigPath = Join-Path $speechData 'service.json'
 if (-not (Test-Path -LiteralPath $speechConfigPath)) { exit 0 }
-$speechConfig = Get-Content -LiteralPath $speechConfigPath -Raw | ConvertFrom-Json
+$speechConfig = Get-Content -LiteralPath $speechConfigPath -Raw -Encoding utf8 | ConvertFrom-Json
 if (-not $speechConfig.enabled) { exit 0 }
 $speechLock = [IO.File]::Open((Join-Path $speechData 'start.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
 try {

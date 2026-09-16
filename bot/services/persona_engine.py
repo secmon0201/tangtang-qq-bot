@@ -96,9 +96,10 @@ class PersonaEngine:
             return MessageSegment.face({"smile": 0, "laugh": 13, "think": 32, "peek": 21}[key])
         # Send the original file so animated assets are not flattened by rendering.
         catalog = self._expression_catalog(context)
-        filename = next((item["file"] for item in catalog if item["id"] == key), key + ".jpg")
-        for suffix in ("", ".gif", ".webp", ".png", ".jpg", ".jpeg"):
-            path = context.persona.resource_dir / "expressions" / (filename if not suffix else f"{key}{suffix}")
+        candidates = [next((item["file"] for item in catalog if item["id"] == key), "")] if catalog else []
+        candidates += [f"{key}{suffix}" for suffix in (".gif", ".webp", ".png", ".jpg", ".jpeg")]
+        for filename in candidates:
+            path = context.persona.resource_dir / "expressions" / filename
             if path.is_file():
                 return MessageSegment.image(path.resolve().as_uri())
         return None

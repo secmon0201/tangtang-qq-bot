@@ -1518,6 +1518,7 @@ class TangtangService:
     ) -> None:
         try:
             now = datetime.now(ZoneInfo(settings.timezone))
+            context = self._turn.get()
             path = self.usage_dir / f"{now.strftime('%Y-%m-%d')}.jsonl"
             path.parent.mkdir(parents=True, exist_ok=True)
             record = {
@@ -1533,6 +1534,8 @@ class TangtangService:
                 "reasoning_tokens": int(tokens.get("reasoning_tokens") or 0),
                 "total_tokens": int(tokens.get("total_tokens") or 0),
                 "detail": detail,
+                "request_id": context.request_id if context else "",
+                "message_id": context.request_id.partition(":")[2] if context else "",
             }
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -2111,6 +2114,7 @@ class TangtangService:
             if not self._turn_current():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
+            self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens={})
             history: list[dict[str, Any]] = []
             if media_resolution.images:
                 result = await self.provider.generate_agent(
@@ -2151,6 +2155,8 @@ class TangtangService:
                 max_bubbles=reply_bubble_limit(call_text, config.reply_max_bubbles),
                 max_chars=config.max_response_chars,
             )
+            self._write_usage(config, group_id, user_id, "model_result", mode=mode, tokens={},
+                detail=f"structured={plan.structured}; decision={'reply' if plan.decided else 'silent'}; tool_rounds={loops}")
             if context and not plan.structured and plan.decided:
                 self._write_usage(config, group_id, user_id, "invalid_reply_structure", mode=mode, tokens=usage)
                 return
@@ -2201,7 +2207,7 @@ class TangtangService:
                 f"{type(exc).__name__}: {exc}"
             )
             self._write_usage(
-                config, group_id, user_id, "error", mode=mode, tokens={}
+                config, group_id, user_id, "error", mode=mode, tokens={}, detail=type(exc).__name__
             )
         finally:
             self._in_flight.discard(group_id)
@@ -2336,6 +2342,8 @@ class TangtangService:
                     )
                     raise ValueError("missing text delivery acknowledgement")
                 delivered.append(part)
+                self._write_usage(config, group_id, user_id, "send_result", mode=mode, tokens={},
+                    detail=f"delivered; part={index}; platform_message_id={self._platform_message_id(result)}")
                 delivery_rows.append(
                     {
                         "part_index": index,
@@ -2346,6 +2354,8 @@ class TangtangService:
                 )
             except Exception as exc:
                 send_error = exc
+                self._write_usage(config, group_id, user_id, "send_result", mode=mode, tokens={},
+                    detail=f"unconfirmed; part={index}; error={type(exc).__name__}")
                 delivery_rows.append(
                     {
                         "part_index": index,

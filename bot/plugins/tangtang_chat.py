@@ -206,7 +206,8 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     config = runtime_config()
     context = persona_engine().snapshot(event, config.model, False)
-    dispatcher.submit(int(event.group_id), lambda: service.handle(bot, event, config, context=context))
+    dispatcher.submit(int(event.group_id), lambda: service.handle(bot, event, config, context=context),
+        request_id=context.request_id, current=lambda: persona_engine().current(context))
 
 
 # Proactive replies also run before the passive matcher and never block it, so
@@ -224,7 +225,8 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     config = runtime_config()
     context = persona_engine().snapshot(event, config.model, True)
-    dispatcher.submit(int(event.group_id), lambda: service.handle_proactive(bot, event, config, context=context))
+    dispatcher.submit(int(event.group_id), lambda: service.handle_proactive(bot, event, config, context=context),
+        proactive=True, request_id=context.request_id, current=lambda: persona_engine().current(context))
 
 
 @event_postprocessor

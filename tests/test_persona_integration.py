@@ -251,6 +251,11 @@ async def test_accepted_voice_replaces_text_and_records_only_delivered(tmp_path,
     assert denia_db.list_calls(2001, 1001)[0]["reply_text"] == "今天也有好好休息呢。"
     assert service.db.list_calls(2001, 1001) == []
     assert len(engine.store.interactions("denia", 1001)) == 1
+    records = [json.loads(line) for path in (tmp_path / "usage").glob("*.jsonl")
+               for line in path.read_text("utf-8").splitlines()]
+    assert {row["request_id"] for row in records} == {"1001:1"}
+    assert {row["message_id"] for row in records} == {"1"}
+    assert {"model_started", "model_result", "send_result", "reply"} <= {row["event"] for row in records}
     await engine.speech.close()
 
 
@@ -386,7 +391,7 @@ async def test_dispatch_does_not_hold_event_path_and_limits_groups():
     async def slow():
         await wait.wait()
     assert dispatcher.submit(1, slow)
-    assert not dispatcher.submit(1, slow)
+    assert not dispatcher.submit(1, slow, proactive=True)
     assert dispatcher.submit(2, slow)
     assert not dispatcher.submit(3, slow)
     await dispatcher.close()

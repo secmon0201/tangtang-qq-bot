@@ -138,16 +138,17 @@ def test_expression_intent(text, expected):
     assert expression_request(text) == expected
 
 
-def test_ordinary_expression_probability_is_halved():
-    assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 50
+def test_ordinary_expression_probability_is_fifteen_percent():
+    assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 15
     assert expression_key("别发表情", "smile", 0) == ""
     assert expression_key("今天好", "", 0) == ""
     assert expression_key("发个探头表情包", "", 0.999) == "peek"
 
 
 @pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("roll", [0.0, 0.5, 0.999])
 @async_test
-async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, monkeypatch, enabled):
+async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, monkeypatch, enabled, roll):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, "denia")
     engine.feature_enabled = lambda group, feature: enabled if feature == "persona_expressions" else True
@@ -159,15 +160,40 @@ async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, m
         sent.append(params["message"])
         return {"message_id": 77}
     monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
-    monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: 0.999)
+    monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: roll)
     await service.handle(None, event("娅娅发个探头表情包"), config)
     assert not provider.seen
-    assert len(sent) == (2 if enabled else 1)
+    combined = roll < 0.5
+    assert len(sent) == (2 if enabled and not combined else 1)
     if enabled:
-        assert sent[-1].type == "image"
+        if combined:
+            assert [segment.type for segment in sent[0]] == ["reply", "text", "image"]
+            assert sent[0].extract_plain_text() == "给你。"
+        else:
+            assert sent[-1].type == "image"
         assert "peek.jpg" in str(sent[-1])
     else:
         assert "没有可用" in str(sent[0])
+    assert engine.history("denia", service.db).list_calls(2001, 1001)[0]["reply_text"] == (
+        "给你。" if enabled else "现在没有可用的角色表情。")
+
+
+@async_test
+async def test_uncertain_combined_expression_is_not_sent_again(tmp_path, monkeypatch):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    service, config = service_for(tmp_path, engine, Provider({}))
+    sent = []
+    async def send(bot, action, **params):
+        sent.append(params["message"])
+        return {}
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: 0.0)
+    await service.handle(None, event("娅娅发个表情包"), config)
+    assert len(sent) == 1
+    assert [segment.type for segment in sent[0]] == ["reply", "text", "image"]
+    assert not engine.history("denia", service.db).list_calls(2001, 1001)
+    assert engine.store.delivery("1001:1")["status"] == "uncertain"
 
 
 def test_selection_revisions_and_storage_isolate_personas(tmp_path):

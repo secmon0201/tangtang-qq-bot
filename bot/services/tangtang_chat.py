@@ -18,6 +18,7 @@ import httpx
 import truststore
 from dotenv import dotenv_values
 from nonebot import logger
+from nonebot.adapters.onebot.v11 import MessageSegment
 
 from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
@@ -27,7 +28,7 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
-from bot.services.persona_expressions import expression_key, expression_request
+from bot.services.persona_expressions import INLINE_EXPRESSION_PROBABILITY, expression_key, expression_request
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -2299,6 +2300,7 @@ class TangtangService:
                 expression = self.personas.expression(context, key)
         if not config.reply_bubbles_enabled:
             parts = ("\n".join(parts),)
+        inline_expression = expression is not None and random.random() < INLINE_EXPRESSION_PROBABILITY
         delivery_rows: list[dict[str, Any]] = []
         delivered: list[str] = []
         send_error: Exception | None = None
@@ -2315,9 +2317,15 @@ class TangtangService:
                 if voice_delivery:
                     result = {"message_id": voice_delivery.message_id}
                 else:
+                    outgoing = part
+                    if inline_expression and index == 0:
+                        outgoing = MessageSegment.text(part) + expression
+                        # Consume before sending: an uncertain send must not
+                        # cause a second, separate expression attempt.
+                        expression = None
                     result = await call_qq_action(
                         bot, "send_group_msg", group_id=group_id,
-                        message=part if proactive or index > 0 else quote_message(event, part),
+                        message=outgoing if proactive or index > 0 else quote_message(event, outgoing),
                     )
                 if context and not self._platform_message_id(result):
                     # No acknowledgement is not proof of delivery. Do not grow,

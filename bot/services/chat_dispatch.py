@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextvars import Context, copy_context
 from dataclasses import dataclass
 
 from nonebot import logger
@@ -14,6 +15,7 @@ class ChatJob:
     action: Callable[[], Awaitable[None]]
     request_id: str
     current: Callable[[], bool] | None
+    context: Context
 
 
 class ChatDispatcher:
@@ -37,7 +39,7 @@ class ChatDispatcher:
         if self.closing or (request_id and request_id in self.request_ids):
             self.trace(group_id, request_id, "dropped", "shutdown_or_duplicate")
             return False
-        job = ChatJob(action, request_id, current)
+        job = ChatJob(action, request_id, current, copy_context())
         if group_id in self.tasks:
             queue = self.pending[group_id]
             if proactive or len(queue) >= self.waiting_limit:
@@ -66,7 +68,9 @@ class ChatDispatcher:
                         self.trace(group_id, job.request_id, "dropped", "stale_context")
                     else:
                         self.trace(group_id, job.request_id, "started")
-                        await job.action()
+                        # A worker drains several matcher invocations. Restore each
+                        # invocation's event/bot/pacing context, not the first one's.
+                        await asyncio.create_task(job.context.run(job.action), context=job.context)
                         self.trace(group_id, job.request_id, "finished")
                 except asyncio.CancelledError:
                     self.trace(group_id, job.request_id, "cancelled", "shutdown")

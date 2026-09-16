@@ -1,4 +1,9 @@
 import asyncio
+from types import SimpleNamespace
+
+from nonebot.matcher import current_event
+
+from bot.services.pacing import _current_response, _is_stale_passive_response
 
 from bot.services.chat_dispatch import ChatDispatcher
 
@@ -97,5 +102,66 @@ def test_dispatch_trace_carries_same_request_id(monkeypatch):
         dispatcher.submit(1, done, request_id="1:11")
         await dispatcher.tasks[1]
         assert [row[2] for row in traces if row[1] == "1:11"] == ["received", "queued", "started", "finished"]
+        await dispatcher.close()
+    asyncio.run(scenario())
+
+
+def test_queued_calls_keep_their_own_matcher_event_and_outbound_age():
+    async def scenario():
+        dispatcher = ChatDispatcher()
+        seen = []
+        async def reply():
+            response = _current_response()
+            seen.append((response.event.message_id, _is_stale_passive_response(response)))
+        # The first event expired while processing; the second one is still fresh.
+        from time import time
+        for message_id, age in ((1, 130), (2, 10), (3, 0)):
+            event = SimpleNamespace(message_id=message_id, time=int(time()) - age,
+                                    get_plaintext=lambda: "娅娅在吗")
+            token = current_event.set(event)
+            try:
+                assert dispatcher.submit(1, reply, request_id=f"1:{message_id}")
+            finally:
+                current_event.reset(token)
+        await dispatcher.tasks[1]
+        assert seen == [(1, True), (2, False), (3, False)]
+        await dispatcher.close()
+    asyncio.run(scenario())
+
+
+def test_large_burst_respects_global_capacity_and_recovers_after_failures(monkeypatch):
+    monkeypatch.setattr(ChatDispatcher, "trace", staticmethod(lambda *args: None))
+    async def scenario():
+        dispatcher = ChatDispatcher()
+        active = set()
+        peak = 0
+        order = {group: [] for group in range(40)}
+        accepted = 0
+        async def reply(group, sequence):
+            nonlocal peak
+            assert group not in active
+            active.add(group)
+            peak = max(peak, len(active))
+            try:
+                order[group].append(sequence)
+                await asyncio.sleep(0.001)
+                if sequence == 0 and group % 4 == 0:
+                    raise TimeoutError("injected provider timeout")
+            finally:
+                active.remove(group)
+        for sequence in range(50):
+            for group in range(40):
+                accepted += dispatcher.submit(group, lambda g=group, n=sequence: reply(g, n),
+                                              request_id=f"{group}:{sequence}")
+                assert all(len(queue) <= 2 for queue in dispatcher.pending.values())
+        assert accepted == 96
+        await asyncio.gather(*tuple(dispatcher.tasks.values()))
+        assert peak == 32
+        assert all(order[group] == [0, 1, 2] for group in range(32))
+        assert all(not order[group] for group in range(32, 40))
+        assert not active and not dispatcher.tasks and not dispatcher.pending and not dispatcher.request_ids
+        assert dispatcher.submit(39, lambda: reply(39, 50), request_id="39:50")
+        await dispatcher.tasks[39]
+        assert order[39] == [50]
         await dispatcher.close()
     asyncio.run(scenario())

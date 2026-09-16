@@ -14,7 +14,32 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from bot.integrations.sovits import SovitsBackend
-from bot.services.speech import load_voice_profiles
+from bot.services.persona_store import PersonaStore
+from bot.services.speech import SpeechService, load_voice_profiles
+
+
+async def probe_readiness(args) -> int:
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    service = SpeechService(PersonaStore(output / "readiness-state.db"), SovitsBackend(), output / "audio-cache")
+    service.profiles, service.bindings = load_voice_profiles(ROOT / "data/personas/voices.json")
+    started = time.perf_counter()
+    before = service.status(args.persona, 0)
+    try:
+        await service.health_check()
+        after_health = service.status(args.persona, 0)
+        while service.status(args.persona, 0) == "准备中" and time.perf_counter() - started < 35:
+            await asyncio.sleep(0.05)
+        final = service.status(args.persona, 0)
+        report = {"before":before, "after_health":after_health, "after_warmup":final,
+                  "seconds":round(time.perf_counter() - started, 3),
+                  "passed":before == after_health == "准备中" and final == "可用",
+                  "sent_messages":0, "voice_attempts":service.store.budget_used("speech", "global", time.time())}
+        (output / "readiness.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps(report, ensure_ascii=False), flush=True)
+        return 0 if report["passed"] else 1
+    finally:
+        await service.close()
 
 
 async def probe(args) -> int:
@@ -49,4 +74,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--persona", default="denia", choices=("denia", "tangtang"))
     parser.add_argument("--output", type=Path, default=ROOT / "reports" / "persona-voice-acceptance")
-    raise SystemExit(asyncio.run(probe(parser.parse_args())))
+    parser.add_argument("--readiness-only", action="store_true", help="Verify background warmup and readiness without sending QQ messages")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(probe_readiness(args) if args.readiness_only else probe(args)))

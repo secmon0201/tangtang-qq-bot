@@ -34,12 +34,13 @@ class SpeechResult:
 
 @dataclass(slots=True)
 class _SpeechJob:
-    context: ChatContext
+    context: ChatContext | None
     text: str
     voice: VoiceProfile
     deadline: float
     result: asyncio.Future
     active: bool = True
+    finished: bool = False
 
 
 def load_voice_profiles(path: Path) -> tuple[dict[str, VoiceProfile], dict[str, str]]:
@@ -87,6 +88,10 @@ class SpeechService:
         self._worker: asyncio.Task | None = None
         self._health_lock = asyncio.Lock()
         self._last_random: dict[int, float] = {}
+        self._healthy: dict[str, VoiceProfile] = {}
+        self._warmups: dict[str, _SpeechJob] = {}
+        self._warmup_monitors: set[asyncio.Task] = set()
+        self._warmup_retry_at: dict[tuple[str, str], float] = {}
 
     def voice(self, persona: str) -> VoiceProfile | None:
         return self.profiles.get(self.bindings.get(persona, ""))
@@ -117,17 +122,87 @@ class SpeechService:
         if self._health_lock.locked():
             return
         async with self._health_lock:
+            if not self.store.option("speech_enabled", True):
+                for key in tuple(self._healthy):
+                    self._invalidate_readiness(key)
+                return
             for voice in tuple(self.profiles.values()):
                 try:
                     healthy = await asyncio.wait_for(self.backend.health(voice), 4)
                 except Exception:
                     healthy = False
+                if self.profiles.get(voice.key) is not voice:
+                    continue
                 if healthy:
-                    self.ready.add(voice.key)
-                    self.faults.pop(voice.key, None)
+                    if self._healthy.get(voice.key) is not voice:
+                        self.ready.discard(voice.key)
+                    self._healthy[voice.key] = voice
+                    if voice.key not in self.ready:
+                        self._schedule_warmup(voice)
                 else:
-                    self.ready.discard(voice.key)
+                    self._invalidate_readiness(voice.key)
                     self.faults[voice.key] = "服务不可用或接口不兼容"
+
+    def _invalidate_readiness(self, key: str) -> None:
+        self.ready.discard(key)
+        self._healthy.pop(key, None)
+        job = self._warmups.get(key)
+        if job is not None:
+            job.active = False
+            job.result.cancel()
+
+    def _warmup_current(self, job: _SpeechJob) -> bool:
+        return (job.active and not self.configuration_fault
+                and self.store.option("speech_enabled", True)
+                and self.profiles.get(job.voice.key) is job.voice
+                and self._healthy.get(job.voice.key) is job.voice)
+
+    def _ensure_worker(self) -> None:
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.create_task(self._run_worker())
+
+    def _schedule_warmup(self, voice: VoiceProfile) -> None:
+        if (voice.key in self._warmups or self._queue.full()
+                or self.clock() < self._warmup_retry_at.get((voice.key, voice.version), 0)):
+            return
+        future = asyncio.get_running_loop().create_future()
+        job = _SpeechJob(None, "你好。", voice, self.clock() + self.timeout, future)
+        self._warmups[voice.key] = job
+        self.faults.pop(voice.key, None)
+        self._queue.put_nowait(job)
+        self._ensure_worker()
+        monitor = asyncio.create_task(self._monitor_warmup(job))
+        self._warmup_monitors.add(monitor)
+        monitor.add_done_callback(self._warmup_monitors.discard)
+
+    async def _monitor_warmup(self, job: _SpeechJob) -> None:
+        try:
+            await asyncio.wait_for(asyncio.shield(job.result), self.timeout)
+            if self._warmup_current(job) and self.clock() < job.deadline:
+                self.ready.add(job.voice.key)
+                self.faults.pop(job.voice.key, None)
+        except asyncio.CancelledError:
+            job.active = False
+            job.result.cancel()
+        except Exception:
+            job.active = False
+            job.result.cancel()
+            if self.profiles.get(job.voice.key) is job.voice:
+                self.ready.discard(job.voice.key)
+                self.faults[job.voice.key] = "预热失败或超时，等待后台重试"
+                self._warmup_retry_at[(job.voice.key, job.voice.version)] = self.clock() + 60
+        finally:
+            self._release_warmup(job)
+
+    def _release_warmup(self, job: _SpeechJob) -> None:
+        if job.finished and self._warmups.get(job.voice.key) is job:
+            self._warmups.pop(job.voice.key)
+
+    @staticmethod
+    def _validate_audio(audio: bytes) -> None:
+        with wave.open(io.BytesIO(audio), "rb") as wav:
+            if not 0 < wav.getnframes() / wav.getframerate() <= 60:
+                raise ValueError("invalid speech duration")
 
     async def _run_worker(self) -> None:
         while True:
@@ -135,21 +210,32 @@ class SpeechService:
             try:
                 if not job.active or self.clock() >= job.deadline:
                     continue
-                digest = hashlib.sha256(json.dumps((job.context.group_id, job.context.persona.key, job.voice.version, job.text), ensure_ascii=False).encode()).hexdigest()
-                path = self.cache_dir / (digest + ".wav")
-                if not path.exists():
+                if job.context is None:
+                    if not self._warmup_current(job):
+                        job.active = False
+                        continue
+                    # Warmup shares the only synthesis slot, bypasses reply
+                    # caches, and has no group quota, history or send capability.
                     audio = await self.backend.synthesize(job.text, job.voice)
-                    with wave.open(io.BytesIO(audio), "rb") as wav:
-                        if not 0 < wav.getnframes() / wav.getframerate() <= 60:
-                            raise ValueError("invalid speech duration")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(audio)
+                    self._validate_audio(audio)
+                    path = None
+                else:
+                    digest = hashlib.sha256(json.dumps((job.context.group_id, job.context.persona.key, job.voice.version, job.text), ensure_ascii=False).encode()).hexdigest()
+                    path = self.cache_dir / (digest + ".wav")
+                    if not path.exists():
+                        audio = await self.backend.synthesize(job.text, job.voice)
+                        self._validate_audio(audio)
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(audio)
                 if job.active and self.clock() < job.deadline and not job.result.done():
                     job.result.set_result(path)
             except Exception as exc:
                 if job.active and not job.result.done():
                     job.result.set_exception(exc)
             finally:
+                job.finished = True
+                if not job.active:
+                    self._release_warmup(job)
                 if not job.result.done():
                     if job.active:
                         job.result.set_exception(TimeoutError("speech queue deadline expired"))
@@ -173,8 +259,7 @@ class SpeechService:
             self._last_random[context.group_id] = self.clock()
             self.store.set_option(f"last_random_voice:{context.group_id}", self.clock(), invalidate=False)
         self.store.journal(context.request_id, context.persona.key, context.group_id, "synthesizing", text)
-        if self._worker is None or self._worker.done():
-            self._worker = asyncio.create_task(self._run_worker())
+        self._ensure_worker()
         future = asyncio.get_running_loop().create_future()
         job = _SpeechJob(context, text, voice, self.clock() + self.timeout, future)
         self._queue.put_nowait(job)
@@ -212,6 +297,10 @@ class SpeechService:
         return SpeechResult("delivered", message_id)
 
     async def close(self) -> None:
+        monitors = tuple(self._warmup_monitors)
+        for monitor in monitors:
+            monitor.cancel()
+        await asyncio.gather(*monitors, return_exceptions=True)
         if self._worker:
             self._worker.cancel()
             await asyncio.gather(self._worker, return_exceptions=True)

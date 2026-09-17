@@ -194,3 +194,194 @@ def test_merely_mentioning_source_group_does_not_make_personal_experience_local(
     result = write(k, '我希望你记住' + quote, [proposal(quote)])
     assert result.requested and result.status == 'saved'
     assert quote in k.recall(1002, 2001, '我的经历').prompt_text()
+
+
+def test_preference_can_be_corrected_back_without_resurrecting_old_evidence(tmp_path):
+    k = kernel(tmp_path)
+    first, second = '我喜欢草莓', '我不喜欢草莓'
+    write(k, '记住' + first, [proposal(first, 'preference')])
+    for text, event in ((second, 'two'), (first, 'three')):
+        update = proposal(text, 'preference', operation='correct', supersedes='s:1')
+        result = write(k, '更正，' + text, [update], event=event)
+        assert result.status == 'saved'
+    rows = k.recall(1002, 2001, '偏好').rows
+    assert len(rows) == 1 and rows[0]['content'] == first and rows[0]['version'] == 3
+    # Replaying a delayed delivery from version two must not reverse version three.
+    delayed = proposal(second, 'preference', operation='correct', supersedes='s:1')
+    write(k, '更正，' + second, [delayed], event='two', delivered=True)
+    assert k.recall(1002, 2001, '偏好').rows[0]['content'] == first
+    with k.people.connect() as conn:
+        versions = conn.execute('SELECT content FROM person_semantic_versions ORDER BY version').fetchall()
+    assert [row[0] for row in versions] == [first, second, first]
+
+
+@pytest.mark.parametrize('structured', [False, True])
+def test_explicit_remember_request_restores_forgotten_fact_consistently(tmp_path, structured):
+    k = kernel(tmp_path)
+    text = '我喜欢草莓'
+    updates = [proposal(text, 'preference')] if structured else []
+    assert write(k, '记住' + text, updates).status == 'saved'
+    k.apply_forget_request(1001, 2001, '忘记草莓')
+    assert write(k, text, updates, event='automatic', delivered=True).status == 'rejected'
+    result = write(k, '记住' + text, updates, event='two')
+    assert result.status == 'saved'
+    assert k.recall(1002, 2001, '偏好').rows
+
+
+@pytest.mark.parametrize('category', ['experience', 'commitment', 'alias'])
+def test_model_category_cannot_promote_stable_preference_as_single_event(tmp_path, category):
+    k = kernel(tmp_path)
+    text = '我喜欢草莓'
+    result = write(k, text, [proposal(text, category)], delivered=True)
+    assert result.status == 'rejected'
+    assert not k.recall(1002, 2001, '偏好').rows
+
+
+@pytest.mark.parametrize('field,bad', [('category', []), ('category', {}), ('operation', []), ('operation', {})])
+def test_malformed_model_fields_do_not_abort_other_valid_proposals(tmp_path, field, bad):
+    k = kernel(tmp_path)
+    text = '我上周参加了绘画比赛'
+    malformed = proposal(text)
+    malformed[field] = bad
+    assert validate_proposal(malformed, text)[0] is None
+    result = write(k, '记住' + text, [malformed, proposal(text)])
+    assert result.status == 'saved' and result.ids
+    assert result.reasons == ('invalid_category_or_operation',)
+
+
+@pytest.mark.parametrize('source', ['娅娅，以后叫我小林', '以后称呼我小林', '请叫我小林'])
+def test_natural_alias_request_is_explicit_and_durable(tmp_path, source):
+    k = kernel(tmp_path)
+    quote = '称呼我小林' if '称呼' in source else '叫我小林'
+    assert memory_requested(source)
+    result = write(k, source, [proposal(quote, 'alias')])
+    assert result.status == 'saved'
+    assert quote in k.recall(1002, 2001, '我叫什么').prompt_text()
+
+
+def test_partial_self_quote_cannot_strip_source_disclaimer(tmp_path):
+    k = kernel(tmp_path)
+    for source in ('我没有说我喜欢草莓', '我喜欢草莓是假的', '我喜欢草莓才怪'):
+        result = write(k, '记住' + source, [proposal('我喜欢草莓', 'preference')])
+        assert result.status == 'rejected'
+    assert not k.recall(1002, 2001, '偏好').rows
+
+
+def test_legacy_correction_reuses_new_target_without_reusing_old_version_source(tmp_path):
+    k = kernel(tmp_path)
+    write(k, '记住我叫小陈', [proposal('我叫小陈', 'alias')], event='one')
+    k.observe_user_message(group_id=1001, user_id=2001, message_id='old', text='记住我叫小林')
+    result = write(k, '更正，我叫小陈', [proposal('我叫小陈', 'alias', operation='correct', supersedes='f:1')], event='two')
+    assert result.status == 'saved'
+    assert '小林' not in k.recall(1002, 2001, '称呼').prompt_text()
+
+
+def test_delivery_evidence_for_previous_version_cannot_promote_new_version(tmp_path):
+    k = kernel(tmp_path)
+    first, second = '我喜欢草莓', '我喜欢西瓜'
+    write(k, first, [proposal(first, 'preference')], delivered=True)
+    # A candidate is not eligible as a correction target; no accidental promotion.
+    result = write(k, '更正，' + second, [proposal(second, 'preference', operation='correct', supersedes='s:1')], event='two')
+    assert result.status == 'rejected'
+    assert not k.recall(1002, 2001, '偏好').rows
+
+
+def test_correction_retains_local_scope_without_repeating_scope_directive(tmp_path):
+    k = kernel(tmp_path)
+    write(k, '只在本群记住我叫小林', [proposal('我叫小林', 'alias')])
+    update = proposal('我叫小陈', 'alias', operation='correct', supersedes='s:1')
+    assert write(k, '更正，我叫小陈', [update], event='two').status == 'saved'
+    assert '小陈' in k.recall(1001, 2001, '称呼').prompt_text()
+    assert not k.recall(1002, 2001, '称呼').rows
+    assert write(k, '更正，我叫小陈', [update], event='three', group=1002).status == 'rejected'
+
+
+def test_correction_to_existing_assertion_keeps_versions_and_archives_obsolete_row(tmp_path):
+    k = kernel(tmp_path)
+    first, second = '我喜欢草莓', '我不喜欢草莓'
+    write(k, '记住' + first, [proposal(first, 'preference')])
+    write(k, '记住' + second, [proposal(second, 'preference')], event='two')
+    result = write(k, '更正，' + second, [proposal(second, 'preference', operation='correct', supersedes='s:1')], event='three')
+    assert result.status == 'saved' and result.ids == ('s:2',)
+    rows = k.recall(1002, 2001, '偏好').rows
+    assert len(rows) == 1 and rows[0]['content'] == second
+    with k.people.connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM person_semantic_versions').fetchone()[0] == 3
+        assert conn.execute("SELECT status FROM person_semantic_memory WHERE id=1").fetchone()[0] == 'archived'
+
+
+@pytest.mark.parametrize('structured', [True, False])
+def test_expanding_preference_does_not_hide_current_assertion(tmp_path, structured):
+    k = kernel(tmp_path)
+    first, second = '我喜欢草莓', '我喜欢草莓和西瓜'
+    write(k, '记住' + first, [proposal(first, 'preference')] if structured else [])
+    updates = [proposal(second, 'preference', operation='correct', supersedes='s:1')] if structured else []
+    result = write(k, '更正，' + second, updates, event='two')
+    assert result.status == 'saved'
+    assert second in k.recall(1002, 2001, '偏好').prompt_text()
+
+
+def test_natural_alias_fallback_is_durable_but_embedded_alias_is_not(tmp_path):
+    k = kernel(tmp_path)
+    result = write(k, '娅娅，以后叫我小林', [])
+    assert result.status == 'saved'
+    assert '小林' in k.recall(1002, 2001, '我叫什么').prompt_text()
+    assert write(k, '记住他说叫我小陈', [], event='two').status == 'rejected'
+
+
+def test_delivery_confirmation_never_retries_prepared_write(tmp_path, monkeypatch):
+    k = kernel(tmp_path)
+    quote = '我去年参加了绘画比赛'
+    saved = write(k, '记住' + quote, [proposal(quote)])
+    with k.people.connect() as conn:
+        assert conn.execute('SELECT delivered FROM person_semantic_evidence').fetchone()[0] == 0
+    def fail(*_args, **_kwargs):
+        raise AssertionError('must not repeat extraction or save after receipt delivery')
+    monkeypatch.setattr(k.semantic, 'save', fail)
+    assert k.confirm_memory_delivery(saved, group_id=1001, message_id='one') == saved
+    with k.people.connect() as conn:
+        assert conn.execute('SELECT delivered FROM person_semantic_evidence').fetchone()[0] == 1
+        assert conn.execute('SELECT COUNT(*) FROM person_semantic_versions').fetchone()[0] == 1
+    failed = MemoryWriteResult(True, 'failed')
+    assert k.confirm_memory_delivery(failed, group_id=1001, message_id='failed') == failed
+
+
+def test_no_candidate_diagnostic_distinguishes_ordinary_chat_from_rejection(tmp_path):
+    result = write(kernel(tmp_path), '今天聊点什么', [], delivered=True)
+    assert result.reasons == ('no_personal_candidate',)
+
+
+@pytest.mark.parametrize('source', [
+    '娅娅，我现在喜欢什么？你还记得吗？', '我现在叫什么', '我现在不喜欢什么',
+    '你记住了吗', '记住什么意思', '我现在喜欢什么呢', '你知道我现在叫什么吗',
+])
+def test_recall_question_is_never_a_write_request(source):
+    assert not memory_requested(source)
+    result = MemoryWriteResult(False, 'deferred')
+    assert enforce_memory_confirmation(('你喜欢喝茶。',), result) == ('你喜欢喝茶。',)
+
+
+@pytest.mark.parametrize('source', ['我现在喜欢什么', '我现在叫什么', '请叫我什么'])
+def test_unpunctuated_recall_question_cannot_enter_fallback_memory(tmp_path, source):
+    k = kernel(tmp_path)
+    for event in ('one', 'two'):
+        assert write(k, source, [], delivered=True, event=event).status == 'rejected'
+    assert not k.recall(1002, 2001, '').rows
+
+
+def test_temporal_personal_experience_is_not_misclassified_as_stable_identity(tmp_path):
+    quote = '我是去年参加过配音比赛的'
+    result = write(kernel(tmp_path), quote, [proposal(quote)], delivered=True)
+    assert result.status == 'saved'
+
+
+@pytest.mark.parametrize('structured_correction', [True, False])
+def test_correction_suppresses_duplicate_across_legacy_and_semantic_stores(tmp_path, structured_correction):
+    k = kernel(tmp_path)
+    old, new = '我喜欢草莓', '我不喜欢草莓'
+    write(k, '记住' + old, [], event='legacy')
+    write(k, '记住' + old, [proposal(old, 'preference')], event='semantic')
+    updates = [proposal(new, 'preference', operation='correct', supersedes='s:1')] if structured_correction else []
+    assert write(k, '更正，' + new, updates, event='correction').status == 'saved'
+    rows = k.recall(1002, 2001, '草莓').rows
+    assert len(rows) == 1 and rows[0]['content'] == new

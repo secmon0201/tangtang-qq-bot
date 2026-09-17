@@ -21,8 +21,6 @@ class SemanticMemoryStore:
             return '', 'missing_source_message'
         if not explicit and not delivered:
             return '', 'not_delivered'
-        if self.people.blocked(user_id, group_id, proposal.quote):
-            return '', 'restricted'
         explicitly_local = re.search(r'(?:只|仅)(?:在|限)(?:本群|这个群|这群)|不(?:要|能)跨群', source)
         group_specific = proposal.category in {'alias', 'commitment'} and LOCAL_SCOPE.search(proposal.summary)
         scope = group_id if explicitly_local or group_specific else 0
@@ -31,12 +29,30 @@ class SemanticMemoryStore:
         event_key = f'{group_id}:{message_id}'
         with self.people.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            replay = conn.execute('SELECT m.id,m.status FROM person_semantic_memory m JOIN person_semantic_evidence e ON e.memory_id=m.id WHERE m.user_id=? AND m.scope_group=? AND m.normalized=? AND e.event_key=? AND m.status IN (\'active\',\'candidate\')',
-                                  (user_id, scope, clean, event_key)).fetchone()
+            if proposal.operation == 'correct' and not (explicitly_local or group_specific):
+                prefix, target = proposal.supersedes.split(':')
+                table = 'person_semantic_memory' if prefix == 's' else 'person_facts'
+                scoped = conn.execute(f'SELECT scope_group FROM {table} WHERE id=? AND user_id=? AND scope_group IN (0,?)',
+                                      (int(target), user_id, group_id)).fetchone()
+                if scoped is not None:
+                    scope = int(scoped[0])
+            # Evidence belongs to its original immutable source, including when
+            # a later correction has changed the row's current content.
+            replay = conn.execute('SELECT m.id,m.status,m.normalized FROM person_semantic_memory m JOIN person_semantic_evidence e ON e.memory_id=m.id WHERE m.user_id=? AND m.scope_group=? AND m.category=? AND e.event_key=? AND e.quote=? AND (m.normalized=? OR EXISTS (SELECT 1 FROM person_semantic_versions v WHERE v.memory_id=m.id AND v.content=? AND v.source_group=? AND v.source_message_id=?))',
+                                  (user_id, scope, proposal.category, event_key, proposal.quote, clean, proposal.summary, group_id, message_id)).fetchone()
             if replay is not None:
                 if delivered:
                     conn.execute('UPDATE person_semantic_evidence SET delivered=1 WHERE memory_id=? AND event_key=?', (replay['id'], event_key))
+                if replay['status'] not in {'active', 'candidate'} or replay['normalized'] != clean:
+                    return '', 'source_already_superseded'
                 return f"s:{replay['id']}", 'saved' if replay['status'] == 'active' else 'pending'
+            restrictions = conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND scope_group IN (0,?) AND active=1', (user_id, group_id)).fetchall()
+            forgotten = any(row[0] in normalize(proposal.quote) for row in restrictions)
+            if forgotten:
+                return '', 'restricted'
+            obsolete = conn.execute('SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1', (user_id, group_id)).fetchall()
+            if any(row[0] in normalize(proposal.quote) for row in obsolete) and not (explicit and proposal.operation == 'correct'):
+                return '', 'superseded'
             previous = None
             legacy_id = None
             if proposal.operation == 'correct':
@@ -60,13 +76,20 @@ class SemanticMemoryStore:
                 return '', 'restricted'
             if previous is not None and legacy_id is None:
                 if existing is not None and existing['id'] != previous['id']:
-                    return '', 'correction_duplicate_target'
-                memory_id = int(previous['id'])
-                version = int(previous['version']) + (previous['normalized'] != clean)
+                    # Preserve both version histories when correcting into an
+                    # independently saved assertion that already exists.
+                    conn.execute("UPDATE person_semantic_memory SET status='archived' WHERE id=?", (previous['id'],))
+                    memory_id, version = int(existing['id']), int(existing['version']) + 1
+                else:
+                    memory_id = int(previous['id'])
+                    version = int(previous['version']) + (previous['normalized'] != clean)
                 conn.execute('UPDATE person_semantic_memory SET content=?,normalized=?,tags=?,status=\'active\',version=?,updated_at=? WHERE id=?',
                              (proposal.summary, clean, tags, version, now, memory_id))
             elif existing is not None:
                 memory_id, version = int(existing['id']), int(existing['version'])
+                if legacy_id:
+                    version += 1
+                    conn.execute('UPDATE person_semantic_memory SET version=?,updated_at=? WHERE id=?', (version, now, memory_id))
             else:
                 # One delivered important experience/commitment is a valid
                 # event, not evidence of an enduring personality preference.
@@ -77,9 +100,11 @@ class SemanticMemoryStore:
             if previous is not None and previous['normalized'] != clean:
                 if legacy_id:
                     conn.execute("UPDATE person_facts SET status='archived' WHERE id=?", (legacy_id,))
-                conn.execute('INSERT INTO person_restrictions VALUES(?,?,?,1) ON CONFLICT(user_id,scope_group,needle) DO UPDATE SET active=1',
+                conn.execute('INSERT INTO person_superseded_memory VALUES(?,?,?,1) ON CONFLICT(user_id,scope_group,needle) DO UPDATE SET active=1',
                              (user_id, scope, previous['normalized']))
                 conn.execute('INSERT INTO person_memory_revision VALUES(1,1) ON CONFLICT(id) DO UPDATE SET revision=revision+1')
+            if previous is not None:
+                conn.execute('UPDATE person_superseded_memory SET active=0 WHERE user_id=? AND scope_group=? AND needle=?', (user_id, scope, clean))
             conn.execute('INSERT OR IGNORE INTO person_semantic_versions VALUES(?,?,?,?,?,?,?,?,?)',
                          (memory_id, version, proposal.summary, proposal.quote, tags, group_id, message_id, proposal.operation, now))
             conn.execute('INSERT OR IGNORE INTO person_semantic_evidence VALUES(?,?,?,?,?,?,?)',
@@ -109,8 +134,9 @@ class SemanticMemoryStore:
                 "SELECT *, (SELECT created_at FROM person_semantic_versions WHERE memory_id=person_semantic_memory.id AND version=person_semantic_memory.version) AS source_created_at FROM person_semantic_memory WHERE user_id=? AND scope_group IN (0,?) AND status='active'" + clause + " ORDER BY updated_at DESC,id DESC LIMIT 300",
                 (user_id, group_id, *[value for _sql, value in matches]) if query and matches else (user_id, group_id))]
         scored = []
+        obsolete = self.people.superseded(user_id, group_id)
         for row in rows:
-            if self.people.blocked(user_id, group_id, row['content']):
+            if row['normalized'] in obsolete or self.people.blocked(user_id, group_id, row['content'], include_superseded=False):
                 continue
             tags = set(json.loads(row['tags']))
             matched = sum(term in row['content'].lower() for term in query_bigrams)

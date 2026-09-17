@@ -566,6 +566,7 @@ class Database:
             self._migrate_today_wife_game_tables(connection)
             self._migrate_mini_game_tables(connection)
             self._migrate_group_domain_columns(connection)
+            self._initialize_chat_gate_revisions(connection)
             self._drop_retired_codex_task_tables(connection)
 
     @staticmethod
@@ -899,6 +900,47 @@ class Database:
                 f"UPDATE managed_groups SET {assignment},updated_at=? WHERE group_id=?",
                 (str(joined_at), utc_now(), int(group_id)),
             )
+
+    @staticmethod
+    def _initialize_chat_gate_revisions(connection: sqlite3.Connection) -> None:
+        """Remember gate transitions even when a request never observes the off state."""
+        connection.execute("""CREATE TABLE IF NOT EXISTS chat_gate_revisions (
+            scope INTEGER PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0)""")
+        specifications = (
+            ("group_features", "feature_key", "configured_enabled", "group_id",
+             ("mention_chat", "proactive_chat", "persona_voice", "persona_growth",
+              "persona_expressions", "persona_topics")),
+            ("passive_settings", "setting_key", "setting_value", None,
+             ("mention_chat_global_enabled", "proactive_chat_global_enabled", "automation_pause_active")),
+        )
+        # These identifiers and values are fixed project-owned schema constants.
+        for table, key, value, scope, relevant in specifications:
+            selected = ",".join(f"'{item}'" for item in relevant)
+            for operation in ("INSERT", "UPDATE", "DELETE"):
+                row = "OLD" if operation == "DELETE" else "NEW"
+                where = f"{row}.{key} IN ({selected})"
+                if operation == "UPDATE":
+                    where += f" AND NEW.{value} IS NOT OLD.{value}"
+                group = f"{row}.{scope}" if scope else "0"
+                connection.execute(f"""CREATE TRIGGER IF NOT EXISTS chat_gate_{table}_{operation.lower()}
+                    AFTER {operation} ON {table} WHEN {where}
+                    BEGIN
+                      INSERT INTO chat_gate_revisions(scope,revision) VALUES({group},1)
+                      ON CONFLICT(scope) DO UPDATE SET revision=revision+1;
+                    END""")
+        connection.execute("""CREATE TRIGGER IF NOT EXISTS chat_gate_managed_group_enabled
+            AFTER UPDATE OF enabled ON managed_groups WHEN NEW.enabled IS NOT OLD.enabled
+            BEGIN
+              INSERT INTO chat_gate_revisions(scope,revision) VALUES(NEW.group_id,1)
+              ON CONFLICT(scope) DO UPDATE SET revision=revision+1;
+            END""")
+
+    def chat_gate_revision(self, group_id: int) -> tuple[int, int]:
+        """Global plus current-group generation, unaffected by other groups' toggles."""
+        with self.connect() as connection:
+            values = {int(row["scope"]): int(row["revision"]) for row in connection.execute(
+                "SELECT scope,revision FROM chat_gate_revisions WHERE scope IN (0,?)", (int(group_id),))}
+        return values.get(0, 0), values.get(int(group_id), 0)
 
     def group_features(self, group_id: int) -> dict[str, bool]:
         with self.connect() as connection:

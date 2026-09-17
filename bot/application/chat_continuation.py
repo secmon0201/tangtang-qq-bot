@@ -153,6 +153,15 @@ class ContinuationCoordinator:
             return False
         now = self.clock()
         key = (int(event.group_id), int(event.user_id))
+        # A replayed member of an earlier burst must not absorb new text and
+        # make the entire fresh burst fail the final atomic replay guard.
+        message_id = str(event.message_id)
+        if (self.personas.store.request_claimed(context.request_id, now)
+                or any(burst.context.group_id == key[0]
+                       and any(str(item.message_id) == message_id for item in burst.events)
+                       for burst in (*self.pending.values(), *self.dispatched.values()))):
+            self.dispatcher.trace(key[0], context.request_id, "dropped", "burst_replay")
+            return True
         pending = self.pending.get(key)
         if pending and (not self._burst_current(pending)
                         or pending.context.persona != context.persona
@@ -160,8 +169,6 @@ class ContinuationCoordinator:
             self._cancel(key)
             pending = None
         if pending:
-            if str(event.message_id) in {str(item.message_id) for item in pending.events}:
-                return True
             limits = self.config()
             if (len(pending.events) >= limits.max_messages
                     or sum(len(item.get_plaintext()) for item in pending.events) + len(event.get_plaintext()) > limits.max_chars):

@@ -8,7 +8,7 @@ from bot.config import ROOT, settings
 from bot.integrations.sovits import SovitsBackend
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_store import PersonaStore
-from bot.services.runtime import group_domains, passive_settings
+from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.speech import SpeechService
 from bot.services.tangtang_runtime import config_loader
 from bot.services.tangtang_db import TangtangDb
@@ -30,4 +30,5 @@ def persona_engine() -> PersonaEngine:
         history_db=TangtangDb(),
         feature_enabled=lambda group, feature: group_domains().effective_feature_enabled(group, feature),
         chat_enabled=chat_enabled,
+        gate_revision=lambda group: database().chat_gate_revision(group),
         configuration_version=lambda: hashlib.sha256(repr(config_loader.load()).encode()).hexdigest())

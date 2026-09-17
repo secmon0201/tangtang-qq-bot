@@ -13,9 +13,10 @@ from bot.plugins.scope import (
     is_managed_group,
     mention_chat_is_available,
 )
-from bot.config import settings
 from bot.services.roles import UserRole
 from bot.services.zhijiang_live_guard import LiveSchedule
+
+TEST_GROUP_ID = 1001
 
 
 def test_legacy_a_coast_ranking_alias_uses_the_speech_ranking_switch(monkeypatch):
@@ -43,7 +44,7 @@ def test_external_game_commands_are_not_gated_by_the_mini_game_switch():
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -71,7 +72,7 @@ def test_game_menu_remains_available_while_gameplay_is_paused(monkeypatch):
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -85,7 +86,7 @@ def test_domain_game_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -99,7 +100,7 @@ def test_domain_game_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
     class Domains:
         @staticmethod
         def feature_enabled(group_id, feature):
-            assert int(group_id) == int(settings.managed_group_ids[0])
+            assert int(group_id) == TEST_GROUP_ID
             assert feature == "mini_games"
             return False
 
@@ -111,6 +112,8 @@ def test_domain_game_rankings_are_blocked_in_a_closed_game_group(monkeypatch):
     monkeypatch.setattr(scope, "GroupMessageEvent", GroupEvent)
     monkeypatch.setattr(scope, "passive_settings", lambda: Scopes())
     monkeypatch.setattr(scope, "group_domains", lambda: Domains())
+    monkeypatch.setattr(scope, "database", lambda: SimpleNamespace(
+        is_managed_group=lambda group_id: group_id == TEST_GROUP_ID))
     assert scope.is_disabled_game_command(GroupEvent())
 
 
@@ -118,7 +121,7 @@ def test_today_wife_commands_are_independent_from_the_game_switch(monkeypatch):
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -142,7 +145,7 @@ def test_today_wife_clear_command_is_independent_from_the_game_switch(monkeypatc
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -231,7 +234,7 @@ def test_live_guard_reminder_mentions_a_normal_user_and_the_current_stream(monke
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -282,7 +285,7 @@ def test_live_guard_reminder_replies_to_operators_during_a_live_pause(monkeypatc
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):
@@ -332,7 +335,7 @@ def test_live_guard_reminder_stays_silent_for_manual_game_closures(monkeypatch):
     import bot.plugins.scope as scope
 
     class GroupEvent:
-        group_id = settings.managed_group_ids[0]
+        group_id = TEST_GROUP_ID
         user_id = 7
 
         def get_plaintext(self):

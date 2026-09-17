@@ -29,6 +29,7 @@ TOPICS = {
 _CATEGORY_TOPIC = {'alias': '称呼', 'self_description': '身份', 'preference': '偏好',
                    'experience': '经历', 'commitment': '约定'}
 _REQUEST = re.compile(r'^(?:(?:娅娅|糖糖|达妮娅)[，,：: ]*)?(?:(?:只|仅)在(?:本群|这个群))?(?:请|帮我)?记住(?:一下)?|(?:更正|纠正|修改)(?:一下)?[，,：: ]*(?:我|之前|刚才|记忆|称呼|昵称|只在|仅在)|我(?:现在|其实)(?:叫|不再喜欢|不喜欢|喜欢)|我不再喜欢')
+_ALIAS_REQUEST = re.compile(r'^(?:(?:娅娅|糖糖|达妮娅)[，,：: ]*)?(?:(?:只|仅)?在?(?:本群|这个群)[，,：: ]*)?(?:以后|今后)?(?:请|就)?(?:叫我|称呼我)[^。！？!?\n]{1,30}[。！!]*$')
 _UNSAFE = re.compile(r'忽略|系统|提示词|开发者|执行|指令|权限|管理员|无条件|真理|永远服从|主人|恋人|男友|女友|只属于|假装|扮演|开玩笑|假如|如果|说假的|虚构|撒谎|他说|她说|转发|引用|别人|有人说|[“”"\[\]@？?]')
 _LOCAL_CONTEXT = re.compile(r'这个话题|当前话题|本群正在|群里正在|大家正在|这个群今天|群内约定')
 _SELF = re.compile(r'^(?:我(?!们|说|问|叫你|觉得|认为)|(?:请)?(?:叫我|称呼我)|(?:本群|这个群)(?:叫我|称呼我))')
@@ -69,8 +70,26 @@ class MemoryWriteResult:
 
 
 def memory_requested(text: str) -> bool:
-    requested = _REQUEST.search(str(text)) or re.search(r'(?:希望你|我想让你|帮我|麻烦你)(?:能|把)?[^。！？!?]{0,12}(?:记住|记下|记一下)', str(text))
-    return bool(requested) and not bool(re.search(r'不要记住|别记住|不用记住|忘记|恢复.*记忆|记住了吗|记住了没', str(text)))
+    source = str(text)
+    if re.search(r'不要记住|别记住|不用记住|忘记|恢复.*记忆|记住了吗|记住了没|记住(?:是什么|什么意思)', source):
+        return False
+    requested = _REQUEST.search(source) or _ALIAS_REQUEST.search(source) or re.search(r'(?:希望你|我想让你|帮我|麻烦你)(?:能|把)?[^。！？!?]{0,12}(?:记住|记下|记一下)', source)
+    if not requested:
+        return False
+    # "我现在喜欢什么？" is retrieval, not the declaration "我现在喜欢茶".
+    # Only actual writing directives may contain a courtesy question suffix.
+    directive = re.search(r'记住|记下|记一下|更正|纠正|修改|(?:以后|今后|请)(?:叫我|称呼我)', source)
+    if not directive and re.search(r'[？?]|什么|是谁|叫什么|多少|哪(?:个|种|里)|怎么|是否|是不是|(?:吗|么|呢)[。！!]*$', source):
+        return False
+    return True
+
+
+def requested_alias(text: str) -> str:
+    """Return only a direct alias instruction, never an embedded quotation."""
+    if not _ALIAS_REQUEST.fullmatch(text) or _UNSAFE.search(text) or THIRD_PARTY.search(text):
+        return ''
+    match = re.search(r'(?:叫我|称呼我)[^。！？!?\n]{1,30}', text)
+    return match[0] if match else ''
 
 
 def semantic_topics(text: str) -> set[str]:
@@ -85,7 +104,7 @@ def validate_proposal(raw: Any, source: str) -> tuple[MemoryProposal | None, str
     summary = raw.get('summary', quote)
     operation = raw.get('operation', 'remember')
     supersedes = raw.get('supersedes', '') or ''
-    if category not in CATEGORIES or operation not in {'remember', 'correct'}:
+    if not isinstance(category, str) or not isinstance(operation, str) or category not in CATEGORIES or operation not in {'remember', 'correct'}:
         return None, 'invalid_category_or_operation'
     if not isinstance(quote, str) or not isinstance(summary, str):
         return None, 'invalid_quote'
@@ -99,12 +118,20 @@ def validate_proposal(raw: Any, source: str) -> tuple[MemoryProposal | None, str
     if _LOCAL_CONTEXT.search(quote) or not _SELF.search(summary):
         return None, 'not_personal_assertion'
     before = source[:source.find(quote)].rstrip(' ：:')
-    if re.search(r'不是|并非|别以为|不代表|听说|的朋友|的同学', before[-8:]) or re.match(r'我的(?:朋友|同学|父亲|母亲|爸爸|妈妈|同事|家人)', summary):
+    after = source[source.find(quote) + len(quote):].lstrip(' ，,')
+    if re.search(r'不是|并非|别以为|不代表|听说|没(?:有)?说|的朋友|的同学', before[-8:]) or re.match(r'我的(?:朋友|同学|父亲|母亲|爸爸|妈妈|同事|家人)', summary) or re.match(r'(?:是假的|才怪|不是真的|是玩笑)', after):
         return None, 'not_personal_assertion'
-    if re.search(r'(?:吗|么|呢)[！!。]*$', summary) or re.search(r'我(?:是问|叫你|觉得|认为)', summary):
+    if re.search(r'(?:吗|么|呢)[！!。]*$', summary) or re.search(r'我(?:是问|叫你|觉得|认为)|(?:叫|称呼|喜欢|讨厌)(?:什么|谁|哪)|^我(?:现在|其实)?是(?:谁|什么|哪)', summary):
         return None, 'question_or_opinion'
     if re.search(r'我(?:喜欢|爱|讨厌|想念)(?:你|娅娅|糖糖|达妮娅)', summary):
         return None, 'relationship_instruction'
+    # A model label must not turn a stable preference or identity into an
+    # automatically approved one-off event and bypass the evidence threshold.
+    obvious = ('alias' if re.match(r'^(?:(?:本群|这个群))?(?:请)?(?:叫我|称呼我)|^我(?:现在|其实)?叫', summary)
+               else 'preference' if re.match(r'^我(?:现在|已经|其实)?(?:最喜欢|不再喜欢|不喜欢|喜欢|讨厌|的爱好是)', summary)
+               else 'self_description' if re.match(r'^我是(?!在|从|于|去年|今年|上周|上个月|今天|昨天|前天|第一次|第\d+次)', summary) else '')
+    if obvious and category != obvious:
+        return None, 'category_conflicts_with_assertion'
     if operation == 'correct' and (not isinstance(supersedes, str) or not re.fullmatch(r'[sf]:[1-9]\d*', supersedes)):
         return None, 'missing_correction_target'
     tags = raw.get('tags', raw.get('keywords', []))

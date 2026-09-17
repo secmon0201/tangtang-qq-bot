@@ -1,8 +1,9 @@
 import pytest
 
-from bot.config import settings
 from bot.db import Database
 from bot.services.passive_settings import PassiveSettings, PassiveSettingsStore
+
+TEST_GROUP_IDS = (1001, 1002)
 
 
 @pytest.fixture(autouse=True)
@@ -13,7 +14,7 @@ def isolated_scope_defaults(monkeypatch):
     monkeypatch.setattr(
         "bot.services.passive_settings.settings",
         SimpleNamespace(
-            managed_group_ids=settings.managed_group_ids,
+            managed_group_ids=TEST_GROUP_IDS,
             duplicate_group_ids=(),
             game_group_ids=(),
             game_api_group_ids=(),
@@ -35,8 +36,8 @@ def test_passive_settings_updates_are_persistent(tmp_path):
     db = Database(tmp_path / "bot.db")
     defaults = PassiveSettings(0.3, 10, 0.1, 900, 50)
     store = PassiveSettingsStore(db, defaults)
-    group_id = settings.managed_group_ids[0]
-    other_group_id = settings.managed_group_ids[1]
+    group_id = TEST_GROUP_IDS[0]
+    other_group_id = TEST_GROUP_IDS[1]
     store.add_group(group_id)
     store.add_group(other_group_id)
 
@@ -55,7 +56,7 @@ def test_passive_settings_persist_zero_cooldowns_and_repeat_interval(tmp_path):
     db = Database(tmp_path / "bot.db")
     defaults = PassiveSettings(0.3, 10, 0.1, 900, 50)
     store = PassiveSettingsStore(db, defaults)
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
     store.add_group(group_id)
 
     store.set_reaction_cooldown_seconds(group_id, 0)
@@ -69,7 +70,7 @@ def test_triple_repeat_switch_is_persistent(tmp_path):
     db = Database(tmp_path / "bot.db")
     defaults = PassiveSettings(0.3, 10, 0.1, 900, 50)
     store = PassiveSettingsStore(db, defaults)
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
     store.add_group(group_id)
 
     assert not store.for_group(group_id).triple_repeat_enabled
@@ -82,7 +83,7 @@ def test_triple_repeat_probability_is_persistent(tmp_path):
     db = Database(tmp_path / "bot.db")
     defaults = PassiveSettings(0.3, 10, 0.1, 900, 50)
     store = PassiveSettingsStore(db, defaults)
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
     store.add_group(group_id)
 
     assert store.for_group(group_id).triple_repeat_probability == 0.30
@@ -94,7 +95,7 @@ def test_triple_repeat_probability_is_persistent(tmp_path):
 def test_passive_group_settings_are_materialized_as_independent_records(tmp_path):
     db = Database(tmp_path / "bot.db")
     store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
 
     store.add_group(group_id)
 
@@ -112,7 +113,7 @@ def test_passive_group_settings_are_materialized_as_independent_records(tmp_path
 def test_passive_group_scope_is_persistent_and_restricted_to_managed_groups(tmp_path):
     db = Database(tmp_path / "bot.db")
     store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
 
     store.add_group(group_id)
     assert store.is_group_enabled(group_id)
@@ -127,7 +128,7 @@ def test_passive_group_scope_is_persistent_and_restricted_to_managed_groups(tmp_
 def test_feature_group_scopes_are_independent_and_persistent(tmp_path):
     db = Database(tmp_path / "bot.db")
     store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
 
     store.add_feature_group("duplicate", group_id)
     assert store.is_feature_group_enabled("duplicate", group_id)
@@ -146,7 +147,7 @@ def test_feature_group_scopes_are_independent_and_persistent(tmp_path):
 def test_game_mute_defaults_to_enabled_until_explicitly_disabled(tmp_path):
     db = Database(tmp_path / "bot.db")
     store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
-    group_id = settings.managed_group_ids[0]
+    group_id = TEST_GROUP_IDS[0]
 
     store.add_feature_group("game", group_id)
     assert store.is_game_mute_enabled(group_id)
@@ -162,7 +163,7 @@ def test_global_game_switch_is_enabled_by_default_and_persistent(tmp_path):
     db = Database(tmp_path / "bot.db")
     store = PassiveSettingsStore(db, PassiveSettings(0.3, 10, 0.1, 900, 50))
 
-    assert store.groups("game") == frozenset(settings.managed_group_ids)
+    assert store.groups("game") == frozenset(TEST_GROUP_IDS)
     assert store.is_game_globally_enabled()
     assert not store.set_game_globally_enabled(False)
     assert not PassiveSettingsStore(db).is_game_globally_enabled()

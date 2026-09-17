@@ -88,6 +88,12 @@ class PersonaStore:
     def claim_request(self, request_id: str, now: float) -> bool:
         return self.claim_requests((request_id,), now)
 
+    def request_claimed(self, request_id: str, now: float) -> bool:
+        """Read the shared replay guard without reserving a future model turn."""
+        with self.connect() as conn:
+            return conn.execute("SELECT 1 FROM claims WHERE request_id=? AND claimed_at>=?",
+                                (request_id, now - 86400)).fetchone() is not None
+
     def claim_requests(self, request_ids: tuple[str, ...], now: float) -> bool:
         ids = tuple(dict.fromkeys(request_ids))
         if not ids:

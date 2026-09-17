@@ -1950,9 +1950,7 @@ class TangtangService:
         if _matches(self._hard_terms(), self._hard_patterns(), text):
             self._write_usage(config, group_id, user_id, "hard_block", mode=None, tokens={})
             return
-        if continuation_turn() is not None:
-            if self.proactive_text_allowed(text):
-                await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
+        if continuation_turn() is not None and not self.proactive_text_allowed(text):
             return
         group_identity_answer = self._group_identity_answer(group_id, call_text)
         context = self._turn.get()
@@ -2003,6 +2001,9 @@ class TangtangService:
             )
             if handled:
                 return
+        if continuation_turn() is not None:
+            await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
+            return
         if (
             voice_request(text) != "voice"
             and not memory_requested(text)
@@ -2408,6 +2409,12 @@ class TangtangService:
         source_memory = event.get_plaintext().strip()
         memory_source_id = ",".join(str(mid) for mid in getattr(event, "source_message_ids", (event.message_id,)))
         updates = reply_plan.memory_updates if reply_plan else ()
+        # A persistence receipt changes the wording, never the original voice
+        # decision. In particular it cannot erase a refusal/success-promise
+        # conflict and accidentally make an invalid voice plan speakable.
+        if reply_plan and not choose_delivery(reply_plan, source_memory,
+                available=True, random_candidate=True).voice:
+            reply_plan = replace(reply_plan, voice="text")
         receipt = self.memory.prepare_memory(group_id=group_id, user_id=user_id,
             message_id=memory_source_id, text=source_memory,
             proposals=updates, enabled=config.memory_enabled)
@@ -2554,13 +2561,9 @@ class TangtangService:
             self._write_usage(config, group_id, user_id, "error", mode=mode, tokens=tokens)
             return
         delivered_text = "\n".join(delivered)
+        created_at = self._now()
+        source_text = call_text if call_text is not None else event.get_plaintext().strip()
         try:
-            created_at = self._now()
-            source_text = (
-                call_text
-                if call_text is not None
-                else event.get_plaintext().strip()
-            )
             call_id = self.db.insert_call(
                 group_id=group_id,
                 user_id=user_id,
@@ -2572,26 +2575,37 @@ class TangtangService:
                 created_at=created_at,
             )
             self.db.insert_reply_parts(call_id, delivery_rows, created_at=created_at)
-            context = self._turn.get()
-            if context and self.personas:
+        except Exception as exc:
+            logger.warning("Tangtang history record failed: {}", type(exc).__name__)
+        if context and self.personas:
+            try:
                 self.personas.observe(context, source_text, delivered_text)
+            except Exception as exc:
+                logger.warning("Persona growth evidence record failed: {}", type(exc).__name__)
+            try:
                 if context.persona.key != "tangtang":
                     self.db.insert_group_message(group_id=group_id, user_id=user_id,
                         nickname="群友", text=source_text, message_id=context.request_id, created_at=created_at)
-            if config.memory_enabled:
-                memory_result = self.memory.commit_delivered_memory(
-                    group_id=group_id,
-                    user_id=user_id,
-                    message_id=memory_source_id,
-                    text=source_memory,
-                    proposals=updates,
-                )
+            except Exception as exc:
+                logger.warning("Persona group context record failed: {}", type(exc).__name__)
+        if config.memory_enabled:
+            try:
+                if receipt.requested:
+                    memory_result = self.memory.confirm_memory_delivery(receipt,
+                        group_id=group_id, message_id=memory_source_id)
+                else:
+                    memory_result = self.memory.commit_delivered_memory(
+                        group_id=group_id, user_id=user_id,
+                        message_id=memory_source_id, text=source_memory, proposals=updates)
                 self._write_usage(config, group_id, user_id, "memory_committed", mode=mode, tokens={},
                     detail=f"status={memory_result.status}; ids={','.join(memory_result.ids)}; reasons={','.join(memory_result.reasons)}")
-            if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
+            except Exception as exc:
+                logger.warning("Persona personal memory record failed: {}", type(exc).__name__)
+        if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
+            try:
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
-        except Exception as exc:
-            logger.warning("Tangtang history record failed: {}", exc)
+            except Exception as exc:
+                logger.warning("Persona relationship update failed: {}", type(exc).__name__)
         self._write_usage(
             config,
             group_id,

@@ -25,11 +25,13 @@ class PersonaEngine:
                  feature_enabled: Callable[[int, str], bool],
                  chat_enabled: Callable[[int, bool], bool],
                  configuration_version: Callable[[], str] | None = None,
+                 gate_revision: Callable[[int], tuple[int, int]] | None = None,
                  profiles: dict[str, PersonaProfile] | None = None,
                  history_db: TangtangDb | None = None) -> None:
         self.store, self.speech = store, speech
         self.feature_enabled, self.chat_enabled = feature_enabled, chat_enabled
         self.configuration_version = configuration_version or (lambda: "")
+        self.gate_revision = gate_revision or (lambda group_id: (0, 0))
         self.profiles = profiles or load_personas()
         self.expressions = ExpressionSelection(store)
         for profile in self.profiles.values():
@@ -49,13 +51,14 @@ class PersonaEngine:
         message_id = str(getattr(event, "message_id", "") or uuid.uuid4().hex)
         return ChatContext(self.profiles[persona], group_id, int(event.user_id),
                            f"{group_id}:{message_id}", revision, self.store.revision(), model, proactive,
-                           self.configuration_version())
+                           self.configuration_version(), self.gate_revision(group_id))
 
     def current(self, context: ChatContext) -> bool:
         return (self.store.selection(context.group_id) == (context.persona.key, context.selection_revision)
                 and self.store.revision() == context.settings_revision
                 and self.profiles[context.persona.key].version == context.persona.version
                 and self.configuration_version() == context.configuration_version
+                and self.gate_revision(context.group_id) == context.gate_revision
                 and self.chat_enabled(context.group_id, context.proactive))
 
     def history(self, persona: str, default: TangtangDb) -> TangtangDb:

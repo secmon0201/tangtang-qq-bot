@@ -12,7 +12,7 @@ from bot.services.persona_memory_store import PersonMemoryStore, LOCAL_SCOPE
 from bot.services.persona_memory_quality import extract_personal_fact
 from bot.services.persona_recognition import identity_question, recognition_prompt
 from bot.services.persona_memory_contract import (
-    MemoryWriteResult, memory_instruction, memory_requested, validate_proposal,
+    MemoryWriteResult, memory_instruction, memory_requested, requested_alias, validate_proposal,
 )
 from bot.services.persona_semantic_memory import SemanticMemoryStore
 
@@ -125,6 +125,26 @@ class TangtangMemoryKernel:
         return self._write_personal_memory(group_id, user_id, str(message_id), text,
                                            proposals, requested=requested, delivered=True)
 
+    def confirm_memory_delivery(self, result: MemoryWriteResult, *, group_id: int,
+                                message_id: str | int) -> MemoryWriteResult:
+        """Acknowledge the already prepared write without retrying its mutation.
+
+        In particular, a failed save receipt cannot become a successful write
+        after the user has received that failure. The next explicit request is
+        the only opportunity to try that write again.
+        """
+        semantic_ids = [int(value[2:]) for value in result.ids if re.fullmatch(r's:[1-9]\d*', value)]
+        if semantic_ids:
+            try:
+                with self.people.connect() as conn:
+                    for memory_id in semantic_ids:
+                        conn.execute('UPDATE person_semantic_evidence SET delivered=1 WHERE memory_id=? AND event_key=?',
+                                     (memory_id, f'{group_id}:{message_id}'))
+            except Exception as exc:
+                return MemoryWriteResult(result.requested, result.status, result.ids,
+                                         (*result.reasons, 'delivery_evidence_' + type(exc).__name__))
+        return result
+
     def _write_personal_memory(self, group_id: int, user_id: int, message_id: str,
                                text: str, proposals, *, requested: bool,
                                delivered: bool) -> MemoryWriteResult:
@@ -140,6 +160,11 @@ class TangtangMemoryKernel:
                 if proposal is None:
                     reasons.append(reason)
                     continue
+                if (requested and proposal.operation == 'remember' and message_id
+                        and not re.search(r'(?:只|仅)(?:在|限)(?:本群|这个群|这群)|不(?:要|能)跨群', text)):
+                    # Match the established explicit re-remember contract. A
+                    # normal observation or correction never lifts forgetting.
+                    self.people.restrict(user_id, 0, proposal.summary, restore=True)
                 memory_id, status = self.semantic.save(proposal, group_id=group_id,
                     user_id=user_id, message_id=message_id, source=text,
                     now=self._now(), explicit=requested, delivered=delivered)
@@ -158,6 +183,8 @@ class TangtangMemoryKernel:
                         row = conn.execute('SELECT status FROM person_facts WHERE id=?', (fallback,)).fetchone()
                     ids.append(f'f:{fallback}')
                     statuses.append('saved' if row and row['status'] == 'active' else 'pending')
+            if not ids and not reasons:
+                reasons.append('no_personal_candidate')
             status = 'saved' if 'saved' in statuses else 'pending' if statuses else 'rejected'
             result = MemoryWriteResult(requested, status, tuple(dict.fromkeys(ids)), tuple(dict.fromkeys(reasons)))
             self.semantic.review(result, group_id=group_id, user_id=user_id,
@@ -183,6 +210,8 @@ class TangtangMemoryKernel:
         ):
             return None
         extracted = extract_personal_fact(clean)
+        if extracted is None and (alias := requested_alias(clean)):
+            extracted = extract_personal_fact('记住' + alias)
         if extracted is None:
             return None
         content, explicit = extracted
@@ -194,6 +223,7 @@ class TangtangMemoryKernel:
         correction = bool(re.search(r"更正|改一下|我现在|我不再|其实我", clean))
         if correction:
             status = 'active'
+            kind = 'explicit'
         if explicit and not local_scope:
             # Only an explicit new remember request may lift an old tombstone.
             self.people.restrict(user_id, 0, content, restore=True)

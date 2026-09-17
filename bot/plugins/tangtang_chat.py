@@ -20,6 +20,7 @@ from bot.application.local_features import (
 )
 from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.chat_dispatch import dispatcher
+from bot.services.continuation_policy import continuation_turn
 from bot.services.game_api_gate import GAME_COMMAND_RE
 from bot.services.tangtang_chat import (
     TangtangConfig,
@@ -55,6 +56,11 @@ async def _feature_router(
     )
     decision = classify_local_feature(text, cluster_labels=cluster_labels, call_keyword=config.call_keyword)
     if decision is None:
+        # Continuation's model attempt is charged by the shared chat path.
+        # Keep deterministic tool requests working without starting a second,
+        # unmetered classifier model before that admission point.
+        if continuation_turn() is not None:
+            return False, {}
         profile = next(p for p in persona_engine().profiles.values() if p.call_keyword == config.call_keyword)
         decision, usage = await feature_classifier.classify(config, text, persona_name=profile.name)
     else:

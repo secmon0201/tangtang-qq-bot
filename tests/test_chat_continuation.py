@@ -16,7 +16,8 @@ def make_case(tmp_path, *, config=None, sleeper=asyncio.sleep):
     enabled = {1001: True, 1002: True}
     revision = [0]
     profile = PersonaProfile("denia", "达妮娅", "娅娅", tmp_path, "v1")
-    personas = SimpleNamespace(current=lambda c: c.selection_revision == revision[0])
+    personas = SimpleNamespace(current=lambda c: c.selection_revision == revision[0],
+                               store=SimpleNamespace(request_claimed=lambda *_: False))
     store = ContinuationStore(tmp_path / "continuation.db")
     dispatcher = ChatDispatcher()
     calls = []
@@ -288,6 +289,66 @@ def test_other_addressee_and_unknown_quotes_do_not_resume():
     assert has_other_addressee(own)
 
 
+def test_addressee_detection_survives_real_onebot_quote_normalization():
+    from nonebot.adapters.onebot.v11.bot import _check_reply
+    from tests.test_tangtang_chat import group_message
+
+    async def scenario():
+        for quoted_user in (2, 4001):
+            async def get_msg(**kwargs):
+                return {"time": 100, "message_type": "group", "message_id": 7,
+                        "real_id": 7, "sender": {"user_id": quoted_user}, "message": "之前的话"}
+            quoted = group_message(group_id=1001, user_id=2001,
+                text=f"[CQ:reply,id=7][CQ:at,qq={quoted_user}]然后呢")
+            await _check_reply(SimpleNamespace(get_msg=get_msg), quoted)
+            assert quoted.message.extract_plain_text() == "然后呢"
+            assert not any(s.type in {"reply", "at"} for s in quoted.message)
+            assert has_other_addressee(quoted) is (quoted_user != 2)
+        unknown = group_message(group_id=1001, text="[CQ:reply,id=7]然后呢")
+        assert has_other_addressee(unknown)
+    asyncio.run(scenario())
+
+
+def test_replayed_queued_supplement_does_not_join_a_later_burst(tmp_path):
+    async def scenario():
+        c, now, _, _, calls, ctx = make_case(tmp_path)
+        c.outcome(ctx(message(now[0], mid=10)), "reply")
+        release = asyncio.Event()
+        async def busy():
+            await release.wait()
+        c.dispatcher.submit(1001, busy)
+        first = message(now[0], "继续聊海边旅行", mid=11)
+        supplement = message(now[0], "暑假人是不是太多", mid=12)
+        assert c.offer(object(), first, object(), ctx(first), explicit=False)
+        assert c.offer(object(), supplement, object(), ctx(supplement), explicit=False)
+        await asyncio.gather(*(p.task for p in tuple(c.pending.values())))
+        assert len(c.dispatched) == 1
+        assert c.offer(object(), supplement, object(), ctx(supplement), explicit=False)
+        assert not c.pending
+        fresh = message(now[0], "秋天去怎么样", mid=13)
+        assert c.offer(object(), fresh, object(), ctx(fresh), explicit=False)
+        await asyncio.gather(*(p.task for p in tuple(c.pending.values())))
+        release.set()
+        await asyncio.gather(*tuple(c.dispatcher.tasks.values()))
+        assert [text for _, text, _ in calls] == ["继续聊海边旅行\n暑假人是不是太多", "秋天去怎么样"]
+        await c.close()
+    asyncio.run(scenario())
+
+
+def test_persistent_replay_precheck_is_readonly_and_uses_shared_expiry(tmp_path):
+    from bot.services.persona_store import PersonaStore
+    path = tmp_path / "personas.db"
+    store = PersonaStore(path)
+    assert not store.request_claimed("1001:77", 100000)
+    assert store.claim_request("1001:77", 100000)
+    restored = PersonaStore(path)
+    assert restored.request_claimed("1001:77", 100001)
+    assert not restored.request_claimed("1002:77", 100001)
+    assert not restored.claim_request("1001:77", 100001)
+    assert not restored.request_claimed("1001:77", 186401)
+    assert restored.claim_request("1001:77", 186401)
+
+
 def test_plugin_routes_followup_once_and_excludes_commands_and_other_people(tmp_path, monkeypatch):
     from tests.test_tangtang_chat import group_message, enabled_config, enable_plugin_group_features
     import bot.plugins.tangtang_chat as plugin
@@ -345,6 +406,80 @@ def test_real_service_merged_call_then_ordinary_followup_uses_one_shared_model_p
         await drain(c)
         assert len(sent) == 2 and len(provider.seen) == 2
         assert "续聊" in provider.seen[-1][1]
+        # A replay must not poison a new supplement merged in the same debounce.
+        assert c.offer(object(), supplement, chat_config, engine.snapshot(supplement, "synthetic", False), explicit=False)
+        fresh = event("那你一般喜欢什么季节去海边", message=4); fresh.time = time.time()
+        assert c.offer(object(), fresh, chat_config, engine.snapshot(fresh, "synthetic", False), explicit=False)
+        await drain(c)
+        assert len(sent) == 3 and len(provider.seen) == 3
+        assert "那你一般喜欢什么季节去海边" in provider.seen[-1][1]
         assert len(service._base_db.recent_user_messages(2001, 1002, 10)) == 0
         await c.close()
+    asyncio.run(scenario())
+
+
+def test_real_service_continuation_preserves_deterministic_local_feature_routing(tmp_path, monkeypatch):
+    from bot.application import local_features
+    from bot.services.tangtang_features import classify_local_feature
+    from tests.test_persona_integration import make_runtime, Provider, service_for, event
+    import time
+
+    async def scenario():
+        engine, _ = make_runtime(tmp_path)
+        engine.store.switch(1001, "denia")
+        provider = Provider({"decision": "reply", "messages": ["不应走模型。"], "voice": "text"})
+        service, config = service_for(tmp_path, engine, provider)
+        executed = []
+
+        async def local_ranking(matcher, bot, received, request):
+            executed.append((received.group_id, received.user_id, request.action, request.args))
+
+        monkeypatch.setitem(local_features._handlers, "ranking", local_ranking)
+
+        async def route(bot, received, current_config, text):
+            decision = classify_local_feature(text, call_keyword=current_config.call_keyword)
+            assert decision is not None
+            handled = await local_features.run_feature_call(
+                object(), bot, received, local_features.request_from_decision(decision))
+            return handled, {}
+
+        service.feature_router = route
+        c = ContinuationCoordinator(service, ChatDispatcher(), engine,
+            enabled=lambda group: True, connected=lambda bot: True,
+            config=lambda: ContinuationConfig(debounce_seconds=0, max_debounce_seconds=0),
+            store=lambda: ContinuationStore(tmp_path / "continuation.db"))
+        service.turn_observer = c.outcome
+        opener = event("娅娅，今天群里热闹吗", message=70)
+        opener.time = time.time()
+        c.outcome(engine.snapshot(opener, "synthetic", False), "reply")
+        followup = event("我要看发言排行", message=71)
+        followup.time = time.time()
+        assert c.offer(object(), followup, config, engine.snapshot(followup, "synthetic", False), explicit=False)
+        await drain(c)
+        assert executed == [(1001, 2001, "ranking", "日")]
+        assert provider.seen == []
+        with sqlite3.connect(c.store().path) as conn:
+            assert conn.execute("SELECT count(*) FROM continuation_attempts").fetchone()[0] == 0
+        await c.close()
+    asyncio.run(scenario())
+
+
+def test_ambiguous_continuation_does_not_make_an_unmetered_classifier_call(monkeypatch):
+    from tests.test_tangtang_chat import enabled_config, group_message
+    from bot.plugins import tangtang_chat as plugin
+    from bot.services.continuation_policy import ContinuationTurn, continuation_turn_for
+
+    async def unexpected_classifier(*args, **kwargs):
+        raise AssertionError("ambiguous continuation must use the charged chat model")
+
+    monkeypatch.setattr(plugin, "feature_classifier", SimpleNamespace(classify=unexpected_classifier))
+    monkeypatch.setattr(plugin, "group_domains", lambda: SimpleNamespace(domain_for_group=lambda _: None))
+    turn = ContinuationTurn(lambda: True, lambda: True, lambda *_: None)
+
+    async def scenario():
+        text = "你觉得发言排行榜公平吗"
+        with continuation_turn_for(turn):
+            handled, usage = await plugin._feature_router(
+                object(), group_message(group_id=1001, text=text), enabled_config(), text)
+        assert not handled and usage == {}
     asyncio.run(scenario())

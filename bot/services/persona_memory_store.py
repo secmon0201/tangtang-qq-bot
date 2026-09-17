@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS person_events(
 CREATE TABLE IF NOT EXISTS person_restrictions(
  user_id INTEGER NOT NULL, scope_group INTEGER NOT NULL, needle TEXT NOT NULL,
  active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id,scope_group,needle));
+CREATE TABLE IF NOT EXISTS person_superseded_memory(
+ user_id INTEGER NOT NULL, scope_group INTEGER NOT NULL, needle TEXT NOT NULL,
+ active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id,scope_group,needle));
 CREATE TABLE IF NOT EXISTS person_memory_revision(
  id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS person_memory_migrations(version TEXT PRIMARY KEY);
@@ -110,15 +113,26 @@ class PersonMemoryStore:
             conn.execute("INSERT INTO person_memory_control VALUES(1,?) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled", (int(enabled),))
             conn.execute("INSERT INTO person_memory_revision VALUES(1,1) ON CONFLICT(id) DO UPDATE SET revision=revision+1")
 
-    def restrictions(self, user_id: int, group_id: int) -> list[str]:
+    def restrictions(self, user_id: int, group_id: int, *, include_superseded: bool = True) -> list[str]:
         with self.connect() as conn:
-            return [r[0] for r in conn.execute(
+            rows = [r[0] for r in conn.execute(
                 "SELECT needle FROM person_restrictions WHERE user_id=? AND scope_group IN (0,?) AND active=1",
                 (user_id, group_id))]
+            if include_superseded:
+                rows.extend(r[0] for r in conn.execute(
+                    "SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1",
+                    (user_id, group_id)))
+            return rows
 
-    def blocked(self, user_id: int, group_id: int, text: str) -> bool:
+    def blocked(self, user_id: int, group_id: int, text: str, *, include_superseded: bool = True) -> bool:
         clean = normalize(text)
-        return any(needle in clean for needle in self.restrictions(user_id, group_id))
+        return any(needle in clean for needle in self.restrictions(user_id, group_id, include_superseded=include_superseded))
+
+    def superseded(self, user_id: int, group_id: int) -> set[str]:
+        with self.connect() as conn:
+            return {r[0] for r in conn.execute(
+                "SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1",
+                (user_id, group_id))}
 
     def restrict(self, user_id: int, group_id: int, query: str, *, restore: bool = False) -> int:
         needle = restriction_needle(query)
@@ -135,11 +149,11 @@ class PersonMemoryStore:
             rows = conn.execute("SELECT id FROM person_facts WHERE user_id=? AND instr(normalized,?)>0", (user_id, needle)).fetchall()
             semantic_rows = conn.execute("SELECT id FROM person_semantic_memory WHERE user_id=? AND instr(normalized,?)>0", (user_id, needle)).fetchall()
             if group_id == 0:
-                conn.execute("UPDATE person_facts SET status=? WHERE user_id=? AND instr(normalized,?)>0",
+                conn.execute("UPDATE person_facts SET status=? WHERE user_id=? AND instr(normalized,?)>0 AND status IN ('active','candidate','deleted')",
                              ("active" if restore else "deleted", user_id, needle))
-                conn.execute("UPDATE tangtang_memories SET status=? WHERE user_id=? AND instr(normalized_content,?)>0",
+                conn.execute("UPDATE tangtang_memories SET status=? WHERE user_id=? AND instr(normalized_content,?)>0 AND status IN ('active','candidate','deleted')",
                              ("active" if restore else "deleted", user_id, needle))
-                conn.execute("UPDATE person_semantic_memory SET status=? WHERE user_id=? AND instr(normalized,?)>0",
+                conn.execute("UPDATE person_semantic_memory SET status=? WHERE user_id=? AND instr(normalized,?)>0 AND status IN ('active','candidate','deleted')",
                              ("active" if restore else "deleted", user_id, needle))
             conn.execute("INSERT INTO person_memory_revision VALUES(1,1) ON CONFLICT(id) DO UPDATE SET revision=revision+1")
             return len(rows) + len(semantic_rows)
@@ -147,7 +161,7 @@ class PersonMemoryStore:
     def remember(self, *, group_id: int, user_id: int, message_id: str, content: str,
                  kind: str, status: str, importance: float, confidence: float, now: str,
                  scope_group: int | None = None, correction: bool = False) -> int | None:
-        if self.blocked(user_id, group_id, content):
+        if self.blocked(user_id, group_id, content, include_superseded=not correction):
             return None
         scope = fact_scope(content, group_id) if scope_group is None else scope_group
         clean = normalize(content)
@@ -155,11 +169,12 @@ class PersonMemoryStore:
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             if correction and (subject := fact_subject(content)):
+                conn.execute("UPDATE person_superseded_memory SET active=0 WHERE user_id=? AND scope_group=? AND needle=?", (user_id, scope, clean))
                 old = conn.execute("SELECT id,content,normalized FROM person_facts WHERE user_id=? AND scope_group=? AND status<>'deleted'", (user_id, scope)).fetchall()
                 for previous in old:
                     if previous['normalized'] != clean and fact_subject(previous['content']) == subject:
                         conn.execute("UPDATE person_facts SET status='archived' WHERE id=?", (previous['id'],))
-                        conn.execute("INSERT INTO person_restrictions VALUES(?,?,?,1) ON CONFLICT(user_id,scope_group,needle) DO UPDATE SET active=1", (user_id, scope, previous['normalized']))
+                        conn.execute("INSERT INTO person_superseded_memory VALUES(?,?,?,1) ON CONFLICT(user_id,scope_group,needle) DO UPDATE SET active=1", (user_id, scope, previous['normalized']))
                 conn.execute("INSERT INTO person_memory_revision VALUES(1,1) ON CONFLICT(id) DO UPDATE SET revision=revision+1")
             conn.execute("INSERT OR IGNORE INTO person_facts(user_id,scope_group,content,normalized,kind,status,importance,confidence,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
                          (user_id, scope, content, clean, kind, status, importance, confidence, now))
@@ -177,8 +192,9 @@ class PersonMemoryStore:
             rows = [dict(r) for r in conn.execute(
                 "SELECT * FROM person_facts WHERE user_id=? AND scope_group IN (0,?) AND status='active' ORDER BY importance DESC,updated_at DESC LIMIT 100",
                 (user_id, group_id))]
-        blocked = self.restrictions(user_id, group_id)
-        return [r for r in rows if not fact_rejection(r['content']) and not any(n in r['normalized'] for n in blocked)]
+        blocked = self.restrictions(user_id, group_id, include_superseded=False)
+        obsolete = self.superseded(user_id, group_id)
+        return [r for r in rows if r['normalized'] not in obsolete and not fact_rejection(r['content']) and not any(n in r['normalized'] for n in blocked)]
 
     def relationship(self, user_id: int) -> dict:
         with self.connect() as conn:

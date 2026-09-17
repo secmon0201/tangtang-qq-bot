@@ -20,24 +20,28 @@ class PersonaGrowth:
         self.evidence_allowed = evidence_allowed or (lambda persona, row: True)
 
     def propose(self, persona: str, group_id: int, proposal: dict, now: float) -> bool:
+        return self.review_proposal(persona, group_id, proposal, now) == 'accepted'
+
+    def review_proposal(self, persona: str, group_id: int, proposal: dict, now: float) -> str:
         topic = str(proposal.get("topic", "")).strip()
         content = str(proposal.get("content", "")).strip()
         kind = proposal.get("kind")
         citations = proposal.get("evidence", [])
         global_scope = proposal.get('scope') == 'persona'
         if global_scope and (LOCAL_SCOPE.search(topic + content) or THIRD_PARTY.search(topic + content)):
-            return False
+            return 'local_or_third_party_global'
         scope = 0 if global_scope else group_id
         if (kind not in {"opinion", "slang"} or not 2 <= len(topic) <= 40
                 or not 2 <= len(content) <= 160 or _PRIVATE_OR_IDENTITY.search(topic + content)
                 or not isinstance(citations, list)):
-            return False
+            return 'invalid_fields_or_private_identity'
         # Require literal, attributable excerpts of delivered interactions, never a
         # model confidence score or fabricated message ID as proof.
         ids = [c["id"] for c in citations if isinstance(c, dict) and isinstance(c.get("id"), int)]
         evidence = {r["id"]: r for r in self.store.cited_interactions(persona, scope, ids)
                     if self.evidence_allowed(persona, r)}
         verified = {}
+        invalid_quotes = 0
         for cite in citations:
             if not isinstance(cite, dict) or not isinstance(cite.get("id"), int):
                 continue
@@ -47,27 +51,29 @@ class PersonaGrowth:
                     and not _PRIVATE_OR_IDENTITY.search(quote)
                     and (topic in quote or any(word in quote for word in re.findall(r"[\u4e00-\u9fff]{2,}|[a-z]{3,}", topic, re.I)))):
                 verified[row["id"]] = row
+            else:
+                invalid_quotes += 1
         if len(verified) < 3 or len({r["day"] for r in verified.values()}) < 2:
-            return False
+            return 'invalid_or_unavailable_citations' if invalid_quotes else 'insufficient_cross_day_evidence'
         if global_scope and any(LOCAL_SCOPE.search(r['source']) or THIRD_PARTY.search(r['source'])
                                 or STABLE_PERSON.search(r['source']) or '记住' in r['source'] for r in verified.values()):
-            return False
+            return 'personal_or_local_source_global'
         group_id = scope
         with self.store.connect() as conn:
             old = conn.execute("SELECT * FROM growth WHERE persona=? AND group_id=? AND topic=?", (persona, group_id, topic)).fetchone()
             if old:
                 if not old["enabled"] or old["content"] == content:
-                    return False
+                    return 'disabled_or_unchanged'
                 previous = conn.execute("SELECT created_at FROM growth_versions WHERE entry_id=? AND version=?", (old["id"], old["version"])).fetchone()
                 if previous and any(r["created_at"] <= previous[0] for r in verified.values()):
-                    return False
+                    return 'evidence_not_new'
                 entry_id, version = old["id"], old["version"] + 1
                 conn.execute("UPDATE growth SET content=?,version=? WHERE id=?", (content, version, entry_id))
             else:
                 entry_id = conn.execute("INSERT INTO growth(persona,group_id,topic,content) VALUES(?,?,?,?)", (persona, group_id, topic, content)).lastrowid
                 version = 1
             conn.execute("INSERT INTO growth_versions VALUES(?,?,?,?,?)", (entry_id, version, content, json.dumps(sorted(verified)), now))
-        return True
+        return 'accepted'
 
     def entries(self, persona: str, group_id: int) -> list[dict]:
         with self.store.connect() as conn:

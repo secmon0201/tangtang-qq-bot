@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS growth_hidden(group_id INTEGER NOT NULL, entry_id INT
  PRIMARY KEY(group_id,entry_id));
 CREATE TABLE IF NOT EXISTS budgets(day TEXT NOT NULL, kind TEXT NOT NULL,
  scope TEXT NOT NULL, used INTEGER NOT NULL, PRIMARY KEY(day,kind,scope));
+CREATE TABLE IF NOT EXISTS growth_reviews(id INTEGER PRIMARY KEY, persona TEXT NOT NULL,
+ group_id INTEGER NOT NULL, created_at REAL NOT NULL, outcome TEXT NOT NULL,
+ evidence_ids TEXT NOT NULL, decisions TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS evidence_persona_recent ON evidence(persona,id DESC);
 CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, group_id INTEGER,
  created_at REAL NOT NULL, usage TEXT NOT NULL, status TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS deliveries(request_id TEXT PRIMARY KEY, persona TEXT NOT NULL,
@@ -151,13 +155,19 @@ class PersonaStore:
             )]
 
     def claim_budget(self, kind: str, group_id: int, now: float, global_limit: int,
-                     group_limit: int, *, category: str = "", category_limit: int = 0) -> bool:
+                     group_limit: int, *, paced: bool = False, category: str = "", category_limit: int = 0) -> bool:
         day = self.day(now)
+        if paced:
+            # Cumulative release: 3/6/9/12 by six-hour window at the default cap.
+            window = datetime.fromtimestamp(now, self.timezone).hour // 6 + 1
+            global_limit = (global_limit * window + 3) // 4
         limits = [("global", global_limit), (f"group:{group_id}", group_limit)]
         if category:
             limits.append((f"category:{category}", category_limit))
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if paced and conn.execute("SELECT 1 FROM jobs WHERE kind='growth' AND group_id=? AND created_at>? LIMIT 1", (group_id, now - 21600)).fetchone():
+                return False
             for scope, limit in limits:
                 row = conn.execute("SELECT used FROM budgets WHERE day=? AND kind=? AND scope=?", (day, kind, scope)).fetchone()
                 if (int(row[0]) if row else 0) >= limit:
@@ -185,3 +195,17 @@ class PersonaStore:
     def record_job(self, kind: str, group_id: int, now: float, usage: dict, status: str) -> None:
         with self.connect() as conn:
             conn.execute("INSERT INTO jobs(kind,group_id,created_at,usage,status) VALUES(?,?,?,?,?)", (kind, group_id, now, json.dumps(usage), status))
+
+    def growth_review(self, persona: str, group_id: int, now: float, outcome: str,
+                      evidence_ids: list[int], decisions: list[dict]) -> None:
+        with self.connect() as conn:
+            conn.execute("INSERT INTO growth_reviews(persona,group_id,created_at,outcome,evidence_ids,decisions) VALUES(?,?,?,?,?,?)",
+                         (persona, group_id, now, outcome, json.dumps(evidence_ids), json.dumps(decisions, ensure_ascii=False)))
+
+    def growth_diagnostics(self, persona: str, group_id: int, limit: int = 5) -> list[dict]:
+        with self.connect() as conn:
+            return [dict(r) for r in conn.execute("SELECT * FROM growth_reviews WHERE persona=? AND (?=0 OR group_id=?) ORDER BY id DESC LIMIT ?", (persona, group_id, group_id, limit))]
+
+    def last_growth_attempt(self, group_id: int) -> float:
+        with self.connect() as conn:
+            return float(conn.execute("SELECT COALESCE(MAX(created_at),0) FROM jobs WHERE kind='growth' AND group_id=?", (group_id,)).fetchone()[0])

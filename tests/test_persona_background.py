@@ -15,12 +15,17 @@ def test_mood_returns_to_baseline_without_identity_changes():
     assert mood_decay(0.1, "2026-09-16T00:00:00", "2026-09-17T00:00:00") == 0.475
 
 
-def test_background_is_fair_bounded_and_preserves_old_pending_rows(tmp_path):
+def test_background_is_fair_bounded_and_preserves_old_pending_rows(tmp_path, monkeypatch):
     store = PersonaStore(tmp_path / "state.db")
     engine = PersonaEngine(store, None, feature_enabled=lambda *_: True, chat_enabled=lambda *_: True)
     for group in (1001, 1002):
         for index in range(35):
             store.observe(persona="denia", group_id=group, user_id=2001, request_id=f"{group}:{index}", source="休息很重要，可以慢慢来", reply="嗯", now=1789488000 + index)
+    engine.evidence_allowed = lambda *_: True
+    for group in (1001, 1002):
+        store.observe(persona='denia', group_id=group, user_id=2001, request_id='later', source='休息很重要，可以慢慢来', reply='嗯', now=1789574400)
+    clock = [1789617600.]  # afternoon, cumulative quota permits both groups
+    monkeypatch.setattr('bot.services.persona_background.time.time', lambda: clock[0])
     original_ids = [r["id"] for r in store.pending_interactions("denia", 1001)]
     calls = []
     class Provider:
@@ -31,7 +36,11 @@ def test_background_is_fair_bounded_and_preserves_old_pending_rows(tmp_path):
     config = replace(TangtangConfig.disabled(), enabled=True)
     worker = PersonaBackground(engine, Provider(), SimpleNamespace(load=lambda:config))
     async def run():
-        for _ in range(6):
+        for _ in range(2):
+            await worker.tick({1001, 1002})
+        await worker.tick({1001, 1002})  # six-hour per-group spacing survives workers
+        clock[0] += 21600
+        for _ in range(3):
             await worker.tick({1001, 1002})
     asyncio.run(run())
     assert len(calls) == 4  # two per group, both personas share this cap

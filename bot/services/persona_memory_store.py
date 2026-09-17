@@ -10,6 +10,7 @@ import hashlib
 import re
 
 from bot.services.persona_mood import mood_decay
+from bot.services.persona_memory_quality import fact_rejection
 
 
 SCHEMA = """
@@ -148,13 +149,13 @@ class PersonMemoryStore:
 
     def facts(self, group_id: int, user_id: int) -> list[dict]:
         if not self.enabled():
-            return [r for r in self.db.active_memories(group_id, user_id) if not self.blocked(user_id, group_id, r['content'])]
+            return [r for r in self.db.active_memories(group_id, user_id) if not self.blocked(user_id, group_id, r['content']) and not fact_rejection(r['content'])]
         with self.connect() as conn:
             rows = [dict(r) for r in conn.execute(
                 "SELECT * FROM person_facts WHERE user_id=? AND scope_group IN (0,?) AND status='active' ORDER BY importance DESC,updated_at DESC LIMIT 100",
                 (user_id, group_id))]
         blocked = self.restrictions(user_id, group_id)
-        return [r for r in rows if not any(n in r['normalized'] for n in blocked)]
+        return [r for r in rows if not fact_rejection(r['content']) and not any(n in r['normalized'] for n in blocked)]
 
     def relationship(self, user_id: int) -> dict:
         with self.connect() as conn:

@@ -59,6 +59,11 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         entries = engine.growth.entries(profile.key, scope_group)
         rows = [f"{r['id']} · {'跨群' if r.get('shared') else '本群'} · v{r['version']} · {'启用' if r['enabled'] else '停用'} · {r['topic']}：{r['content']}" for r in entries]
         await persona_command.finish("本群公开成长记录：\n" + ("\n".join(rows) if rows else "暂无"))
+    if tokens == ["成长", "诊断"]:
+        if not is_super_admin(int(event.user_id)):
+            await persona_command.finish("成长诊断仅限超级管理员。")
+        from bot.services.persona_growth_diagnostics import diagnostic_text
+        await persona_command.finish(diagnostic_text(engine.store, profile.key, scope_group))
     if len(tokens) == 3 and tokens[:2] == ["成长", "停用"] and tokens[2].isdigit():
         changed = engine.growth.disable(profile.key, scope_group, int(tokens[2]))
         database().audit(int(event.user_id), "persona_growth_disable", group_id, tokens[2])

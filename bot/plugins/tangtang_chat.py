@@ -12,6 +12,7 @@ from nonebot.message import event_postprocessor
 from bot.config import settings
 from bot.application.personas import persona_engine
 from bot.application.proactive_chat import ProactiveCoordinator, proactive_store
+from bot.application.chat_continuation import ContinuationCoordinator, continuation_config
 from bot.application.local_features import (
     feature_label,
     request_from_decision,
@@ -190,7 +191,25 @@ def is_proactive_event(event: MessageEvent) -> bool:
         return False
     if is_call_event(event):
         return False
+    if is_continuation_event(event):
+        return False
     return True
+
+
+def continuation_enabled(group_id: int) -> bool:
+    engine = persona_engine()
+    return (not automation_is_paused() and engine.store.option("continuation_enabled", True)
+            and engine.chat_enabled(group_id, False) and engine.chat_enabled(group_id, True))
+
+
+def is_continuation_event(event: MessageEvent) -> bool:
+    if not isinstance(event, GroupMessageEvent) or _is_stale(event) or is_call_event(event):
+        return False
+    text = event.get_plaintext().strip()
+    if (not text or text.startswith((settings.command_prefix, "/", "!", "！"))
+            or _CODEX_COMMAND_RE.match(text) or _GAME_CODE_RE.match(text) or GAME_COMMAND_RE.match(text)):
+        return False
+    return continuation_coordinator.eligible(event)
 
 
 # Runs before the passive matcher but never blocks, so random emoji, random
@@ -208,8 +227,21 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     config = runtime_config()
     context = persona_engine().snapshot(event, config.model, False)
-    dispatcher.submit(int(event.group_id), lambda: service.handle(bot, event, config, context=context),
-        request_id=context.request_id, current=lambda: persona_engine().current(context))
+    if continuation_coordinator.offer(bot, event, config, context, explicit=True):
+        proactive_coordinator.pending.pop(int(event.group_id), None)
+
+
+tangtang_continuation = on_message(rule=is_continuation_event, priority=-1, block=False)
+
+
+@tangtang_continuation.handle()
+async def _continue_conversation(bot: Bot, event: GroupMessageEvent):
+    if str(event.user_id) == str(bot.self_id) or db.passive_filter_contains(int(event.user_id)):
+        return
+    config = runtime_config()
+    context = persona_engine().snapshot(event, config.model, False)
+    if continuation_coordinator.offer(bot, event, config, context, explicit=False):
+        proactive_coordinator.pending.pop(int(event.group_id), None)
 
 
 # Proactive replies also run before the passive matcher and never block it, so
@@ -234,6 +266,8 @@ async def _(bot: Bot, event: GroupMessageEvent):
         ):
             return
         proactive_coordinator.observe(bot, event, config)
+        return
+    if continuation_coordinator.has_active_group(int(event.group_id)):
         return
     dispatcher.submit(int(event.group_id), lambda: service.handle_proactive(bot, event, config, context=context),
         proactive=True, request_id=context.request_id, current=lambda: persona_engine().current(context))
@@ -268,7 +302,15 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
 
 def scheduled_chat_enabled(group_id: int) -> bool:
     return (not automation_is_paused()
+            and not continuation_coordinator.has_active_group(group_id)
             and persona_engine().chat_enabled(group_id, True))
+
+
+continuation_coordinator = ContinuationCoordinator(
+    service, dispatcher, persona_engine(), enabled=continuation_enabled,
+    connected=lambda bot: get_bots().get(str(bot.self_id)) is bot,
+    config=lambda: continuation_config(persona_engine().store))
+service.turn_observer = continuation_coordinator.outcome
 
 
 proactive_coordinator = ProactiveCoordinator(
@@ -286,6 +328,7 @@ async def start_proactive_timer() -> None:
 
 @get_driver().on_shutdown
 async def stop_proactive_timer() -> None:
+    await continuation_coordinator.close()
     if _proactive_task:
         _proactive_task.cancel()
         await asyncio.gather(_proactive_task, return_exceptions=True)

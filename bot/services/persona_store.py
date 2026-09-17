@@ -86,8 +86,20 @@ class PersonaStore:
         return (str(row[0]), int(row[1])) if row else ("tangtang", 0)
 
     def claim_request(self, request_id: str, now: float) -> bool:
+        return self.claim_requests((request_id,), now)
+
+    def claim_requests(self, request_ids: tuple[str, ...], now: float) -> bool:
+        ids = tuple(dict.fromkeys(request_ids))
+        if not ids:
+            return False
         with self.connect() as conn:
-            return bool(conn.execute("INSERT INTO claims VALUES(?,?) ON CONFLICT(request_id) DO UPDATE SET claimed_at=excluded.claimed_at WHERE claims.claimed_at<?", (request_id, now, now - 86400)).rowcount)
+            conn.execute("BEGIN IMMEDIATE")
+            if any(conn.execute("SELECT 1 FROM claims WHERE request_id=? AND claimed_at>=?",
+                                (key, now - 86400)).fetchone() for key in ids):
+                return False
+            conn.executemany("INSERT INTO claims VALUES(?,?) ON CONFLICT(request_id) DO UPDATE SET claimed_at=excluded.claimed_at",
+                             ((key, now) for key in ids))
+            return True
 
     def switch(self, group_id: int, persona: str) -> int:
         if persona not in {"tangtang", "denia"}:

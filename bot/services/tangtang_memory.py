@@ -11,6 +11,10 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_memory_store import PersonMemoryStore, LOCAL_SCOPE
 from bot.services.persona_memory_quality import extract_personal_fact
 from bot.services.persona_recognition import identity_question, recognition_prompt
+from bot.services.persona_memory_contract import (
+    MemoryWriteResult, memory_instruction, memory_requested, validate_proposal,
+)
+from bot.services.persona_semantic_memory import SemanticMemoryStore
 
 
 _FORGET_RE = re.compile(r"(?:请)?忘记(?:掉)?(?:我说过的|关于我的)?[：,:， ]*(.{1,100})")
@@ -38,7 +42,10 @@ class MemoryRecall:
             "只用于延续交流，不要生硬复述）]"
         ]
         for row in self.rows:
-            lines.append(f"· {row['content']}")
+            reference = row.get('memory_id', f"f:{row['id']}")
+            version = f" v{row['version']}" if row.get('version') else ''
+            source_date = f"（用户于{row['source_created_at'][:10]}自述，相对日期以此为准）" if row.get('source_created_at') else ''
+            lines.append(f"· {reference}{version}{source_date}：{row['content']}")
         return "\n".join(lines)
 
 
@@ -50,6 +57,7 @@ class TangtangMemoryKernel:
         self._now = now
         self._self_hash = ""
         self.people = PersonMemoryStore(db)
+        self.semantic = SemanticMemoryStore(self.people)
 
     def ensure_self_version(self, content: str) -> None:
         normalized = content.strip()
@@ -87,7 +95,79 @@ class TangtangMemoryKernel:
             if relevance > 0 or str(row.get("kind")) == "explicit" or identity_question(query):
                 scored.append((score, row))
         scored.sort(key=lambda item: (-item[0], -int(item[1]["id"])))
-        return MemoryRecall(tuple(row for _score, row in scored[:limit]))
+        selected = self.semantic.recall(group_id, user_id, query, limit=limit)
+        seen = {_normalize(row['content']) for row in selected}
+        selected.extend(row for _score, row in scored if _normalize(row['content']) not in seen)
+        return MemoryRecall(tuple(selected[:limit]))
+
+    def memory_prompt(self, group_id: int, user_id: int, source: str) -> str:
+        visible = self.recall(group_id, user_id, source, limit=8).prompt_text()
+        return '\n'.join(part for part in (memory_instruction(), visible) if part)
+
+    def prepare_memory(self, *, group_id: int, user_id: int, message_id: str | int,
+                       text: str, proposals=(), enabled: bool = True) -> MemoryWriteResult:
+        """Commit an explicit user request before any persistence confirmation."""
+        requested = memory_requested(text)
+        if not enabled:
+            return MemoryWriteResult(requested, 'disabled')
+        if not requested:
+            return MemoryWriteResult(False, 'deferred')
+        return self._write_personal_memory(group_id, user_id, str(message_id), text,
+                                           proposals, requested=True, delivered=False)
+
+    def commit_delivered_memory(self, *, group_id: int, user_id: int,
+                                message_id: str | int, text: str, proposals=(),
+                                enabled: bool = True) -> MemoryWriteResult:
+        """Called only after acknowledged delivery; event IDs make retries safe."""
+        requested = memory_requested(text)
+        if not enabled:
+            return MemoryWriteResult(requested, 'disabled')
+        return self._write_personal_memory(group_id, user_id, str(message_id), text,
+                                           proposals, requested=requested, delivered=True)
+
+    def _write_personal_memory(self, group_id: int, user_id: int, message_id: str,
+                               text: str, proposals, *, requested: bool,
+                               delivered: bool) -> MemoryWriteResult:
+        ids: list[str] = []
+        reasons: list[str] = []
+        statuses: list[str] = []
+        try:
+            if not self.people.enabled():
+                return MemoryWriteResult(requested, 'disabled')
+            items = proposals if isinstance(proposals, (list, tuple)) else ()
+            for raw in items[:3]:
+                proposal, reason = validate_proposal(raw, text)
+                if proposal is None:
+                    reasons.append(reason)
+                    continue
+                memory_id, status = self.semantic.save(proposal, group_id=group_id,
+                    user_id=user_id, message_id=message_id, source=text,
+                    now=self._now(), explicit=requested, delivered=delivered)
+                if memory_id:
+                    ids.append(memory_id)
+                    statuses.append(status)
+                else:
+                    reasons.append(status)
+            if not ids and not items:
+                # The existing conservative extractor remains a fallback for
+                # providers which omit structured memory proposals entirely.
+                fallback = self.observe_user_message(group_id=group_id, user_id=user_id,
+                    message_id=message_id, text=text)
+                if fallback:
+                    with self.people.connect() as conn:
+                        row = conn.execute('SELECT status FROM person_facts WHERE id=?', (fallback,)).fetchone()
+                    ids.append(f'f:{fallback}')
+                    statuses.append('saved' if row and row['status'] == 'active' else 'pending')
+            status = 'saved' if 'saved' in statuses else 'pending' if statuses else 'rejected'
+            result = MemoryWriteResult(requested, status, tuple(dict.fromkeys(ids)), tuple(dict.fromkeys(reasons)))
+            self.semantic.review(result, group_id=group_id, user_id=user_id,
+                                 message_id=message_id, now=self._now())
+            return result
+        except Exception as exc:
+            # A receipt never assumes SQLite succeeded. Already committed IDs
+            # remain explicit if a later independent proposal failed.
+            return MemoryWriteResult(requested, 'saved' if 'saved' in statuses else 'failed',
+                                     tuple(dict.fromkeys(ids)), tuple((*reasons, type(exc).__name__)))
 
     def observe_user_message(
         self,

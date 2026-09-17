@@ -24,6 +24,7 @@ from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
 from bot.services.pacing import OutboundCancelled, guard_outbound_for
 from bot.services.proactive_policy import proactive_turn
+from bot.services.continuation_policy import continuation_turn
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
@@ -45,6 +46,7 @@ from bot.services.tangtang_models import (
     resolve_model_profile,
 )
 from bot.services.tangtang_memory import TangtangMemoryKernel
+from bot.services.persona_memory_contract import enforce_memory_confirmation, memory_requested
 from bot.services.tangtang_reply import (
     ReplyPlan,
     parse_reply_plan,
@@ -957,11 +959,15 @@ class TangtangProvider:
                 logger.warning(
                     "Tangtang API rejected tool parameters; falling back to plain generation"
                 )
-                text, usage = await self.generate(config, persona, prompt, images)
+                envelope_config = replace(config, max_response_chars=max(16000, config.max_response_chars))
+                text, usage = await self.generate(envelope_config, persona, prompt, images)
                 return AgentResult(text=text, tool_calls=(), usage=usage)
             response.raise_for_status()
             data = response.json()
-        text = self._extract_text(data)[: config.max_response_chars].strip()
+        # JSON control fields, including memory proposals, are not visible
+        # reply characters. Bound the envelope separately; the parser applies
+        # max_response_chars to the actual messages.
+        text = self._extract_text(data)[: max(16000, config.max_response_chars)].strip()
         tool_calls = self._extract_tool_calls(data)
         usage = self._extract_usage(data)
         usage["latency_ms"] = round((time.monotonic() - started) * 1000)
@@ -1226,10 +1232,12 @@ class TangtangService:
         memory_kernel: TangtangMemoryKernel | None = None,
         group_identity_provider: GroupIdentityProvider | None = None,
         persona_engine: PersonaEngine | None = None,
+        turn_observer: Callable[[ChatContext, str, str], None] | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self._base_db = db or TangtangDb()
         self.personas = persona_engine
+        self.turn_observer = turn_observer
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
         self.provider = provider or TangtangProvider()
@@ -1271,8 +1279,10 @@ class TangtangService:
     def _turn_current(self) -> bool:
         context = self._turn.get()
         scheduled = proactive_turn()
+        continuation = continuation_turn()
         return ((not context or not self.personas or self.personas.current(context))
                 and (scheduled is None or scheduled.current())
+                and (continuation is None or continuation.current())
                 and (self._memory_revision.get() is None or self._memory_revision.get() == self.memory.people.revision()))
 
     async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
@@ -1280,7 +1290,8 @@ class TangtangService:
         token = self._turn.set(context)
         memory_token = self._memory_revision.set(self.memory.people.revision())
         try:
-            if context and (not self._turn_current() or not self.personas.store.claim_request(context.request_id, time.time())):
+            request_ids = tuple(f"{context.group_id}:{mid}" for mid in getattr(event, "source_message_ids", (event.message_id,))) if context else ()
+            if context and (not self._turn_current() or not self.personas.store.claim_requests(request_ids, time.time())):
                 return
             if config.memory_enabled:
                 self.memory.apply_restore_request(int(event.group_id), int(event.user_id), event.get_plaintext())
@@ -1586,6 +1597,18 @@ class TangtangService:
                 scheduled.outcome(event_kind, detail)
             except Exception as exc:
                 logger.warning("Proactive outcome ledger write failed: {}", type(exc).__name__)
+        continuation = continuation_turn()
+        if continuation is not None:
+            try:
+                continuation.outcome(event_kind, detail)
+            except Exception as exc:
+                logger.warning("Continuation outcome ledger write failed: {}", type(exc).__name__)
+        context = self._turn.get()
+        if context and self.turn_observer:
+            try:
+                self.turn_observer(context, event_kind, detail)
+            except Exception as exc:
+                logger.warning("Conversation window update failed: {}", type(exc).__name__)
         try:
             now = datetime.now(ZoneInfo(settings.timezone))
             context = self._turn.get()
@@ -1686,6 +1709,9 @@ class TangtangService:
             if proactive
             else "你收到一条群友的呼叫消息。先判断这条消息值不值得接话，再按糖糖人格决定。"
         )
+        if continuation_turn() is not None:
+            header = ("这是本群刚与你交谈的同一用户的续聊，不要求再次呼叫。"
+                      "只承接本群前文；若只是结束语、无意义内容或明显在跟别人说话，可以沉默。")
         section_label = "[当前群友发言]" if proactive else "[当前呼叫]"
         group_identity = self._group_identity(group_id)
         group_identity_parts: list[str] = []
@@ -1801,22 +1827,20 @@ class TangtangService:
             return fixed_text
         sections = [
             part
-            for part in (knowledge, *memory_sections, context_joined)
+            for part in (*memory_sections, knowledge, context_joined)
             if part
         ]
-        joined = "\n\n".join(sections)
-        if len(joined) > budget:
-            if knowledge:
-                # 本地知识优先保留；空间不足时先丢弃群聊气氛与互动历史。
-                joined = knowledge
-                if len(joined) > budget:
-                    joined = joined[: budget - 1] + "…"
-                elif len(context_joined) > 3:
-                    remaining = budget - len(joined)
-                    if remaining > 3:
-                        joined += "\n\n" + "…" + context_joined[-(remaining - 1) :]
-            else:
-                joined = "…" + context_joined[-(budget - 1) :]
+        # Keep personal recall ahead of expendable group chatter. Previously
+        # overflow discarded all memory exactly when an active group was busy.
+        retained: list[str] = []
+        remaining = budget
+        for section in sections:
+            allowance = remaining - (2 if retained else 0)
+            if allowance <= 0:
+                break
+            retained.append(section if len(section) <= allowance else section[:max(0, allowance - 1)] + "…")
+            remaining -= len(retained[-1]) + (2 if len(retained) > 1 else 0)
+        joined = "\n\n".join(retained)
         return joined + "\n\n" + fixed_text
 
     def _local_knowledge(self, text: str) -> str:
@@ -1903,6 +1927,11 @@ class TangtangService:
     async def handle(self, bot: Any, event: Any, config: TangtangConfig, *, context: ChatContext | None = None) -> None:
         await self._with_persona(bot, event, config, False, context)
 
+    async def handle_continuation(self, bot: Any, event: Any, config: TangtangConfig,
+                                  *, context: ChatContext | None = None) -> None:
+        if continuation_turn() is not None:
+            await self._with_persona(bot, event, config, False, context)
+
     async def _handle_current(self, bot: Any, event: Any, config: TangtangConfig) -> None:
         group_id = int(event.group_id)
         user_id = int(event.user_id)
@@ -1920,6 +1949,10 @@ class TangtangService:
         lowered = text.lower()
         if _matches(self._hard_terms(), self._hard_patterns(), text):
             self._write_usage(config, group_id, user_id, "hard_block", mode=None, tokens={})
+            return
+        if continuation_turn() is not None:
+            if self.proactive_text_allowed(text):
+                await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
             return
         group_identity_answer = self._group_identity_answer(group_id, call_text)
         context = self._turn.get()
@@ -1955,6 +1988,9 @@ class TangtangService:
                 force_reply=config.requires_call_reply(group_id),
             )
             return
+        if memory_requested(text):
+            await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
+            return
         if self.feature_router is not None:
             handled, tokens = await self.feature_router(bot, event, config, text)
             self._write_usage(
@@ -1969,6 +2005,7 @@ class TangtangService:
                 return
         if (
             voice_request(text) != "voice"
+            and not memory_requested(text)
             and config.call_ignore_probability_for(group_id) > 0
             and random.random() < config.call_ignore_probability_for(group_id)
         ):
@@ -2151,7 +2188,7 @@ class TangtangService:
             )
             return
         self._in_flight.add(group_id)
-        mode = "proactive" if proactive else config.mode
+        mode = "continuation" if continuation_turn() is not None else "proactive" if proactive else config.mode
         try:
             current_text = (
                 call_text if call_text is not None else event.get_plaintext().strip()
@@ -2199,7 +2236,14 @@ class TangtangService:
                 prompt += delivery_instruction(voice_status, voice_candidate, self.personas.expression_ids(context))
                 if self.personas:
                     prompt += "\n" + self.personas.expression_prompt(context)
+            if config.memory_enabled:
+                prompt += "\n" + self.memory.memory_prompt(group_id, user_id, event.get_plaintext().strip())
+            else:
+                prompt += "\n个人长期记忆已关闭，不能声称本轮保存了个人记忆。"
             if not self._turn_current():
+                return
+            continuation = continuation_turn()
+            if continuation is not None and not continuation.admit():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
             self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens={})
@@ -2359,6 +2403,22 @@ class TangtangService:
         user_id = int(event.user_id)
         parts = tuple(messages or (answer,))
         context = self._turn.get()
+        if not self._turn_current():
+            return
+        source_memory = event.get_plaintext().strip()
+        memory_source_id = ",".join(str(mid) for mid in getattr(event, "source_message_ids", (event.message_id,)))
+        updates = reply_plan.memory_updates if reply_plan else ()
+        receipt = self.memory.prepare_memory(group_id=group_id, user_id=user_id,
+            message_id=memory_source_id, text=source_memory,
+            proposals=updates, enabled=config.memory_enabled)
+        self._memory_revision.set(self.memory.people.revision())
+        fallback_parts = (reply_plan.text_fallback or parts) if reply_plan else parts
+        parts = enforce_memory_confirmation(parts, receipt)
+        if reply_plan:
+            reply_plan = replace(reply_plan, messages=parts,
+                text_fallback=enforce_memory_confirmation(fallback_parts, receipt))
+        self._write_usage(config, group_id, user_id, "memory_prepared", mode=mode, tokens={},
+            detail=f"status={receipt.status}; ids={','.join(receipt.ids)}; reasons={','.join(receipt.reasons)}")
         voice_delivery = None
         expression = None
         expression_key = ""
@@ -2519,12 +2579,15 @@ class TangtangService:
                     self.db.insert_group_message(group_id=group_id, user_id=user_id,
                         nickname="群友", text=source_text, message_id=context.request_id, created_at=created_at)
             if config.memory_enabled:
-                self.memory.observe_user_message(
+                memory_result = self.memory.commit_delivered_memory(
                     group_id=group_id,
                     user_id=user_id,
-                    message_id=str(getattr(event, "message_id", "") or ""),
-                    text=source_text,
+                    message_id=memory_source_id,
+                    text=source_memory,
+                    proposals=updates,
                 )
+                self._write_usage(config, group_id, user_id, "memory_committed", mode=mode, tokens={},
+                    detail=f"status={memory_result.status}; ids={','.join(memory_result.ids)}; reasons={','.join(memory_result.reasons)}")
             if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
         except Exception as exc:

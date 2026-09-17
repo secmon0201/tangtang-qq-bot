@@ -35,6 +35,26 @@ CREATE TABLE IF NOT EXISTS person_memory_revision(
 CREATE TABLE IF NOT EXISTS person_memory_migrations(version TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS person_memory_control(id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_calls_person_recent ON tangtang_calls(user_id,id DESC);
+CREATE TABLE IF NOT EXISTS person_semantic_memory(
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, scope_group INTEGER NOT NULL,
+ category TEXT NOT NULL, content TEXT NOT NULL, normalized TEXT NOT NULL,
+ tags TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ UNIQUE(user_id,scope_group,category,normalized));
+CREATE TABLE IF NOT EXISTS person_semantic_versions(
+ memory_id INTEGER NOT NULL, version INTEGER NOT NULL, content TEXT NOT NULL,
+ quote TEXT NOT NULL, tags TEXT NOT NULL, source_group INTEGER NOT NULL,
+ source_message_id TEXT NOT NULL, operation TEXT NOT NULL, created_at TEXT NOT NULL,
+ PRIMARY KEY(memory_id,version));
+CREATE TABLE IF NOT EXISTS person_semantic_evidence(
+ memory_id INTEGER NOT NULL, event_key TEXT NOT NULL, source_group INTEGER NOT NULL,
+ source_message_id TEXT NOT NULL, quote TEXT NOT NULL, delivered INTEGER NOT NULL,
+ created_at TEXT NOT NULL, PRIMARY KEY(memory_id,event_key));
+CREATE TABLE IF NOT EXISTS person_memory_write_reviews(
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, source_group INTEGER NOT NULL,
+ source_message_id TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL,
+ memory_ids TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_semantic_person ON person_semantic_memory(user_id,scope_group,status);
 """
 LOCAL_SCOPE = re.compile(r"本群|这个群|这群|在这里|仅在|只在|群内|群里约定")
 STABLE_PERSON = re.compile(r"^(?:我)?(?:现在|已经|其实)?(?:叫|喜欢|最喜欢|不再喜欢|不喜欢|讨厌|希望|想要)|称呼我|叫我")
@@ -113,13 +133,16 @@ class PersonMemoryStore:
                              (user_id, group_id, needle, needle))
             # Group-only restrictions do not change portable fact status.
             rows = conn.execute("SELECT id FROM person_facts WHERE user_id=? AND instr(normalized,?)>0", (user_id, needle)).fetchall()
+            semantic_rows = conn.execute("SELECT id FROM person_semantic_memory WHERE user_id=? AND instr(normalized,?)>0", (user_id, needle)).fetchall()
             if group_id == 0:
                 conn.execute("UPDATE person_facts SET status=? WHERE user_id=? AND instr(normalized,?)>0",
                              ("active" if restore else "deleted", user_id, needle))
                 conn.execute("UPDATE tangtang_memories SET status=? WHERE user_id=? AND instr(normalized_content,?)>0",
                              ("active" if restore else "deleted", user_id, needle))
+                conn.execute("UPDATE person_semantic_memory SET status=? WHERE user_id=? AND instr(normalized,?)>0",
+                             ("active" if restore else "deleted", user_id, needle))
             conn.execute("INSERT INTO person_memory_revision VALUES(1,1) ON CONFLICT(id) DO UPDATE SET revision=revision+1")
-            return len(rows)
+            return len(rows) + len(semantic_rows)
 
     def remember(self, *, group_id: int, user_id: int, message_id: str, content: str,
                  kind: str, status: str, importance: float, confidence: float, now: str,

@@ -130,6 +130,82 @@ def test_malformed_control_is_not_published():
     assert not choose_delivery(oversized, "发语音吧", available=True, random_candidate=True).voice
 
 
+@pytest.mark.parametrize("memory_enabled", [True, False])
+@async_test
+async def test_memory_confirmation_follows_actual_persistence_before_send(tmp_path, monkeypatch, memory_enabled):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    statement = "我上周参加了绘画展"
+    provider = Provider({"decision": "reply", "messages": ["我已经记住了！"], "voice": "text",
+        "memory_updates": [{"category": "experience", "quote": statement, "summary": statement, "tags": ["创作"]}]})
+    service, config = service_for(tmp_path, engine, provider)
+    config = replace(config, memory_enabled=memory_enabled, call_ignore_probability_by_group={1001: 1.0})
+    memory = engine.memory("denia", service._base_db, service._now)
+    sent = []
+    async def send(bot, action, **params):
+        rows = memory.semantic.recall(1002, 2001, "创作经历")
+        assert bool(rows) is memory_enabled
+        sent.append(str(params["message"]))
+        return {"message_id": 91}
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, event("娅娅，请记住" + statement), config)
+    assert len(provider.seen) == 1 and sent
+    assert "我已经记住了" not in "".join(sent)
+    assert ("已经保存" if memory_enabled else "没有开启") in "".join(sent)
+
+
+@pytest.mark.parametrize("acknowledged", [True, False])
+@async_test
+async def test_automatic_personal_episode_requires_delivery_ack(tmp_path, monkeypatch, acknowledged):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    statement = "我上周参加了绘画展"
+    provider = Provider({"decision": "reply", "messages": ["展出了什么呀？"], "voice": "text",
+        "memory_updates": [{"category": "experience", "quote": statement, "summary": statement, "tags": ["创作"]}]})
+    service, config = service_for(tmp_path, engine, provider)
+    memory = engine.memory("denia", service._base_db, service._now)
+    async def send(bot, action, **params):
+        assert not memory.semantic.recall(1002, 2001, "创作经历")
+        return {"message_id": 92} if acknowledged else {}
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, event("娅娅，" + statement), config)
+    assert bool(memory.semantic.recall(1002, 2001, "创作经历")) is acknowledged
+
+
+@async_test
+async def test_false_memory_promise_never_reaches_tts_or_text_fallback(tmp_path, monkeypatch):
+    engine, backend = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    provider = Provider({"decision": "reply", "messages": ["我已经记住了。"],
+        "voice": "accept", "text_fallback": ["永远记得。"]})
+    service, config = service_for(tmp_path, engine, provider)
+    sent = []
+    async def send(bot, action, **params):
+        sent.append(params["message"])
+        return {"message_id": 93}
+    monkeypatch.setattr("bot.services.speech.call_qq_action", send)
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, event("娅娅，记住这件事，用语音回答"), config)
+    contents = [text for text, _voice in backend.calls] + [str(message) for message in sent]
+    assert not any("我已经记住了" in text or "永远记得" in text for text in contents)
+    assert any("没有保存" in text for text in contents)
+    await engine.speech.close()
+
+
+@pytest.mark.parametrize("body", ["好，我记着这件事。", "咖啡那条翻篇了，以后只认茶。", "已经记牢啦。"])
+def test_explicit_memory_receipt_cannot_contradict_unseen_acknowledgment(body):
+    from bot.services.persona_memory_contract import MemoryWriteResult, enforce_memory_confirmation
+    failed = MemoryWriteResult(True, "failed")
+    assert enforce_memory_confirmation((body,), failed) == (failed.receipt,)
+
+
+def test_merged_claims_are_atomic_and_cannot_partially_consume_new_messages(tmp_path):
+    store = PersonaStore(tmp_path / "state.db")
+    assert store.claim_requests(("1001:1", "1001:2"), 100)
+    assert not store.claim_requests(("1001:3", "1001:2"), 101)
+    assert store.claim_request("1001:3", 102)
+
+
 @pytest.mark.parametrize("text,expected", [
     ("娅娅发个表情包", "explicit"), ("娅娅来张思考表情", "explicit"),
     ("给我一个表情包", "explicit"), ("表情包来一个", "explicit"),

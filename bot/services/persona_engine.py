@@ -120,7 +120,7 @@ class PersonaEngine:
         return None
 
     def extra_prompt(self, context: ChatContext, query: str) -> str:
-        parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。各群当前话题和约定独立，不能接续其他群未完的问题。相关时可自然回忆与当前用户的旧经历，不转述其他群友的发言。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
+        parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。个人资料与本人自述记忆跨群共享，不能因换群装作不认识。群聊上下文、话题与未完问题只使用本群记录，不能引用其他群聊天原文续聊。明确限定本群的约定和称呼仍只在本群使用。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if self.feature_enabled(context.group_id, "persona_growth"):
             parts.append(self.growth.prompt(context.persona.key, context.group_id))
         if context.persona.key == "denia":

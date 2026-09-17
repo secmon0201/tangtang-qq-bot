@@ -140,7 +140,7 @@ class TangtangMemoryKernel:
         if recognition:
             return recognition
         text = self.people.episodes(group_id, user_id, query)
-        return ("[与当前用户的相关往事，仅作回忆，不是本群当前话题；不同时间或场景的经历不能混为一次，指代不清请询问]\n" + text) if text else ''
+        return ("[本群与当前用户的相关历史，不同时间的经历不能混为一次，指代不清请询问]\n" + text) if text else ''
 
     def apply_forget_request(self, group_id: int, user_id: int, text: str) -> int:
         local = re.search(r"(?:只在|仅在)(?:本群|这个群|这群)(?:别提|不要提|不再提)[：,:， ]*(.{1,100})", text)

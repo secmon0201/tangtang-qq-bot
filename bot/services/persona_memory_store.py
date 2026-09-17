@@ -47,7 +47,7 @@ def normalize(text: str) -> str:
 
 
 def fact_scope(content: str, group_id: int) -> int:
-    return 0 if not LOCAL_SCOPE.search(content) and STABLE_PERSON.search(content) else group_id
+    return 0 if not LOCAL_SCOPE.search(content) and not fact_rejection(content) else group_id
 
 
 def fact_subject(content: str) -> str:
@@ -182,7 +182,7 @@ class PersonMemoryStore:
         if not terms:
             return ""
         with self.connect() as conn:
-            rows = conn.execute("SELECT group_id,call_text,created_at FROM tangtang_calls WHERE user_id=? AND group_id<>? AND reply_kind IN ('model','proactive') ORDER BY id DESC LIMIT 100", (user_id, group_id)).fetchall()
+            rows = conn.execute("SELECT group_id,call_text,created_at FROM tangtang_calls WHERE user_id=? AND group_id=? AND reply_kind IN ('model','proactive') ORDER BY id DESC LIMIT 100", (user_id, group_id)).fetchall()
         needles = self.restrictions(user_id, group_id)
         candidates = []
         for row in rows:
@@ -191,6 +191,6 @@ class PersonMemoryStore:
                 continue
             score = sum(t in text for t in terms)
             if score >= 2:
-                candidates.append((score, f"{row['created_at'][:10]}，其他群与该用户的互动片段：{text[:200]}"))
+                candidates.append((score, f"{row['created_at'][:10]}，本群与该用户的互动片段：{text[:200]}"))
         candidates.sort(key=lambda r: -r[0])
         return "\n".join(list(dict.fromkeys(text for _, text in candidates))[:2])[:440] if candidates else ""

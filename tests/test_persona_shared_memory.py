@@ -38,6 +38,21 @@ def test_independent_evidence_and_explicit_correction(tmp_path):
     assert len(rows) == 1 and '不喜欢' in rows[0]['content']
 
 
+def test_profession_is_shared_while_conversation_history_stays_local(tmp_path):
+    k = kernel(tmp_path)
+    remember(k, '记住我是教师')
+    assert '我是教师' in k.recall(1002, 2001, '我的职业').prompt_text()
+    assert not k.recall(1002, 2002, '我的职业').rows
+    assert not kernel(tmp_path, 'tangtang').recall(1002, 2001, '我的职业').rows
+    for group, text in ((1001, '抽卡五星先聊配队'), (1002, '抽卡五星先聊养成')):
+        k.db.insert_call(group_id=group, user_id=2001, message_id=str(group), call_text=text,
+                         reply_text='嗯', reply_kind='model', mode='d', created_at=k._now())
+    first = k.episode_prompt(1001, 2001, '抽卡五星')
+    second = k.episode_prompt(1002, 2001, '抽卡五星')
+    assert '配队' in first and '养成' not in first
+    assert '养成' in second and '配队' not in second
+
+
 def test_forgetting_blocks_history_relearning_and_rollback_until_explicit_restore(tmp_path):
     k = kernel(tmp_path)
     remember(k, '记住我喜欢草莓')
@@ -82,9 +97,10 @@ def test_episode_recall_is_relevant_bounded_and_keeps_current_topics_separate(tm
     for i, text in enumerate(('我这次抽卡出了两个五星', '我上次抽卡没出五星', '群友说他抽卡出了五星', '我喜欢吃晚饭')):
         k.db.insert_call(group_id=1001, user_id=2001, message_id=str(i), call_text=text,
                          reply_text='嗯', reply_kind='model', mode='c', created_at=k._now())
-    prompt = k.episode_prompt(1002, 2001, '抽卡五星')
+    assert not k.episode_prompt(1002, 2001, '抽卡五星')
+    prompt = k.episode_prompt(1001, 2001, '抽卡五星')
     assert prompt.count('互动片段') == 2
-    assert '其他群' in prompt and '群友说他' not in prompt
+    assert '本群' in prompt and '群友说他' not in prompt
     assert not k.episode_prompt(1002, 2001, '晚饭吃啥')
     assert not k.episode_prompt(1002, 2002, '抽卡五星')
     k.apply_forget_request(1002, 2001, '忘记抽卡')

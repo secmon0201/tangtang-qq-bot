@@ -542,3 +542,22 @@ async def test_recognition_prompt_reaches_chat_after_switching_groups(tmp_path, 
     await service.handle(None,event('娅娅，还记得我是谁吗',group=1002,message=20),config)
     assert provider.seen and '用户本人曾说：我是鸣潮高手' in provider.seen[0][1]
 
+
+@async_test
+async def test_matching_topic_never_imports_another_groups_conversation(tmp_path):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, 'denia')
+    engine.store.switch(1002, 'denia')
+    provider = Provider({'decision':'silent','messages':[]})
+    service,config = service_for(tmp_path,engine,provider)
+    memory=engine.memory('denia',service._base_db,service._now)
+    memory.observe_user_message(group_id=1001,user_id=2001,message_id='profile',text='记住我是教师')
+    memory.db.insert_call(group_id=1001,user_id=2001,message_id='foreign-topic',
+        call_text='今天抽卡五星先聊配队',reply_text='你刚才说配队还没解决',reply_kind='model',mode='d',created_at=service._now())
+    memory.db.insert_call(group_id=1002,user_id=2001,message_id='local-topic',
+        call_text='今天抽卡五星先聊养成',reply_text='继续聊养成',reply_kind='model',mode='d',created_at=service._now())
+    await service.handle(None,event('娅娅，抽卡五星你觉得呢',group=1002,message=31),config)
+    prompt=provider.seen[0][1]
+    assert '我是教师' in prompt and '先聊养成' in prompt
+    assert '先聊配队' not in prompt and '配队还没解决' not in prompt
+

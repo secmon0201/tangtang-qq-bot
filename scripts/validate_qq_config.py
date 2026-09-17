@@ -60,14 +60,15 @@ def parse_clock(value: str, label: str) -> None:
         raise ValueError(f"{label} must use HH:MM in 24-hour time")
 
 
-def parse_positive_delay_range(values: dict[str, str], minimum_key: str, maximum_key: str, minimum_default: str, maximum_default: str) -> None:
+def parse_positive_delay_range(values: dict[str, str], minimum_key: str, maximum_key: str, minimum_default: str, maximum_default: str, *, allow_zero: bool = False) -> None:
+    requirement = "non-negative" if allow_zero else "positive"
     try:
         minimum = float(values.get(minimum_key, minimum_default))
         maximum = float(values.get(maximum_key, maximum_default))
     except ValueError as exc:
-        raise ValueError(f"{minimum_key}/{maximum_key} must be positive numbers") from exc
-    if minimum <= 0 or maximum <= 0 or maximum < minimum:
-        raise ValueError(f"{maximum_key} must be at least {minimum_key}, and both must be positive")
+        raise ValueError(f"{minimum_key}/{maximum_key} must be {requirement} numbers") from exc
+    if minimum < 0 or (minimum == 0 and not allow_zero) or maximum < minimum:
+        raise ValueError(f"{maximum_key} must be at least {minimum_key}, and both must be {requirement}")
 
 
 def validate_profile(values: dict[str, str]) -> None:
@@ -205,6 +206,7 @@ def validate(path: Path) -> tuple[int, int]:
         "BOT_RESPONSE_DELAY_MAX_SECONDS",
         "2",
         "5",
+        allow_zero=True,
     )
     parse_positive_delay_range(
         values,

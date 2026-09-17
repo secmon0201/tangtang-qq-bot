@@ -310,10 +310,11 @@ class Settings:
                 raise ValueError(f"{name} must be a positive QQ/group ID")
             return int(raw)
 
-        def float_value(name: str, default: float) -> float:
+        def float_value(name: str, default: float, *, allow_zero: bool = False) -> float:
             value = float(os.getenv(name, str(default)))
-            if value <= 0:
-                raise ValueError(f"{name} must be positive")
+            if value < 0 or (value == 0 and not allow_zero):
+                requirement = "non-negative" if allow_zero else "positive"
+                raise ValueError(f"{name} must be {requirement}")
             return value
 
         zhijiang_schedule_url = os.getenv(
@@ -322,8 +323,8 @@ class Settings:
         ).strip()
         if not zhijiang_schedule_url.startswith(("https://", "http://")):
             raise ValueError("ZHIJIANG_SCHEDULE_URL must be an http(s) URL")
-        response_delay_min_seconds = float_value("BOT_RESPONSE_DELAY_MIN_SECONDS", 2)
-        response_delay_max_seconds = float_value("BOT_RESPONSE_DELAY_MAX_SECONDS", 5)
+        response_delay_min_seconds = float_value("BOT_RESPONSE_DELAY_MIN_SECONDS", 2, allow_zero=True)
+        response_delay_max_seconds = float_value("BOT_RESPONSE_DELAY_MAX_SECONDS", 5, allow_zero=True)
         if response_delay_max_seconds < response_delay_min_seconds:
             raise ValueError("BOT_RESPONSE_DELAY_MAX_SECONDS must be at least BOT_RESPONSE_DELAY_MIN_SECONDS")
         command_response_delay_min_seconds = float_value(

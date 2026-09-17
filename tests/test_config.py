@@ -124,6 +124,25 @@ def test_config_rejects_response_delay_range_in_reverse_order(monkeypatch):
         Settings.from_env()
 
 
+@pytest.mark.parametrize("minimum,maximum,valid", [(0, 0.5, True), (0, 0, True), (-0.1, 0.5, False), (0.5, 0, False)])
+def test_passive_delay_zero_boundary_matches_validator(monkeypatch, minimum, maximum, valid):
+    from scripts.validate_qq_config import parse_positive_delay_range
+
+    keys = ("BOT_RESPONSE_DELAY_MIN_SECONDS", "BOT_RESPONSE_DELAY_MAX_SECONDS")
+    values = dict(zip(keys, map(str, (minimum, maximum))))
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    if valid:
+        config = Settings.from_env()
+        assert (config.response_delay_min_seconds, config.response_delay_max_seconds) == (minimum, maximum)
+        parse_positive_delay_range(values, *keys, "2", "5", allow_zero=True)
+    else:
+        with pytest.raises(ValueError):
+            Settings.from_env()
+        with pytest.raises(ValueError):
+            parse_positive_delay_range(values, *keys, "2", "5", allow_zero=True)
+
+
 def test_config_rejects_command_response_delay_range_in_reverse_order(monkeypatch):
     monkeypatch.setenv("BOT_COMMAND_RESPONSE_DELAY_MIN_SECONDS", "2")
     monkeypatch.setenv("BOT_COMMAND_RESPONSE_DELAY_MAX_SECONDS", "1")

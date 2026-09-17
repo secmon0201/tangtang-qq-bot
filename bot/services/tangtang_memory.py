@@ -10,6 +10,7 @@ from typing import Any, Callable
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_memory_store import PersonMemoryStore, LOCAL_SCOPE
 from bot.services.persona_memory_quality import extract_personal_fact
+from bot.services.persona_recognition import identity_question, recognition_prompt
 
 
 _FORGET_RE = re.compile(r"(?:请)?忘记(?:掉)?(?:我说过的|关于我的)?[：,:， ]*(.{1,100})")
@@ -83,7 +84,7 @@ class TangtangMemoryKernel:
                 + float(row.get("importance") or 0.0) * 0.25
                 + float(row.get("confidence") or 0.0) * 0.15
             )
-            if relevance > 0 or str(row.get("kind")) == "explicit":
+            if relevance > 0 or str(row.get("kind")) == "explicit" or identity_question(query):
                 scored.append((score, row))
         scored.sort(key=lambda item: (-item[0], -int(item[1]["id"])))
         return MemoryRecall(tuple(row for _score, row in scored[:limit]))
@@ -135,6 +136,9 @@ class TangtangMemoryKernel:
         return '' if self.people.blocked(user_id, group_id, text) else text
 
     def episode_prompt(self, group_id: int, user_id: int, query: str) -> str:
+        recognition = recognition_prompt(self.people, group_id, user_id, query)
+        if recognition:
+            return recognition
         text = self.people.episodes(group_id, user_id, query)
         return ("[与当前用户的相关往事，仅作回忆，不是本群当前话题；不同时间或场景的经历不能混为一次，指代不清请询问]\n" + text) if text else ''
 

@@ -528,3 +528,20 @@ async def test_dispatch_does_not_hold_event_path_and_limits_groups():
     assert not dispatcher.submit(3, slow)
     await dispatcher.close()
 
+
+@async_test
+async def test_recognition_prompt_reaches_chat_after_switching_groups(tmp_path, monkeypatch):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, 'denia')
+    engine.store.switch(1002, 'denia')
+    provider=Provider({'decision':'reply','messages':['你之前自称鸣潮高手呀。'],'voice':'text'})
+    service,config=service_for(tmp_path,engine,provider)
+    history=engine.history('denia',service._base_db)
+    history.insert_call(group_id=1001,user_id=2001,message_id='earlier',call_text='我是鸣潮高手',
+                        reply_text='嗯',reply_kind='model',mode='d',created_at='2026-09-17T19:00:00+08:00')
+    async def send(*args,**kwargs):
+        return {'message_id':123}
+    monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action',send)
+    await service.handle(None,event('娅娅，还记得我是谁吗',group=1002,message=20),config)
+    assert provider.seen and '用户本人曾说：我是鸣潮高手' in provider.seen[0][1]
+

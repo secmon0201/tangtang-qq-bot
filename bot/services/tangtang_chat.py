@@ -29,7 +29,6 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
-from bot.services.persona_expressions import INLINE_EXPRESSION_PROBABILITY
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -2405,7 +2404,7 @@ class TangtangService:
                     parts = ("这次没有合适的可用表情，先不发图啦。",)
         if not config.reply_bubbles_enabled:
             parts = ("\n".join(parts),)
-        inline_expression = expression is not None and random.random() < INLINE_EXPRESSION_PROBABILITY
+        inline_expression = expression is not None
         delivery_rows: list[dict[str, Any]] = []
         delivered: list[str] = []
         send_error: Exception | None = None
@@ -2530,17 +2529,6 @@ class TangtangService:
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", exc)
-        if expression is not None:
-            if send_error is not None or not self._turn_current() or not self.personas.feature_enabled(group_id, "persona_expressions") or self.personas.expression(context, expression_key) is None:
-                self.personas.expressions.result(context, "cancelled", reason="text_failed_or_context_expired")
-            else:
-                self.personas.expressions.result(context, "sending")
-                try:
-                    result = await call_qq_action(bot, "send_group_msg", group_id=group_id, message=expression)
-                    self._expression_outcome(context, result=result)
-                except Exception as exc:
-                    self._expression_outcome(context, error=exc)
-                    logger.debug("Optional persona expression unavailable")
         self._write_usage(
             config,
             group_id,

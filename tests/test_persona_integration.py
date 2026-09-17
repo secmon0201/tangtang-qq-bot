@@ -209,15 +209,11 @@ async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, m
     monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: roll)
     await service.handle(None, event("娅娅发个探头表情包"), config)
     assert not provider.seen
-    combined = roll < 0.5
-    assert len(sent) == (2 if enabled and not combined else 1)
+    assert len(sent) == 1
     if enabled:
-        if combined:
-            assert [segment.type for segment in sent[0]] == ["reply", "text", "image"]
-            assert sent[0].extract_plain_text() == "给你。"
-        else:
-            assert sent[-1].type == "image"
-        assert "peek.jpg" in str(sent[-1])
+        assert [segment.type for segment in sent[0]] == ["reply", "text", "image"]
+        assert sent[0].extract_plain_text() == "给你。"
+        assert "peek.jpg" in str(sent[0])
     else:
         assert "没有可用" in str(sent[0])
     assert engine.history("denia", service.db).list_calls(2001, 1001)[0]["reply_text"] == (
@@ -466,10 +462,10 @@ async def test_simultaneous_groups_keep_frozen_personas(tmp_path, monkeypatch):
     assert not engine.store.interactions("denia", 1002)
 
 
-@pytest.mark.parametrize("inline", [True, False])
+@pytest.mark.parametrize("roll", [0.1, 0.9])
 @pytest.mark.parametrize("outcome", ["delivered", "missing_ack", "timeout", "failed"])
 @async_test
-async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, inline, outcome):
+async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, roll, outcome):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, "denia")
     service, config = service_for(tmp_path, engine, Provider({}))
@@ -478,6 +474,7 @@ async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, 
         msg = params['message']
         image = getattr(msg, 'type', '') == 'image' or (isinstance(msg, Message) and bool(msg['image']))
         if image:
+            assert isinstance(msg, Message) and msg['text']
             attempts.append(str(msg))
             if outcome == 'missing_ack':
                 return {}
@@ -487,7 +484,7 @@ async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, 
                 raise ActionFailed(retcode=100, msg='test-only')
         return {'message_id': 77}
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
-    monkeypatch.setattr('bot.services.tangtang_chat.random.random', lambda: .1 if inline else .9)
+    monkeypatch.setattr('bot.services.tangtang_chat.random.random', lambda: roll)
     await service.handle(None, event('娅娅发个手动微笑表情'), config)
     assert len(attempts) == 1 and 'expr_026.gif' in attempts[0]
     with engine.store.connect() as conn:
@@ -499,7 +496,7 @@ async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, 
 
 
 @async_test
-async def test_persona_switch_cancels_separate_expression(tmp_path, monkeypatch):
+async def test_persona_switch_after_combined_send_does_not_send_another_expression(tmp_path, monkeypatch):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, 'denia')
     service, config = service_for(tmp_path, engine, Provider({}))
@@ -511,9 +508,9 @@ async def test_persona_switch_cancels_separate_expression(tmp_path, monkeypatch)
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
     monkeypatch.setattr('bot.services.tangtang_chat.random.random', lambda: .9)
     await service.handle(None, event('娅娅发个手动微笑表情'), config)
-    assert len(sent) == 1
+    assert len(sent) == 1 and isinstance(sent[0], Message) and sent[0]['image'] and sent[0]['text']
     with engine.store.connect() as conn:
-        assert conn.execute('SELECT status FROM expression_events').fetchone()[0] == 'cancelled'
+        assert conn.execute('SELECT status FROM expression_events').fetchone()[0] == 'delivered'
 
 
 @async_test

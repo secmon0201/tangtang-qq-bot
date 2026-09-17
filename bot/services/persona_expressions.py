@@ -5,7 +5,6 @@ import re
 
 
 EXPRESSION_PROBABILITY = 0.60
-INLINE_EXPRESSION_PROBABILITY = 0.5
 _NOUN = r"(?:表情包|表情|贴纸)"
 _NO_EXPRESSION = re.compile(r"(?:不要|别|不用|不必|禁止).{0,8}" + _NOUN)
 _REQUEST = re.compile(

@@ -916,6 +916,7 @@ class TangtangProvider:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
+            "X-Request-Timeout-Ms": str(min(config.timeout_seconds, 30) * 1000),
         }
         if config.api_style == "responses":
             payload = self._responses_payload(config, persona, prompt, images=images)
@@ -943,6 +944,7 @@ class TangtangProvider:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
+            "X-Request-Timeout-Ms": str(min(config.timeout_seconds, 30) * 1000),
         }
         if config.api_style == "responses":
             payload = self._responses_payload(

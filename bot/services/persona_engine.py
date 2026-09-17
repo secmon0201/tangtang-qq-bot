@@ -86,7 +86,7 @@ class PersonaEngine:
         allowed = self.expression_ids(context)
         rows = [r for r in self.expressions.catalog(context.persona) if r["id"] in allowed and not r.get("explicit_only")]
         random.shuffle(rows)
-        return "表情目录（顺序随机，不表示优先级；先看本轮语境，无合适项留空；相同组也必须逐项检查适用/避免）。" + "；".join(
+        return "表情目录（顺序随机，不表示优先级；语义组仅供参考，可跨组轻松联想或接梗；逐项检查适用/避免，无合适项留空）。" + "；".join(
             f"{r['id']}（{r['name']}；组={r.get('group',r['id'])}；画面={r.get('visual','')}；"
             f"情绪={','.join(r.get('emotion', []))}；强度={r.get('intensity',0.0)}；适用={r['use']}；避免={r['avoid']}）" for r in rows
         )

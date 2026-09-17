@@ -46,13 +46,16 @@ def test_weighting_uses_only_successes_and_isolates_groups(tmp_path, monkeypatch
     assert not service.history(context, 90000)[0]
 
 
-def test_candidates_and_recent_exhaustion_never_cross_semantics(tmp_path):
+def test_cross_group_candidates_preserve_validation_and_recent_exclusion(tmp_path, monkeypatch):
     service, context, available = setup_catalog(tmp_path)
-    assert service.choose(context, '你好', 'a', ('sad', 'invalid', 'b'), available=available, roll=0, now=10) in {'a','b'}
+    monkeypatch.setattr('bot.services.expression_selection.random.choices',
+                        lambda ids, weights, k: ['sad'] if 'sad' in ids else [ids[0]])
+    assert service.choose(context, '你好', 'a', ('sad', 'invalid', 'taunt'), available=available, roll=0, now=10) == 'sad'
     service.result(context, 'delivered', message_id='1', now=11)
     with service.store.connect() as conn:
         detail = json.loads(conn.execute('SELECT decision_json FROM expression_events').fetchone()[0])
-    assert detail['rejected']['sad'] == 'incompatible_group'
+    assert 'sad' not in detail['rejected']
+    assert detail['rejected']['taunt'] == 'explicit_only'
     assert detail['rejected']['invalid'] == 'invalid_id'
     last = service.history(context, 12)[1][0]
     later = replace(context, request_id='later')

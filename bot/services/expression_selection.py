@@ -108,10 +108,6 @@ class ExpressionSelection:
                 reason = "unavailable"
             elif rows[key].get("explicit_only") and not exact:
                 reason = "explicit_only"
-            elif intent != "explicit" and key != preferred and (
-                preferred not in rows or rows[key].get("group", key) != rows[preferred].get("group", preferred)
-            ):
-                reason = "incompatible_group"
             if reason:
                 rejected[key] = reason
             else:

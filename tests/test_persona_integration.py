@@ -449,6 +449,33 @@ async def test_synthesis_timeout_keeps_worker_single_and_never_sends_late(tmp_pa
     await engine.speech.close()
 
 
+@pytest.mark.parametrize("explicit", [True, False])
+@pytest.mark.parametrize("saved_limits", [(12, 60), (0, 0)])
+@async_test
+async def test_local_speech_remains_available_after_legacy_daily_caps(tmp_path, monkeypatch, explicit, saved_limits):
+    engine, backend = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    engine.store.set_option("speech_group_limit", saved_limits[0])
+    engine.store.set_option("speech_global_limit", saved_limits[1])
+    day = engine.store.day(time.time())
+    with engine.store.connect() as conn:
+        conn.executemany("INSERT INTO budgets(day,kind,scope,used) VALUES(?,'speech',?,?)",
+                         [(day, "global", 600), (day, "group:1001", 120)])
+    sent = []
+    async def send(*args, **kwargs):
+        sent.append(kwargs["message"])
+        return {"message_id": 99}
+    monkeypatch.setattr("bot.services.speech.call_qq_action", send)
+    assert engine.speech.status("denia", 1001) == "可用"
+    result = await engine.speech.deliver(None, engine.snapshot(event(), "model", False),
+        "你好", explicit=explicit, current=lambda: True)
+    assert result.status == "delivered" and len(sent) == len(backend.calls) == 1
+    assert engine.speech.status("denia", 1001) == "可用"
+    if not explicit:
+        assert not engine.speech.random_candidate(1001, 0)
+    await engine.speech.close()
+
+
 @async_test
 async def test_unknown_send_is_journaled_without_retry(tmp_path, monkeypatch):
     engine, _ = make_runtime(tmp_path)

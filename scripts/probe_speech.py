@@ -31,10 +31,12 @@ async def probe_readiness(args) -> int:
         while service.status(args.persona, 0) == "准备中" and time.perf_counter() - started < 35:
             await asyncio.sleep(0.05)
         final = service.status(args.persona, 0)
+        with service.store.connect() as conn:
+            voice_attempts = conn.execute("SELECT COUNT(*) FROM deliveries").fetchone()[0]
         report = {"before":before, "after_health":after_health, "after_warmup":final,
                   "seconds":round(time.perf_counter() - started, 3),
                   "passed":before == after_health == "准备中" and final == "可用",
-                  "sent_messages":0, "voice_attempts":service.store.budget_used("speech", "global", time.time())}
+                  "sent_messages":0, "voice_attempts":voice_attempts}
         (output / "readiness.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(report, ensure_ascii=False), flush=True)
         return 0 if report["passed"] else 1

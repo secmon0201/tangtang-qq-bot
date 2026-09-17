@@ -67,7 +67,7 @@ async def settle():
         await asyncio.sleep(0)
 
 
-def test_health_alone_never_enables_voice_and_warmup_has_no_sends_or_quota(tmp_path, monkeypatch):
+def test_health_alone_never_enables_voice_and_warmup_has_no_delivery_records(tmp_path, monkeypatch):
     async def never_send(*args, **kwargs):
         pytest.fail("warmup must never send to QQ")
     monkeypatch.setattr("bot.services.speech.call_qq_action", never_send)

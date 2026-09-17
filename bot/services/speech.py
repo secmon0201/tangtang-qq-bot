@@ -108,10 +108,6 @@ class SpeechService:
             return "故障"
         if voice.key not in self.ready:
             return "准备中"
-        now = self.clock()
-        if (self.store.budget_used("speech", "global", now) >= self.store.option("speech_global_limit", 60)
-                or self.store.budget_used("speech", f"group:{group_id}", now) >= self.store.option("speech_group_limit", 12)):
-            return "额度不足"
         return "可用"
 
     def random_candidate(self, group_id: int, roll: float) -> bool:
@@ -220,7 +216,7 @@ class SpeechService:
                         job.active = False
                         continue
                     # Warmup shares the only synthesis slot, bypasses reply
-                    # caches, and has no group quota, history or send capability.
+                    # caches, and has no interaction history or send capability.
                     reset = getattr(self.backend, "reset", None)
                     if reset is not None:
                         reset()
@@ -261,8 +257,6 @@ class SpeechService:
             return SpeechResult("failed", reason="语音服务暂不可用")
         if not current():
             return SpeechResult("cancelled")
-        if not self.store.claim_budget("speech", context.group_id, self.clock(), self.store.option("speech_global_limit", 60), self.store.option("speech_group_limit", 12)):
-            return SpeechResult("failed", reason="语音额度已用完")
         if not explicit:
             self._last_random[context.group_id] = self.clock()
             self.store.set_option(f"last_random_voice:{context.group_id}", self.clock(), invalidate=False)

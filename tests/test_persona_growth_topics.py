@@ -42,11 +42,11 @@ def test_budget_reservations_persist_and_do_not_cross_daily_limit(tmp_path):
     path = tmp_path / "personas.db"
     store = PersonaStore(path)
     now = time.time()
-    assert store.claim_budget("speech", 1001, now, 2, 1)
-    assert not store.claim_budget("speech", 1001, now, 2, 1)
-    assert store.claim_budget("speech", 1002, now, 2, 1)
-    assert not PersonaStore(path).claim_budget("speech", 1003, now, 2, 1)
-    assert store.claim_budget("speech", 1001, now + 86400, 2, 1)
+    assert store.claim_budget("background", 1001, now, 2, 1)
+    assert not store.claim_budget("background", 1001, now, 2, 1)
+    assert store.claim_budget("background", 1002, now, 2, 1)
+    assert not PersonaStore(path).claim_budget("background", 1003, now, 2, 1)
+    assert store.claim_budget("background", 1001, now + 86400, 2, 1)
 
 
 def test_topics_are_scoped_fresh_and_sources_only_on_request(tmp_path):

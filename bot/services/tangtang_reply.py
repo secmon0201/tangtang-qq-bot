@@ -22,6 +22,7 @@ class ReplyPlan:
     text_fallback: tuple[str, ...] = ()
     expression: str = ""
     structured: bool = False
+    expression_candidates: tuple[str, ...] = ()
 
     @property
     def text(self) -> str:
@@ -122,9 +123,11 @@ def parse_reply_plan(
     # Malformed control payloads must never be shown as a chat message.
     if json_messages is None and (body.startswith("{") or body.startswith("```json")):
         return ReplyPlan(False, ())
+    candidates = payload.get("expression_candidates", []) if payload else []
+    candidates = tuple(v for v in candidates[:3] if isinstance(v, str) and len(v) <= 64) if isinstance(candidates, list) else ()
     return ReplyPlan(bool(cleaned), tuple(cleaned), voice if valid else "text",
                      tuple(v.strip() for v in fallback if v.strip())[:max_bubbles],
-                     str(payload.get("expression", "")) if payload else "", valid)
+                     str(payload.get("expression", "")) if payload else "", valid, candidates)
 
 
 def _reply_object(text: str) -> dict:

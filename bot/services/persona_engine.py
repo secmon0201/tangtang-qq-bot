@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-import json
+import random
 import time
 import uuid
 from typing import Callable
@@ -16,6 +16,8 @@ from bot.services.speech import SpeechService
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.persona_memory_store import PersonMemoryStore
+from bot.services.expression_selection import ExpressionSelection
+from bot.services.persona_expressions import expression_request
 
 
 class PersonaEngine:
@@ -29,6 +31,9 @@ class PersonaEngine:
         self.feature_enabled, self.chat_enabled = feature_enabled, chat_enabled
         self.configuration_version = configuration_version or (lambda: "")
         self.profiles = profiles or load_personas()
+        self.expressions = ExpressionSelection(store)
+        for profile in self.profiles.values():
+            self.expressions.catalog(profile)
         self._default_history = history_db
         self.growth = PersonaGrowth(store, self.evidence_allowed)
         self._databases: dict[str, TangtangDb] = {}
@@ -75,29 +80,29 @@ class PersonaEngine:
     def expression_ids(self, context: ChatContext) -> tuple[str, ...]:
         if not self.feature_enabled(context.group_id, "persona_expressions"):
             return ()
-        if context.persona.key == "denia":
-            catalog = self._expression_catalog(context)
-            if catalog:
-                self.store.sync_expression_catalog(context.persona.key, catalog)
-                return tuple(item["id"] for item in catalog)
-        return ("smile", "laugh", "think", "peek")
+        return tuple(row["id"] for row in self.expressions.catalog(context.persona))
 
     def expression_prompt(self, context: ChatContext) -> str:
-        if context.persona.key != "denia":
-            return "可用表情 ID：" + "、".join(self.expression_ids(context))
-        rows = self._expression_catalog(context)
-        return "可用角色表情（只选 ID；按情绪、动作、强度和场景选择，严肃或不合适场景不要用）：" + "；".join(
-            f"{row['id']}（{row['name']}；情绪={','.join(row.get('emotion', []))}；动作={row.get('action','')}；强度={row.get('intensity',0.0)}；适用={row['use']}；避免={row['avoid']}）" for row in rows
+        allowed = self.expression_ids(context)
+        rows = [r for r in self.expressions.catalog(context.persona) if r["id"] in allowed and not r.get("explicit_only")]
+        random.shuffle(rows)
+        return "表情目录（顺序随机，不表示优先级；先看本轮语境，无合适项留空；相同组也必须逐项检查适用/避免）。" + "；".join(
+            f"{r['id']}（{r['name']}；组={r.get('group',r['id'])}；画面={r.get('visual','')}；"
+            f"情绪={','.join(r.get('emotion', []))}；强度={r.get('intensity',0.0)}；适用={r['use']}；避免={r['avoid']}）" for r in rows
         )
 
-    @staticmethod
-    def _expression_catalog(context: ChatContext) -> list[dict]:
-        path = context.persona.resource_dir / "expression_catalog.json"
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
-        return [item for item in payload if isinstance(item, dict) and isinstance(item.get("id"), str)]
+    def expression_intent(self, context: ChatContext, text: str) -> str:
+        return expression_request(text, self.expressions.names(context.persona))
+
+    def requested_expression_available(self, context: ChatContext, text: str) -> bool:
+        ids, _ = self.expressions.requested(context.persona, text)
+        return any(self.expression(context, key) is not None for key in ids)
+
+    def choose_expression(self, context: ChatContext, text: str, plan, roll: float, *, blocked: str = "") -> str:
+        available = tuple(key for key in self.expression_ids(context) if self.expression(context, key) is not None)
+        blocked = blocked or ("disabled" if not self.feature_enabled(context.group_id, "persona_expressions") else "")
+        return self.expressions.choose(context, text, plan.expression, plan.expression_candidates,
+                                       available=available, roll=roll, structured=plan.structured, blocked=blocked)
 
     def expression(self, context: ChatContext, key: str):
         if key not in self.expression_ids(context):
@@ -105,7 +110,7 @@ class PersonaEngine:
         if context.persona.key == "tangtang":
             return MessageSegment.face({"smile": 0, "laugh": 13, "think": 32, "peek": 21}[key])
         # Send the original file so animated assets are not flattened by rendering.
-        catalog = self._expression_catalog(context)
+        catalog = self.expressions.catalog(context.persona)
         candidates = [next((item["file"] for item in catalog if item["id"] == key), "")] if catalog else []
         candidates += [f"{key}{suffix}" for suffix in (".gif", ".webp", ".png", ".jpg", ".jpeg")]
         for filename in candidates:

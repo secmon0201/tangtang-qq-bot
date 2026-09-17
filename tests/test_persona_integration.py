@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import time
 import wave
 from dataclasses import replace
 from types import SimpleNamespace
 from functools import wraps
 
 import pytest
-from nonebot.adapters.onebot.v11 import Message
+from nonebot.adapters.onebot.v11 import ActionFailed, Message
 from PIL import Image
 
 from bot.services.chat_dispatch import ChatDispatcher
@@ -139,7 +140,7 @@ def test_expression_intent(text, expected):
     assert expression_request(text) == expected
 
 
-def test_ordinary_expression_probability_is_fifteen_percent():
+def test_ordinary_expression_probability_is_sixty_percent():
     assert sum(bool(expression_key("今天好", "smile", n / 100)) for n in range(100)) == 60
     assert expression_key("别发表情", "smile", 0) == ""
     assert expression_key("今天好", "", 0) == ""
@@ -239,6 +240,9 @@ async def test_uncertain_combined_expression_is_not_sent_again(tmp_path, monkeyp
     assert [segment.type for segment in sent[0]] == ["reply", "text", "image"]
     assert not engine.history("denia", service.db).list_calls(2001, 1001)
     assert engine.store.delivery("1001:1")["status"] == "uncertain"
+    with engine.store.connect() as conn:
+        assert conn.execute("SELECT status FROM expression_events WHERE request_id='1001:1'").fetchone()[0] == 'uncertain'
+    assert not engine.expressions.history(engine.snapshot(event(), 'model', False), time.time())[0]
 
 
 def test_selection_revisions_and_storage_isolate_personas(tmp_path):
@@ -460,6 +464,56 @@ async def test_simultaneous_groups_keep_frozen_personas(tmp_path, monkeypatch):
     assert "娅娅" in sent[1001] and "糖糖" in sent[1002]
     assert not engine.store.interactions("tangtang", 1001)
     assert not engine.store.interactions("denia", 1002)
+
+
+@pytest.mark.parametrize("inline", [True, False])
+@pytest.mark.parametrize("outcome", ["delivered", "missing_ack", "timeout", "failed"])
+@async_test
+async def test_expression_acknowledgements_control_usage(tmp_path, monkeypatch, inline, outcome):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, "denia")
+    service, config = service_for(tmp_path, engine, Provider({}))
+    attempts = []
+    async def send(bot, action, **params):
+        msg = params['message']
+        image = getattr(msg, 'type', '') == 'image' or (isinstance(msg, Message) and bool(msg['image']))
+        if image:
+            attempts.append(str(msg))
+            if outcome == 'missing_ack':
+                return {}
+            if outcome == 'timeout':
+                raise TimeoutError('test-only')
+            if outcome == 'failed':
+                raise ActionFailed(retcode=100, msg='test-only')
+        return {'message_id': 77}
+    monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
+    monkeypatch.setattr('bot.services.tangtang_chat.random.random', lambda: .1 if inline else .9)
+    await service.handle(None, event('娅娅发个手动微笑表情'), config)
+    assert len(attempts) == 1 and 'expr_026.gif' in attempts[0]
+    with engine.store.connect() as conn:
+        row = conn.execute('SELECT * FROM expression_events').fetchone()
+    assert row['selected_id'] == 'expr_026'
+    assert row['status'] == ('uncertain' if outcome in {'missing_ack', 'timeout'} else outcome)
+    counts, _ = engine.expressions.history(engine.snapshot(event(), 'model', False), time.time())
+    assert counts.get('expr_026', 0) == (1 if outcome == 'delivered' else 0)
+
+
+@async_test
+async def test_persona_switch_cancels_separate_expression(tmp_path, monkeypatch):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, 'denia')
+    service, config = service_for(tmp_path, engine, Provider({}))
+    sent = []
+    async def send(bot, action, **params):
+        sent.append(params['message'])
+        engine.store.switch(1001, 'tangtang')
+        return {'message_id': 77}
+    monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
+    monkeypatch.setattr('bot.services.tangtang_chat.random.random', lambda: .9)
+    await service.handle(None, event('娅娅发个手动微笑表情'), config)
+    assert len(sent) == 1
+    with engine.store.connect() as conn:
+        assert conn.execute('SELECT status FROM expression_events').fetchone()[0] == 'cancelled'
 
 
 @async_test

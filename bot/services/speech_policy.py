@@ -56,7 +56,7 @@ def delivery_instruction(status: str, candidate: bool, expressions: tuple[str, .
         "\n[最终输出契约：覆盖前面的消息标记格式]\n"
         '只输出 JSON：{"decision":"reply或silent","messages":["实际对白"],'
         '"voice":"auto或accept或decline或text","text_fallback":["语音未发送时也成立的文字回答"],'
-        '"expression":"允许的表情ID或空字符串"}。不输出思考、分析、L1、代码围栏。'
+        '"expression":"最合适的表情ID或空字符串","expression_candidates":["同样适合的可替代ID"]}。不输出思考、分析、L1、代码围栏。'
         f"语音状态：{status}；本轮普通语音候选：{'是' if candidate else '否'}。"
         "用户要求文字时 voice=text；主动要求语音时，你决定是否愿意，答应用 accept，拒绝用 decline。"
         "普通聊天用 auto，觉得不适合语音则用 text。拒绝必须保持文字；不能嘴上拒绝却选择语音。"
@@ -64,5 +64,7 @@ def delivery_instruction(status: str, candidate: bool, expressions: tuple[str, .
         "messages 是直接说出口的内容，不写发语音的过程、承诺、旁白或内心独白。"
         "text_fallback 回答同一个问题，但不能声称发了、将发语音，不要包含格式或控制标记。"
         "需要代码、链接或长篇说明时选择文字，不为语音删掉关键信息。"
-        "表情可选且最多一个，不能提交文件路径；语音或沉默不附表情。可用ID：" + "、".join(expressions)
+        "表情可选且最终最多发送一个；expression 是首选，expression_candidates 尽量提供1至3个同组且同样贴合本轮语境的替代ID，"
+        "程序会在你认可的候选里按近期使用量抽选。没有合适替代就留空，不为凑数跨情绪选图。"
+        "不要因为名称熟悉反复只选旧ID；检查图片说明与回答的态度一致。不能提交文件路径；语音或沉默不附表情。可用ID：" + "、".join(expressions)
     )

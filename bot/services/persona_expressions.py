@@ -15,10 +15,20 @@ _REQUEST = re.compile(
 )
 
 
-def expression_request(text: str) -> str:
+def expression_request(text: str, names: tuple[str, ...] = ()) -> str:
     if _NO_EXPRESSION.search(text):
         return "none"
-    return "explicit" if _REQUEST.search(text) else "ordinary"
+    return "explicit" if _REQUEST.search(text) or requested_name(text, names) is not None else "ordinary"
+
+
+def requested_name(text: str, names: tuple[str, ...]) -> str | None:
+    """Match a registered name inside a request, not elsewhere in the conversation."""
+    if not names:
+        return None
+    alternatives = "|".join(re.escape(n) for n in sorted(set(names), key=len, reverse=True))
+    match = re.search(r"(?:发|来|给我|想看|我要|我想要)(?:给我)?(?:一)?(?:个|张|些)?"
+                      r"(?:你的)?(?P<name>" + alternatives + r")(?:的)?" + _NOUN, text)
+    return match.group("name") if match else None
 
 
 def expression_key(text: str, selected: str, roll: float) -> str:

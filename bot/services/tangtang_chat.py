@@ -18,18 +18,18 @@ import httpx
 import truststore
 from dotenv import dotenv_values
 from nonebot import logger
-from nonebot.adapters.onebot.v11 import MessageSegment
+from nonebot.adapters.onebot.v11 import ActionFailed, MessageSegment
 
 from bot.config import ROOT, settings
 from bot.services.qq_platform import call_qq_action
-from bot.services.pacing import guard_outbound_for
+from bot.services.pacing import OutboundCancelled, guard_outbound_for
 from bot.services.proactive_policy import proactive_turn
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
-from bot.services.persona_expressions import INLINE_EXPRESSION_PROBABILITY, expression_key, expression_request
+from bot.services.persona_expressions import INLINE_EXPRESSION_PROBABILITY
 from bot.services.tangtang_media import (
     ImageReference,
     MediaResolution,
@@ -1924,13 +1924,12 @@ class TangtangService:
             return
         group_identity_answer = self._group_identity_answer(group_id, call_text)
         context = self._turn.get()
-        if context and self.personas and expression_request(text) == "explicit" and voice_request(text) != "voice":
-            key = expression_key(text, "", 0.0)
-            available = self.personas.expression(context, key) is not None
+        if context and self.personas and self.personas.expression_intent(context, text) == "explicit" and voice_request(text) != "voice":
+            available = self.personas.requested_expression_available(context, text)
             answer = "给你。" if available else "现在没有可用的角色表情。"
             await self._send_and_record(bot, event, config, answer, reply_kind="canned",
                 mode="local", tokens={}, call_text=call_text,
-                reply_plan=ReplyPlan(True, (answer,), voice="text", expression=key,
+                reply_plan=ReplyPlan(True, (answer,), voice="text",
                                      structured=True), voice_candidate=False)
             return
         if group_identity_answer is not None:
@@ -2248,6 +2247,8 @@ class TangtangService:
             self._write_usage(config, group_id, user_id, "model_result", mode=mode, tokens={},
                 detail=f"structured={plan.structured}; decision={'reply' if plan.decided else 'silent'}; tool_rounds={loops}")
             if context and not plan.structured and plan.decided:
+                if self.personas:
+                    self.personas.choose_expression(context, call_text, plan, 0, blocked="invalid_structure")
                 self._write_usage(config, group_id, user_id, "invalid_reply_structure", mode=mode, tokens=usage)
                 return
             messages = (
@@ -2256,6 +2257,8 @@ class TangtangService:
                 else plan.messages
             )
             if not plan.decided or not messages:
+                if context and self.personas:
+                    self.personas.choose_expression(context, call_text, plan, 0, blocked="silent")
                 if force_reply and not (context and self.personas):
                     line = self._pick_canned(group_id) or "我在，怎么啦？"
                     await self._send_and_record(
@@ -2359,6 +2362,7 @@ class TangtangService:
         context = self._turn.get()
         voice_delivery = None
         expression = None
+        expression_key = ""
         if context and self.personas:
             if not self._turn_current():
                 return
@@ -2376,6 +2380,7 @@ class TangtangService:
                     f"structured={plan.structured}; delivery={'voice' if decision.voice else 'text'}")
             parts = decision.fallback
             if decision.voice:
+                self.personas.choose_expression(context, source, plan, 0, blocked="voice")
                 voice_delivery = await speech.deliver(bot, context, decision.text,
                     explicit=decision.explicit, current=lambda: self._turn_current()
                     and self.personas.feature_enabled(group_id, "persona_voice")
@@ -2392,8 +2397,12 @@ class TangtangService:
                         parts = (voice_delivery.reason, *parts)
                     voice_delivery = None
             if not voice_delivery:
-                key = expression_key(source, plan.expression, random.random())
-                expression = self.personas.expression(context, key)
+                expression_key = self.personas.choose_expression(context, source, plan, random.random())
+                expression = self.personas.expression(context, expression_key)
+                if expression_key and expression is None:
+                    self.personas.expressions.result(context, "cancelled", reason="asset_disappeared")
+                if reply_kind == "canned" and parts == ("给你。",) and expression is None:
+                    parts = ("这次没有合适的可用表情，先不发图啦。",)
         if not config.reply_bubbles_enabled:
             parts = ("\n".join(parts),)
         inline_expression = expression is not None and random.random() < INLINE_EXPRESSION_PROBABILITY
@@ -2410,11 +2419,15 @@ class TangtangService:
             if not voice_delivery and not self._turn_current():
                 break
             try:
+                if inline_expression and index == 0 and (not self.personas.feature_enabled(group_id, "persona_expressions") or self.personas.expression(context, expression_key) is None):
+                    self.personas.expressions.result(context, "cancelled", reason="disabled_before_send")
+                    inline_expression, expression = False, None
                 if voice_delivery:
                     result = {"message_id": voice_delivery.message_id}
                 else:
                     outgoing = part
                     if inline_expression and index == 0:
+                        self.personas.expressions.result(context, "sending")
                         outgoing = MessageSegment.text(part) + expression
                         # Consume before sending: an uncertain send must not
                         # cause a second, separate expression attempt.
@@ -2432,6 +2445,8 @@ class TangtangService:
                     )
                     raise ValueError("missing text delivery acknowledgement")
                 delivered.append(part)
+                if inline_expression and index == 0:
+                    self._expression_outcome(context, result=result)
                 self._write_usage(config, group_id, user_id, "send_result", mode=mode, tokens={},
                     detail=f"delivered; part={index}; platform_message_id={self._platform_message_id(result)}")
                 delivery_rows.append(
@@ -2443,6 +2458,8 @@ class TangtangService:
                     }
                 )
             except Exception as exc:
+                if inline_expression and index == 0:
+                    self._expression_outcome(context, error=exc)
                 send_error = exc
                 self._write_usage(config, group_id, user_id, "send_result", mode=mode, tokens={},
                     detail=f"unconfirmed; part={index}; error={type(exc).__name__}")
@@ -2473,6 +2490,8 @@ class TangtangService:
                 send_error,
             )
         if not delivered:
+            if context and self.personas and expression_key:
+                self.personas.expressions.result(context, "cancelled", reason="text_not_delivered")
             self._write_usage(config, group_id, user_id, "error", mode=mode, tokens=tokens)
             return
         delivered_text = "\n".join(delivered)
@@ -2511,11 +2530,17 @@ class TangtangService:
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", exc)
-        if expression is not None and self._turn_current():
-            try:
-                await call_qq_action(bot, "send_group_msg", group_id=group_id, message=expression)
-            except Exception:
-                logger.debug("Optional persona expression unavailable")
+        if expression is not None:
+            if send_error is not None or not self._turn_current() or not self.personas.feature_enabled(group_id, "persona_expressions") or self.personas.expression(context, expression_key) is None:
+                self.personas.expressions.result(context, "cancelled", reason="text_failed_or_context_expired")
+            else:
+                self.personas.expressions.result(context, "sending")
+                try:
+                    result = await call_qq_action(bot, "send_group_msg", group_id=group_id, message=expression)
+                    self._expression_outcome(context, result=result)
+                except Exception as exc:
+                    self._expression_outcome(context, error=exc)
+                    logger.debug("Optional persona expression unavailable")
         self._write_usage(
             config,
             group_id,
@@ -2529,6 +2554,12 @@ class TangtangService:
             tokens=tokens,
             detail="partial_delivery" if send_error is not None else "",
         )
+
+    def _expression_outcome(self, context: ChatContext, *, result=None, error: Exception | None = None) -> None:
+        cause = (error.__cause__ or error) if error else None
+        status = "cancelled" if isinstance(cause, OutboundCancelled) else "failed" if isinstance(cause, ActionFailed) else "uncertain" if cause else "delivered"
+        self.personas.expressions.result(context, status, message_id=self._platform_message_id(result),
+                                        reason=type(cause).__name__ if cause else "")
 
     @staticmethod
     def _platform_message_id(result: Any) -> str:

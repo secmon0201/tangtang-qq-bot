@@ -43,6 +43,15 @@ CREATE TABLE IF NOT EXISTS topic_use(persona TEXT NOT NULL, group_id INTEGER NOT
 CREATE TABLE IF NOT EXISTS expression_catalog(persona TEXT NOT NULL, expression_id TEXT NOT NULL,
  name TEXT NOT NULL, file TEXT NOT NULL, use_case TEXT NOT NULL, avoid_case TEXT NOT NULL,
  PRIMARY KEY(persona, expression_id));
+CREATE TABLE IF NOT EXISTS expression_metadata(persona TEXT NOT NULL, expression_id TEXT NOT NULL,
+ version TEXT NOT NULL, metadata TEXT NOT NULL, PRIMARY KEY(persona, expression_id));
+CREATE TABLE IF NOT EXISTS expression_events(persona TEXT NOT NULL, request_id TEXT NOT NULL,
+ group_id INTEGER NOT NULL, created_at REAL NOT NULL, completed_at REAL,
+ selected_id TEXT NOT NULL, status TEXT NOT NULL, reason TEXT NOT NULL,
+ decision_json TEXT NOT NULL, platform_message_id TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(persona, request_id));
+CREATE INDEX IF NOT EXISTS expression_delivered_scope
+ ON expression_events(persona,group_id,status,completed_at);
 """
 
 

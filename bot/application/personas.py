@@ -11,6 +11,7 @@ from bot.services.persona_store import PersonaStore
 from bot.services.runtime import group_domains, passive_settings
 from bot.services.speech import SpeechService
 from bot.services.tangtang_runtime import config_loader
+from bot.services.tangtang_db import TangtangDb
 
 
 def chat_enabled(group_id: int, proactive: bool) -> bool:
@@ -26,6 +27,7 @@ def persona_engine() -> PersonaEngine:
     store = PersonaStore(ROOT / "data" / "personas" / "state.db", settings.timezone)
     speech = SpeechService(store, SovitsBackend(), ROOT / "data" / "personas" / "audio")
     return PersonaEngine(store, speech,
+        history_db=TangtangDb(),
         feature_enabled=lambda group, feature: group_domains().effective_feature_enabled(group, feature),
         chat_enabled=chat_enabled,
         configuration_version=lambda: hashlib.sha256(repr(config_loader.load()).encode()).hexdigest())

@@ -42,6 +42,12 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         await persona_command.finish(f"当前人格：{profile.name}\n呼叫：{profile.call_keyword} 或 @机器人\n语音：{voice}")
     if not await can_manage_persona(bot, event):
         await persona_command.finish("只有本群群主、群管理员或超级管理员可以管理人格。")
+    scope_group = group_id
+    if tokens[:2] == ['成长', '全局']:
+        if not is_super_admin(int(event.user_id)):
+            await persona_command.finish('全局成长管理仅限超级管理员。')
+        scope_group = 0
+        tokens = ['成长', *tokens[2:]]
     if len(tokens) == 2 and tokens[0] == "切换":
         target = next((p for p in engine.profiles.values() if p.name == tokens[1]), None)
         if target is None:
@@ -50,17 +56,17 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         database().audit(int(event.user_id), "persona_switch", group_id, target.key)
         await persona_command.finish(f"本群已切换为{target.name}。叫“{target.call_keyword}”或 @机器人即可。")
     if tokens == ["成长", "列表"]:
-        entries = engine.growth.entries(profile.key, group_id)
-        rows = [f"{r['id']} · v{r['version']} · {'启用' if r['enabled'] else '停用'} · {r['topic']}：{r['content']}" for r in entries]
+        entries = engine.growth.entries(profile.key, scope_group)
+        rows = [f"{r['id']} · {'跨群' if r.get('shared') else '本群'} · v{r['version']} · {'启用' if r['enabled'] else '停用'} · {r['topic']}：{r['content']}" for r in entries]
         await persona_command.finish("本群公开成长记录：\n" + ("\n".join(rows) if rows else "暂无"))
     if len(tokens) == 3 and tokens[:2] == ["成长", "停用"] and tokens[2].isdigit():
-        changed = engine.growth.disable(profile.key, group_id, int(tokens[2]))
+        changed = engine.growth.disable(profile.key, scope_group, int(tokens[2]))
         database().audit(int(event.user_id), "persona_growth_disable", group_id, tokens[2])
         await persona_command.finish("已停用。" if changed else "没有本群当前人格的这条记录。")
     if len(tokens) == 4 and tokens[:2] == ["成长", "回退"] and all(t.isdigit() for t in tokens[2:]):
         if not is_super_admin(int(event.user_id)):
             await persona_command.finish("成长回退仅限超级管理员。")
-        changed = engine.growth.rollback(profile.key, group_id, int(tokens[2]), int(tokens[3]), time.time())
+        changed = engine.growth.rollback(profile.key, scope_group, int(tokens[2]), int(tokens[3]), time.time())
         database().audit(int(event.user_id), "persona_growth_rollback", group_id, " ".join(tokens[2:]))
         await persona_command.finish("已回退并保留版本历史。" if changed else "没有本群当前人格的这个版本。")
     await persona_command.finish("用法：#人格 状态 / #人格 切换 糖糖|达妮娅 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")

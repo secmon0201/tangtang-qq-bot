@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS growth(id INTEGER PRIMARY KEY, persona TEXT NOT NULL,
 CREATE TABLE IF NOT EXISTS growth_versions(entry_id INTEGER NOT NULL, version INTEGER NOT NULL,
  content TEXT NOT NULL, evidence_ids TEXT NOT NULL, created_at REAL NOT NULL,
  PRIMARY KEY(entry_id,version));
+CREATE TABLE IF NOT EXISTS growth_hidden(group_id INTEGER NOT NULL, entry_id INTEGER NOT NULL,
+ PRIMARY KEY(group_id,entry_id));
 CREATE TABLE IF NOT EXISTS budgets(day TEXT NOT NULL, kind TEXT NOT NULL,
  scope TEXT NOT NULL, used INTEGER NOT NULL, PRIMARY KEY(day,kind,scope));
 CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, group_id INTEGER,
@@ -115,7 +117,7 @@ class PersonaStore:
 
     def interactions(self, persona: str, group_id: int, *, limit: int = 20) -> list[dict]:
         with self.connect() as conn:
-            return [dict(r) for r in conn.execute("SELECT * FROM evidence WHERE persona=? AND group_id=? ORDER BY id DESC LIMIT ?", (persona, group_id, limit))]
+            return [dict(r) for r in conn.execute("SELECT * FROM evidence WHERE persona=? AND (?=0 OR group_id=?) ORDER BY id DESC LIMIT ?", (persona, group_id, group_id, limit))]
 
     def mark_processed(self, ids: list[int]) -> None:
         with self.connect() as conn:
@@ -135,8 +137,8 @@ class PersonaStore:
         with self.connect() as conn:
             placeholders = ",".join("?" for _ in ids)
             return [dict(r) for r in conn.execute(
-                f"SELECT * FROM evidence WHERE persona=? AND group_id=? AND id IN ({placeholders})",
-                (persona, group_id, *ids),
+                f"SELECT * FROM evidence WHERE persona=? AND (?=0 OR group_id=?) AND id IN ({placeholders})",
+                (persona, group_id, group_id, *ids),
             )]
 
     def claim_budget(self, kind: str, group_id: int, now: float, global_limit: int,

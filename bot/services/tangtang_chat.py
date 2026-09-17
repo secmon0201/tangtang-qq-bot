@@ -1232,6 +1232,7 @@ class TangtangService:
         self._base_db = db or TangtangDb()
         self.personas = persona_engine
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
+        self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
         self.media_resolver = media_resolver
@@ -1272,20 +1273,27 @@ class TangtangService:
         context = self._turn.get()
         scheduled = proactive_turn()
         return ((not context or not self.personas or self.personas.current(context))
-                and (scheduled is None or scheduled.current()))
+                and (scheduled is None or scheduled.current())
+                and (self._memory_revision.get() is None or self._memory_revision.get() == self.memory.people.revision()))
 
     async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
         context = context or (self.personas.snapshot(event, config.model, proactive) if self.personas else None)
         token = self._turn.set(context)
+        memory_token = self._memory_revision.set(self.memory.people.revision())
         try:
             if context and (not self._turn_current() or not self.personas.store.claim_request(context.request_id, time.time())):
                 return
+            if config.memory_enabled:
+                self.memory.apply_restore_request(int(event.group_id), int(event.user_id), event.get_plaintext())
+                self.memory.apply_forget_request(int(event.group_id), int(event.user_id), event.get_plaintext())
+                self._memory_revision.set(self.memory.people.revision())
             if context:
                 config = replace(config, call_keyword=context.persona.call_keyword)
             handler = self._handle_proactive_current if proactive else self._handle_current
             with guard_outbound_for(self._turn_current):
                 await handler(bot, event, config)
         finally:
+            self._memory_revision.reset(memory_token)
             self._turn.reset(token)
 
     @staticmethod
@@ -1378,9 +1386,11 @@ class TangtangService:
             rows = []
         if scheduled is not None:
             rows = self._fresh_context_rows(rows)
-            return [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows]
+        rows = [r for r in rows if self.memory.safe_text(group_id, int(r['user_id']), r['text'])]
         if rows:
             return [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows]
+        if scheduled is not None or self.memory.people.revision():
+            return []
         return list(self._group_context.get(group_id, ()))
 
     @staticmethod
@@ -1404,7 +1414,8 @@ class TangtangService:
             return ""
         if not rows:
             return ""
-        lines = [f"{row['nickname'] or '群友'}：{row['text']}" for row in rows]
+        lines = [f"{row['nickname'] or '群友'}：{row['text']}" for row in rows
+                 if self.memory.safe_text(group_id, user_id, row['text'])]
         text = "\n".join(lines)
         if len(text) <= max_chars:
             return text
@@ -1644,6 +1655,7 @@ class TangtangService:
             config.history_messages,
             config.history_chars,
         )
+        history = self.memory.safe_text(group_id, int(event.user_id), history)
         user_history = self._user_history_lines(
             int(event.user_id),
             group_id,
@@ -1773,6 +1785,9 @@ class TangtangService:
                 ).prompt_text()
                 if recalled:
                     memory_sections.append(recalled)
+                episode = self.memory.episode_prompt(group_id, int(event.user_id), call_text)
+                if episode:
+                    memory_sections.append(episode)
             except Exception as exc:
                 logger.warning("Tangtang memory recall failed: {}", exc)
         if config.persona_state_enabled:
@@ -2143,12 +2158,6 @@ class TangtangService:
             current_text = (
                 call_text if call_text is not None else event.get_plaintext().strip()
             )
-            if config.memory_enabled:
-                try:
-                    self.memory.apply_restore_request(group_id, user_id, current_text)
-                    self.memory.apply_forget_request(group_id, user_id, current_text)
-                except Exception as exc:
-                    logger.warning("Tangtang memory forget request failed: {}", exc)
             media_resolution = MediaResolution((), ())
             if config.vision_enabled:
                 resolver = self._media_resolver_for(config)
@@ -2499,7 +2508,7 @@ class TangtangService:
                     text=source_text,
                 )
             if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
-                self.memory.update_states_after_reply(group_id, user_id, source_text)
+                self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", exc)
         if expression is not None and self._turn_current():

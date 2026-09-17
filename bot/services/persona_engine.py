@@ -15,6 +15,7 @@ from bot.services.persona_store import PersonaStore
 from bot.services.speech import SpeechService
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_memory import TangtangMemoryKernel
+from bot.services.persona_memory_store import PersonMemoryStore
 
 
 class PersonaEngine:
@@ -22,12 +23,14 @@ class PersonaEngine:
                  feature_enabled: Callable[[int, str], bool],
                  chat_enabled: Callable[[int, bool], bool],
                  configuration_version: Callable[[], str] | None = None,
-                 profiles: dict[str, PersonaProfile] | None = None) -> None:
+                 profiles: dict[str, PersonaProfile] | None = None,
+                 history_db: TangtangDb | None = None) -> None:
         self.store, self.speech = store, speech
         self.feature_enabled, self.chat_enabled = feature_enabled, chat_enabled
         self.configuration_version = configuration_version or (lambda: "")
         self.profiles = profiles or load_personas()
-        self.growth = PersonaGrowth(store)
+        self._default_history = history_db
+        self.growth = PersonaGrowth(store, self.evidence_allowed)
         self._databases: dict[str, TangtangDb] = {}
         self._memories: dict[str, TangtangMemoryKernel] = {}
         self.topics = None
@@ -51,11 +54,18 @@ class PersonaEngine:
                 and self.chat_enabled(context.group_id, context.proactive))
 
     def history(self, persona: str, default: TangtangDb) -> TangtangDb:
+        self._default_history = default
         if persona == "tangtang":
             return default
         if persona not in self._databases:
             self._databases[persona] = TangtangDb(self.store.path.parent / f"{persona}-history.db")
         return self._databases[persona]
+
+    def evidence_allowed(self, persona: str, row: dict) -> bool:
+        if self._default_history is None:
+            return False
+        store = PersonMemoryStore(self.history(persona, self._default_history))
+        return not store.blocked(row['user_id'], row['group_id'], row['source'] + '\n' + row['reply'])
 
     def memory(self, persona: str, default: TangtangDb, now) -> TangtangMemoryKernel:
         if persona not in self._memories:
@@ -105,7 +115,7 @@ class PersonaEngine:
         return None
 
     def extra_prompt(self, context: ChatContext, query: str) -> str:
-        parts = ["关系以本群群友为边界；不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
+        parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。各群当前话题和约定独立，不能接续其他群未完的问题。相关时可自然回忆与当前用户的旧经历，不转述其他群友的发言。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if self.feature_enabled(context.group_id, "persona_growth"):
             parts.append(self.growth.prompt(context.persona.key, context.group_id))
         if context.persona.key == "denia":

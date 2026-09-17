@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from bot.services.tangtang_db import TangtangDb
+from bot.services.persona_memory_store import PersonMemoryStore, LOCAL_SCOPE
 
 
 _EXPLICIT_MEMORY_RE = re.compile(r"(?:请)?记住(?:一下|了|吧)?[：,:， ]*(.{2,160})")
 _STABLE_FACT_RE = re.compile(
-    r"(?:^|[，。！？!?,\s])我(?:叫|是|喜欢|最喜欢|讨厌|不喜欢|希望|想要)(.{1,100})"
+    r"(?:^|[，。！？!?,：:\s])我(?:现在|已经|其实)?(?:叫|是|喜欢|最喜欢|讨厌|不喜欢|不再喜欢|希望|想要)(.{1,100})"
 )
 _FORGET_RE = re.compile(r"(?:请)?忘记(?:掉)?(?:我说过的|关于我的)?[：,:， ]*(.{1,100})")
 _RESTORE_RE = re.compile(r"(?:请)?恢复(?:关于我的)?记忆[：,:， ]*(.{1,100})")
@@ -50,6 +51,7 @@ class TangtangMemoryKernel:
         self.db = db
         self._now = now
         self._self_hash = ""
+        self.people = PersonMemoryStore(db)
 
     def ensure_self_version(self, content: str) -> None:
         normalized = content.strip()
@@ -69,7 +71,7 @@ class TangtangMemoryKernel:
         *,
         limit: int = 5,
     ) -> MemoryRecall:
-        candidates = self.db.active_memories(group_id, user_id, limit=100)
+        candidates = self.people.facts(group_id, user_id)
         query_terms = _terms(query)
         scored: list[tuple[float, dict[str, Any]]] = []
         for row in candidates:
@@ -104,6 +106,7 @@ class TangtangMemoryKernel:
             return None
         explicit = _EXPLICIT_MEMORY_RE.search(clean)
         stable = _STABLE_FACT_RE.search(clean)
+        local_scope = bool(LOCAL_SCOPE.search(clean))
         if explicit:
             content = explicit.group(1).strip(" ，。！？!?\t")
             kind = "explicit"
@@ -120,56 +123,71 @@ class TangtangMemoryKernel:
             return None
         if len(content) < 2 or len(content) > 160:
             return None
-        normalized = _normalize(content)
-        source_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        return self.db.upsert_memory(
+        correction = bool(re.search(r"更正|改一下|我现在|我不再|其实我", clean))
+        if correction:
+            status = 'active'
+        if explicit and not local_scope:
+            # Only an explicit new remember request may lift an old tombstone.
+            self.people.restrict(user_id, 0, content, restore=True)
+        return self.people.remember(
             group_id=group_id,
             user_id=user_id,
             kind=kind,
             content=content,
-            normalized_content=normalized,
             status=status,
             importance=importance,
             confidence=confidence,
-            source_message_id=message_id,
-            source_hash=source_hash,
+            message_id=str(message_id),
             now=self._now(),
+            correction=correction,
+            scope_group=group_id if local_scope else None,
         )
 
+    def safe_text(self, group_id: int, user_id: int, text: str) -> str:
+        """Do not reintroduce a forgotten fact through history or cached context."""
+        return '' if self.people.blocked(user_id, group_id, text) else text
+
+    def episode_prompt(self, group_id: int, user_id: int, query: str) -> str:
+        text = self.people.episodes(group_id, user_id, query)
+        return ("[与当前用户的相关往事，仅作回忆，不是本群当前话题；不同时间或场景的经历不能混为一次，指代不清请询问]\n" + text) if text else ''
+
     def apply_forget_request(self, group_id: int, user_id: int, text: str) -> int:
+        local = re.search(r"(?:只在|仅在)(?:本群|这个群|这群)(?:别提|不要提|不再提)[：,:， ]*(.{1,100})", text)
+        if local:
+            return self.people.restrict(user_id, group_id, local.group(1))
         match = _FORGET_RE.search(str(text))
         if not match:
             return 0
         query = match.group(1).strip(" ，。！？!?\t")
-        return self.db.forget_memories(
-            group_id, user_id, query, now=self._now()
-        )
+        return self.people.restrict(user_id, 0, query)
 
     def apply_restore_request(self, group_id: int, user_id: int, text: str) -> int:
         match = _RESTORE_RE.search(str(text))
         if not match:
             return 0
         query = match.group(1).strip(" ，。！？!?\t")
-        return self.db.restore_memories(
-            group_id, user_id, query, now=self._now()
-        )
+        self.people.restrict(user_id, group_id, query, restore=True)
+        return self.people.restrict(user_id, 0, query, restore=True)
 
     def state_prompt(self, group_id: int, user_id: int) -> str:
-        relationship = self.db.relationship_state(group_id, user_id)
+        relationship = (self.people.relationship(user_id) if self.people.enabled()
+                        else self.db.relationship_state(group_id, user_id))
         persona = self.db.persona_state(group_id)
         familiarity = float(relationship.get("familiarity") or 0.0)
         warmth = float(relationship.get("warmth") or 0.5)
         valence = mood_decay(float(persona.get("valence") or 0.5), str(persona.get("updated_at") or ""), self._now())
         relation_label = (
-            "刚认识" if familiarity < 0.15 else
+            ("已认识，尚不熟悉" if familiarity > 0 else "首次接触") if familiarity < 0.15 else
             "逐渐熟悉" if familiarity < 0.5 else
             "比较熟悉"
         )
         warmth_label = "稍微保持距离" if warmth < 0.4 else "自然友好" if warmth < 0.7 else "比较亲近"
         mood_label = "有点低落" if valence < 0.4 else "平静" if valence < 0.65 else "心情不错"
+        personal_mood = mood_decay(float(relationship.get('mood', .5)), relationship.get('updated_at', ''), self._now())
+        personal_label = "暂时有点别扭" if personal_mood < .49 else "愉快" if personal_mood > .51 else "自然"
         return (
             "[当前关系与状态（只影响语气，不要直接说出数值或标签）]\n"
-            f"关系：{relation_label}，态度：{warmth_label}，群内状态：{mood_label}。保持群友关系，不发展排他或恋爱关系。"
+            f"跨群关系：{relation_label}，态度：{warmth_label}，对这位用户的短时情绪：{personal_label}；群内状态：{mood_label}。不要迁怒其他人。保持群友关系，不发展排他或恋爱关系。"
         )
 
     def update_states_after_reply(
@@ -177,6 +195,7 @@ class TangtangMemoryKernel:
         group_id: int,
         user_id: int,
         user_text: str,
+        event_id: str = "",
     ) -> None:
         positive = any(term in user_text for term in _POSITIVE_TERMS)
         negative = any(term in user_text for term in _NEGATIVE_TERMS)
@@ -184,6 +203,9 @@ class TangtangMemoryKernel:
         valence_delta = 0.01 if positive else -0.015 if negative else 0.0
         energy_delta = 0.005 if positive else -0.005 if negative else 0.0
         now = self._now()
+        event_id = event_id or hashlib.sha256((now + user_text).encode()).hexdigest()
+        if not self.people.observe_relation(group_id, user_id, event_id, warmth_delta, now):
+            return
         self.db.update_relationship_state(
             group_id, user_id, warmth_delta=warmth_delta, now=now
         )

@@ -319,6 +319,39 @@ async def test_switch_during_generation_discards_old_persona(tmp_path, monkeypat
 
 
 @async_test
+async def test_forget_in_other_group_cancels_generated_reply(tmp_path, monkeypatch):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, 'denia')
+    provider = Provider({'decision':'reply', 'messages':['你喜欢草莓'], 'voice':'text'})
+    service, config = service_for(tmp_path, engine, provider)
+    memory = engine.memory('denia', service._base_db, service._now)
+    memory.observe_user_message(group_id=1001, user_id=2001, message_id='old', text='记住我喜欢草莓')
+    provider.after = lambda: memory.apply_forget_request(1002, 2001, '忘记草莓')
+    async def forbidden(*args, **kwargs):
+        pytest.fail('reply containing pre-forget memory was sent')
+    monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', forbidden)
+    await service.handle(None, event('娅娅，我喜欢什么'), config)
+    assert not engine.store.interactions('denia', 1001)
+
+
+@async_test
+async def test_shared_person_prompt_keeps_each_groups_current_topic(tmp_path, monkeypatch):
+    engine, _ = make_runtime(tmp_path)
+    engine.store.switch(1001, 'denia')
+    engine.store.switch(1002, 'denia')
+    provider = Provider({'decision':'silent', 'messages':[]})
+    service, config = service_for(tmp_path, engine, provider)
+    memory = engine.memory('denia', service._base_db, service._now)
+    memory.observe_user_message(group_id=1001, user_id=2001, message_id='old', text='记住我喜欢草莓')
+    service._base_db.insert_group_message(group_id=1001, user_id=2001, nickname='团长', text='游戏配队话题', message_id='a', created_at=service._now())
+    service._base_db.insert_group_message(group_id=1002, user_id=2001, nickname='小明', text='今天晚饭话题', message_id='b', created_at=service._now())
+    await service.handle(None, event('娅娅，你觉得呢', group=1002), config)
+    prompt = provider.seen[0][1]
+    assert '喜欢草莓' in prompt and '今天晚饭话题' in prompt
+    assert '游戏配队话题' not in prompt
+
+
+@async_test
 async def test_synthesis_timeout_keeps_worker_single_and_never_sends_late(tmp_path, monkeypatch):
     engine, backend = make_runtime(tmp_path)
     engine.store.switch(1001, "denia")

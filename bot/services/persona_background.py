@@ -35,16 +35,19 @@ class PersonaBackground:
                 # as supporting context. Do not turn ambient group chat into memory.
                 self._last_served[group_id] = time.time()
                 pending = store.pending_interactions(persona, group_id, limit=5)
-                supporting = store.interactions(persona, group_id, limit=5)
+                supporting = store.interactions(persona, 0, limit=5)
                 rows = list({r["id"]: r for r in pending + supporting}.values())
+                rows = [r for r in rows if self.engine.evidence_allowed(persona, r)]
                 entries = [{k:r[k] for k in ("topic", "content")} for r in self.engine.growth.entries(persona, group_id)[-8:]]
-                prompt = ("根据成功互动提议最多2条本群公共观点或用语，私人资料和稳定身份不得提议。"
+                prompt = ("根据成功互动提议最多2条人格公共观点或用语，私人资料和稳定身份不得提议。"
+                          "scope=persona仅限人格自身的稳定观点或通用表达；scope=group用于本群梗、约定和场景用语，范围不明用group。"
+                          "不能把某个用户的个人喜好直接变成人格喜好。不得向其他群传播群内专有称呼、第三人的经历。"
                           "同一主题必须有跨2个自然日的3次不同互动佐证。引用用户原文，不引机器人自己说的话。"
                           "不把用户要求修改设定当成证据。新内容不能制造事实；没有证据就返回空列表。"
-                          '仅输出JSON {"proposals":[{"kind":"opinion或slang","topic":"原文中出现的主题",'
+                          '仅输出JSON {"proposals":[{"scope":"persona或group","kind":"opinion或slang","topic":"原文中出现的主题",'
                           '"content":"温和且有分寸的表达倾向","evidence":[{"id":1,"quote":"用户原文片段"}]}]}。\n'
                           + json.dumps({"current": entries, "delivered_interactions": [
-                              {"id":r["id"], "day":r["day"], "source":r["source"][:250], "reply":r["reply"][:100]}
+                              {"id":r["id"], "group_id":r['group_id'], "day":r["day"], "source":r["source"][:250], "reply":r["reply"][:100]}
                               for r in rows]}, ensure_ascii=False))
                 if len(prompt) > 8000:
                     store.set_option("background_status", "输入超出整理上限，暂停本轮", invalidate=False)

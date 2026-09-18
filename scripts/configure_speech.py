@@ -41,7 +41,8 @@ def main() -> None:
     path = folder / "voices.json"
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"voices": {}, "bindings": {}}
     lock = json.loads((ROOT / "config/speech-upstream-lock.json").read_text(encoding="utf-8"))
-    data["voices"][args.voice] = {"endpoint": f"http://127.0.0.1:{args.port}", **{k: str(v) for k, v in files.items()}, "reference_text": args.reference_text, "sha256": hashes, "runtime_revision": lock["runtime"]["revision"]}
+    # Rebinding model assets must retain the operator's saved synthesis tuning.
+    data["voices"][args.voice] = {**data["voices"].get(args.voice, {}), "endpoint": f"http://127.0.0.1:{args.port}", **{k: str(v) for k, v in files.items()}, "reference_text": args.reference_text, "sha256": hashes, "runtime_revision": lock["runtime"]["revision"]}
     data["bindings"][args.persona] = args.voice
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     runtime = ROOT / "data" / "tts"

@@ -34,11 +34,23 @@ class VoiceProfile:
     language: str = "zh"
     speed: float = 1.0
     runtime_version: str = ""
+    prompt_language: str = "zh"
+    top_k: int = 15
+    top_p: float = 1.0
+    temperature: float = 1.0
+    text_split_method: str = "cut5"
+    fragment_interval: float = 0.3
+    seed: int = -1
+    repetition_penalty: float = 1.35
+    batch_size: int = 1
 
     @property
     def version(self) -> str:
         payload = (self.key, self.endpoint, self.model_version, self.reference_hash,
-                   self.reference_text, self.language, self.speed, self.runtime_version, "sovits-api-v2-contract-1")
+                   self.reference_text, self.language, self.speed, self.runtime_version,
+                   self.prompt_language, self.top_k, self.top_p, self.temperature,
+                   self.text_split_method, self.fragment_interval, self.seed,
+                   self.repetition_penalty, self.batch_size, "sovits-api-v2-contract-2")
         return hashlib.sha256(json.dumps(payload, ensure_ascii=False).encode()).hexdigest()
 
 

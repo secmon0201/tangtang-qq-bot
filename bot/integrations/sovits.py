@@ -44,8 +44,12 @@ class SovitsBackend:
             response = await client.post(voice.endpoint + "/tts", json={
                 "text": text, "text_lang": voice.language,
                 "ref_audio_path": str(voice.reference_audio),
-                "prompt_text": voice.reference_text, "prompt_lang": voice.language,
+                "prompt_text": voice.reference_text, "prompt_lang": voice.prompt_language,
                 "speed_factor": voice.speed, "media_type": "wav", "streaming_mode": False,
+                "top_k": voice.top_k, "top_p": voice.top_p, "temperature": voice.temperature,
+                "text_split_method": voice.text_split_method,
+                "fragment_interval": voice.fragment_interval, "seed": voice.seed,
+                "repetition_penalty": voice.repetition_penalty, "batch_size": voice.batch_size,
             })
             response.raise_for_status()
             audio = response.content

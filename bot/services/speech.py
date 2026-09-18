@@ -67,6 +67,15 @@ def load_voice_profiles(path: Path) -> tuple[dict[str, VoiceProfile], dict[str, 
             reference_hash=hashes["reference_audio"], gpt_weights=files["gpt_weights"],
             sovits_weights=files["sovits_weights"], speed=float(entry.get("speed", 1)),
             runtime_version=str(entry.get("runtime_revision", "")),
+            language=str(entry.get("language", "zh")),
+            prompt_language=str(entry.get("prompt_language", "zh")),
+            top_k=int(entry.get("top_k", 15)), top_p=float(entry.get("top_p", 1)),
+            temperature=float(entry.get("temperature", 1)),
+            text_split_method=str(entry.get("text_split_method", "cut5")),
+            fragment_interval=float(entry.get("fragment_interval", 0.3)),
+            seed=int(entry.get("seed", -1)),
+            repetition_penalty=float(entry.get("repetition_penalty", 1.35)),
+            batch_size=int(entry.get("batch_size", 1)),
         )
     bindings = dict(data.get("bindings", {}))
     if any(p not in {"tangtang", "denia"} or key not in profiles for p, key in bindings.items()):

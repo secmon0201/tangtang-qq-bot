@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
@@ -24,8 +25,8 @@ FILES = ('data/personas/denia-history.db', 'data/personas/state.db', 'data/tangt
 
 def sqlite_snapshot(source: Path, target: Path) -> dict:
     target.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True) as src:
-        with sqlite3.connect(target) as dst:
+    with closing(sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True)) as src:
+        with closing(sqlite3.connect(target)) as dst:
             src.backup(dst)
             integrity = dst.execute('PRAGMA integrity_check').fetchone()[0]
             if integrity != 'ok':

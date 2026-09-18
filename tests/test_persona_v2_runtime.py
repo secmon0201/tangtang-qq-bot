@@ -34,8 +34,8 @@ def capture(service, engine, config, ev, direct=True):
 
 def output(decision='reply'):
     return {'decision': decision, 'messages': ['画稿可以慢慢改'], 'voice': 'text',
-        'claims': [{'kind': 'impression', 'topic': '创作', 'statement': '会继续完善作品',
-                    'assertion_type': 'inference', 'applicability': '创作时',
+        'claims': [{'kind': 'fact', 'topic': '创作', 'statement': '我在修改画稿',
+                    'assertion_type': 'self_report', 'applicability': '创作时',
                     'evidence': [{'event_key': '1001:1', 'quote': '我在修改画稿'}]}]}
 
 
@@ -70,7 +70,7 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
     await service.handle(SimpleNamespace(), ev, config)
     store = engine.cognition('denia', service._base_db)
-    assert '完善作品' in store.own_impression(ev.user_id)
+    assert any(c['content'] == '我在修改画稿' for c in store.snapshot('saved', ev.user_id, 1002, []).claims)
     assert store.snapshot('cross', ev.user_id, 1002, []).claims
     states = PersonaActions(store).diagnostics()['actions']
     if decision == 'observe':
@@ -90,6 +90,11 @@ async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
     first = event('娅娅，我在修改画稿')
     capture(service, engine, config, first)
     await service.handle(SimpleNamespace(), first, config)
+    from tests.test_persona_profiles import publish
+    store = engine.cognition('denia', service._base_db)
+    with store.connect() as conn:
+        evidence = dict(conn.execute('SELECT * FROM persona_sources WHERE user_id=?', (first.user_id,)).fetchone())
+    publish(store, evidence, '本次想完善作品')
     sent = []
     async def send(*args, **kwargs):
         sent.append(str(kwargs['message']))
@@ -120,7 +125,7 @@ async def test_background_no_daily_budget_and_quarantines_invalid_evidence(tmp_p
     assert ObservationInbox(service._base_db).diagnostics()['states'] == {'applied': 1}
     await worker.tick({1001})
     assert provider.calls == 1
-    assert '完善作品' in engine.personal_impression(1002, ev.user_id)
+    assert engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 1002, []).claims[0]['content'] == '我在修改画稿'
 
 
 def test_legacy_migration_preserves_history_and_is_idempotent(tmp_path):
@@ -135,7 +140,8 @@ def test_legacy_migration_preserves_history_and_is_idempotent(tmp_path):
     assert not any(migrate_legacy(store, engine.store).values())
     snapshot = store.snapshot('next', 2001, 1002, [])
     assert any('草莓' in c['content'] for c in snapshot.claims)
-    assert '画稿' in store.own_impression(2001)
+    assert '持续推进' not in store.own_impression(2001)
+    assert not any(c['kind'] == 'impression' for c in snapshot.claims)
     with store.connect() as conn:
         assert conn.execute('SELECT count(*) FROM person_facts').fetchone()[0] == 1
         assert conn.execute('SELECT count(*) FROM person_impression_events').fetchone()[0] == 1
@@ -162,7 +168,7 @@ async def test_partial_rejection_keeps_source_for_worker_and_repairs_reply(tmp_p
     await service.handle(SimpleNamespace(), ev, config)
     assert len(provider.seen) == 2 and len(sent) == 1
     assert ObservationInbox(service._base_db).diagnostics()['states'] == {'pending': 1}
-    assert '完善作品' in engine.personal_impression(1001, ev.user_id)
+    assert any(c['content'] == '我在修改画稿' for c in engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 1001, []).claims)
 
 
 @async_test

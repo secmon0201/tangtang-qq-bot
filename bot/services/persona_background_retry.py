@@ -68,8 +68,9 @@ def classify_background_failure(exc: Exception, now: float) -> BackgroundFailure
 class BackgroundRetry:
     """One shared circuit across groups; every actual retry still claims budget."""
 
-    def __init__(self, store) -> None:
+    def __init__(self, store, *, key=_STATE_KEY, base_delay=300, max_delay=21600) -> None:
         self.store = store
+        self.key, self.base_delay, self.max_delay = key, base_delay, max_delay
 
     @staticmethod
     def configuration_key(config) -> str:
@@ -78,7 +79,7 @@ class BackgroundRetry:
         return hashlib.sha256(json.dumps(relevant).encode()).hexdigest()
 
     def state(self, config) -> dict:
-        state = self.store.option(_STATE_KEY, {})
+        state = self.store.option(self.key, {})
         return state if state.get("configuration") == self.configuration_key(config) else {}
 
     def blocked_status(self, config, now: float) -> str:
@@ -93,20 +94,20 @@ class BackgroundRetry:
     def failed(self, config, exc: Exception, now: float) -> dict:
         failure = classify_background_failure(exc, now)
         count = min(int(self.state(config).get("failures", 0)) + 1, 8)
-        delay = min(21600, max(300 * 2 ** (count - 1), failure.retry_after))
+        delay = min(self.max_delay, max(self.base_delay * 2 ** (count - 1), failure.retry_after))
         detail = {
             "reason": failure.reason, "http_status": failure.status,
             "error_code": failure.code, "retryable": failure.retryable,
             "next_attempt_at": now + (delay if failure.retryable else 86400),
         }
-        self.store.set_option(_STATE_KEY, {
+        self.store.set_option(self.key, {
             **detail, "configuration": self.configuration_key(config), "failures": count,
             "blocked_until_config_change": not failure.retryable,
         }, invalidate=False)
         return detail
 
     def succeeded(self) -> None:
-        self.store.set_option(_STATE_KEY, {}, invalidate=False)
+        self.store.set_option(self.key, {}, invalidate=False)
 
 
 def parse_growth_output(output: str) -> list:

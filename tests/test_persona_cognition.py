@@ -31,10 +31,9 @@ def store(tmp_path):
 
 
 def test_impression_global_with_evidence_and_other_user_isolated(store):
+    from tests.test_persona_profiles import publish
     s = source(attribution='ambient')
-    snap = store.snapshot('first', 201, 101, [s])
-    result = store.merge({'claims': [claim(s)]}, snap, 110)
-    assert result.accepted == ['s:1']
+    publish(store, s, '愿意分享创作过程')
     cross = store.snapshot('next', 201, 102, [], '画稿', 120)
     assert cross.claims[0]['content'] == '愿意分享创作过程'
     assert cross.claims[0]['confidence'] == .3
@@ -72,9 +71,9 @@ def test_no_cross_user_evidence_and_no_fictional_fact(store):
 
 def test_ambient_upgrade_does_not_duplicate_evidence(store):
     s = source(attribution='ambient')
-    store.merge({'claims': [claim(s)]}, store.snapshot('a', 201, 101, [s]))
+    store.merge({'claims': [claim(s, s['text'], 'fact')]}, store.snapshot('a', 201, 101, [s]))
     s.update(attribution='direct', revision=2)
-    store.merge({'claims': [claim(s)]}, store.snapshot('b', 201, 101, [s]))
+    store.merge({'claims': [claim(s, s['text'], 'fact')]}, store.snapshot('b', 201, 101, [s]))
     with store.connect() as c:
         assert c.execute('SELECT count(*) FROM persona_claim_support').fetchone()[0] == 1
         assert c.execute('SELECT count(*) FROM person_semantic_versions').fetchone()[0] == 1
@@ -141,13 +140,13 @@ def test_crash_after_send_start_is_unknown(store):
 
 def test_unrelated_update_does_not_cancel_reply_but_correction_does(store):
     a, b = source(), source('102:2', user=202)
-    store.merge({'claims': [claim(a)]}, store.snapshot('one', 201, 101, [a]))
+    store.merge({'claims': [claim(a, a['text'], 'fact')]}, store.snapshot('one', 201, 101, [a]))
     actions = PersonaActions(store)
     assert actions.prepare('send', 201, 101, ['你的画稿'], {'1': 1})
-    store.merge({'claims': [claim(b)]}, store.snapshot('other', 202, 102, [b]))
+    store.merge({'claims': [claim(b, b['text'], 'fact')]}, store.snapshot('other', 202, 102, [b]))
     assert store.current({'1': 1})
     newer = source('102:3', text='我不喜欢分享画稿', occurred=200)
-    store.merge({'claims': [claim(newer, '不愿意分享未完成作品', id=1, expected_version=1, operation='revise')]},
+    store.merge({'claims': [claim(newer, newer['text'], 'fact', id=1, expected_version=1, operation='revise')]},
                 store.snapshot('fix', 201, 102, [newer]))
     assert not actions.start('send', 0)
     assert actions.diagnostics()['actions'] == {'superseded': 1}

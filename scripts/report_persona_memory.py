@@ -35,12 +35,20 @@ def report(root: Path) -> dict:
             if 'persona_cognition_reviews' in existing:
                 reviews = [json.loads(r[0]) for r in conn.execute('SELECT detail FROM persona_cognition_reviews WHERE created_at>?', (now - 86400,))]
                 result['rejected_patches_24h'] = sum(len(r.get('rejected', [])) for r in reviews)
+            if 'persona_profile_jobs' in existing:
+                result['profile_jobs'] = dict(conn.execute('SELECT state,count(*) FROM persona_profile_jobs GROUP BY state'))
+                result['profile_errors'] = dict(conn.execute("SELECT error,count(*) FROM persona_profile_jobs WHERE error<>'' GROUP BY error"))
+                result['profile_generations'] = conn.execute('SELECT count(*) FROM persona_profile_versions').fetchone()[0]
+                result['profile_sources_reviewed'] = conn.execute('SELECT count(*) FROM persona_profile_seen').fetchone()[0]
     central = root / 'data/personas/state.db'
     if central.is_file():
         with sqlite3.connect(central.resolve().as_uri() + '?mode=ro', uri=True) as conn:
             jobs = [json.loads(r[0]) for r in conn.execute("SELECT usage FROM jobs WHERE kind='personal_memory' AND created_at>?", (now - 86400,))]
             result['background_calls_24h'] = len(jobs)
             result['background_tokens_24h'] = sum(int(r.get('total_tokens', 0)) for r in jobs)
+            profile_jobs = conn.execute("SELECT usage FROM jobs WHERE kind IN ('profile_draft','profile_review') AND created_at>?", (now-86400,)).fetchall()
+            result['profile_calls_24h'] = len(profile_jobs)
+            result['profile_tokens_24h'] = sum(int(json.loads(r[0]).get('total_tokens', 0)) for r in profile_jobs)
     return result
 
 

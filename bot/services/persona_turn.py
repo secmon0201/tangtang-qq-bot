@@ -55,7 +55,7 @@ class PersonaTurn:
         refs = self.proposal.get('used_refs', [])
         if not isinstance(refs, list) or any(str(ref) not in self.snapshot.expected for ref in refs):
             raise ValueError('unknown_used_reference')
-        hard_refs = [str(r['id']) for r in self.snapshot.claims if r['kind'] == 'fact']
+        hard_refs = [str(r['id']) for r in self.snapshot.claims if r['kind'] in {'fact', 'impression'}]
         versions = {**self.snapshot.expected, **self.result.expected}
         self.expected = {str(ref): versions[str(ref)] for ref in (*refs, *hard_refs)}
         intent = self.proposal.get('use_intent', '')

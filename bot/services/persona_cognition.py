@@ -14,6 +14,8 @@ from bot.services.persona_contracts import (
 )
 from bot.services.persona_memory_store import PersonMemoryStore, normalize
 from bot.services.persona_memory_contract import semantic_topics
+from bot.services.persona_profile_store import SCHEMA as PROFILE_SCHEMA, ProfileStore, enqueue
+from bot.services.persona_impressions import impression_requested
 
 
 class CognitionStore:
@@ -24,16 +26,21 @@ class CognitionStore:
     def connect(self):
         with self.people.connect() as conn:
             conn.executescript(SCHEMA)
+            conn.executescript(PROFILE_SCHEMA)
             yield conn
 
     def import_sources(self, sources) -> None:
         with self.connect() as conn:
             for row in sources:
-                conn.execute("""INSERT INTO persona_sources VALUES(?,?,?,?,?,?,?,?,?,?)
+                if impression_requested(row['text']):
+                    continue
+                changed = conn.execute("""INSERT INTO persona_sources VALUES(?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(event_key) DO UPDATE SET attribution=excluded.attribution,
                     revision=excluded.revision WHERE excluded.revision>persona_sources.revision""",
                     tuple(row[k] for k in ('event_key', 'user_id', 'group_id', 'message_id', 'text',
-                                          'occurred_at', 'received_at', 'attribution', 'revision', 'route_version')))
+                                          'occurred_at', 'received_at', 'attribution', 'revision', 'route_version'))).rowcount
+                if changed:
+                    enqueue(conn, row['user_id'], time.time())
                 if row.get('reply_to'):
                     part = conn.execute("""SELECT p.action_id,p.part FROM persona_action_parts p
                         JOIN persona_actions a ON a.id=p.action_id
@@ -58,6 +65,8 @@ class CognitionStore:
                 m.updated_at,c.kind,c.topic,c.applicability,c.assertion_type,c.confidence,c.occurred_at
                 FROM person_semantic_memory m JOIN persona_claim_metadata c ON c.memory_id=m.id
                 WHERE m.user_id IN (?,0) AND m.status IN ('active','candidate')
+                AND (c.kind<>'impression' OR EXISTS (SELECT 1 FROM persona_profile_approved p
+                    WHERE p.memory_id=m.id AND p.version=m.version))
                 AND (c.valid_until=0 OR c.valid_until>?)"""
             # Search all this person's records, not just a recent candidate
             # window. Exact Chinese bigrams and topic synonyms need no service.
@@ -157,6 +166,11 @@ class CognitionStore:
         if kind not in KINDS or raw.get('operation', 'observe') not in {'observe', 'revise'}:
             raise ValueError('invalid_kind')
         refs = evidence_for(raw, snapshot, direct_only=kind in {'relationship', 'self_belief'})
+        if kind == 'impression':
+            # Chat-generated interpretations are never authoritative. The raw
+            # sources are already queued for independent generation and review.
+            enqueue(conn, snapshot.user_id, now)
+            return 'queued:' + str(snapshot.user_id)
         statement = bounded_text(raw, 'statement', 240)
         topic = bounded_text(raw, 'topic', 80)
         applicability = bounded_text(raw, 'applicability', 180, optional=True)
@@ -297,6 +311,8 @@ class CognitionStore:
 
     @staticmethod
     def _portrait(conn, user_id, now):
+        if user_id:
+            return  # Personal portraits are published only by ProfileStore.
         rows = conn.execute("""SELECT m.id,m.content,m.version FROM person_semantic_memory m
             JOIN persona_claim_metadata c ON c.memory_id=m.id WHERE m.user_id=?
             AND c.kind IN ('impression','relationship','self_belief') AND m.status='active' ORDER BY m.id DESC LIMIT 8""", (user_id,)).fetchall()
@@ -304,21 +320,4 @@ class CognitionStore:
                      (user_id, '\n'.join(r['content'] for r in rows), json.dumps({str(r['id']): r['version'] for r in rows}), now))
 
     def own_impression(self, user_id: int) -> str:
-        with self.connect() as conn:
-            rows = conn.execute("""SELECT m.*,c.kind,c.applicability,c.provenance FROM person_semantic_memory m
-                JOIN persona_claim_metadata c ON c.memory_id=m.id WHERE m.user_id=?
-                AND m.status='active' AND c.kind IN ('impression','relationship') ORDER BY m.id DESC LIMIT 8""", (user_id,)).fetchall()
-            restrictions = [r[0] for r in conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND active=1', (user_id,))]
-            rows = [r for r in rows if not any(n in normalize(r['content']) for n in restrictions)]
-            if not rows:
-                return '还没有整理出对你的具体印象；这不代表我们没有见过，已有发言会继续整理。'
-            lines = ['目前对你的认识（可根据新交流修订）：']
-            for r in rows:
-                lines.append('· ' + r['content'] + (f"（{r['applicability']}）" if r['applicability'] else ''))
-                refs = conn.execute("""SELECT e.quote,e.stance FROM persona_claim_support e JOIN persona_sources s
-                    ON s.event_key=e.event_key WHERE e.memory_id=? AND e.version=? AND s.user_id=? LIMIT 2""",
-                    (r['id'], r['version'], user_id)).fetchall()
-                lines.extend(('  依据：' if e['stance'] == 'supports' else '  反证：') + e['quote'][:90] for e in refs)
-                if r['provenance'] == 'ambient':
-                    lines.append('  主要来自旁观发言，暂时只作初步判断。')
-        return '\n'.join(lines)
+        return ProfileStore(self).display(user_id)

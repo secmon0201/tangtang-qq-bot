@@ -33,6 +33,8 @@ class PersonaBackground:
             groups = sorted(store.pending_groups(), key=lambda g: store.last_growth_attempt(g["group_id"]))
             for group in groups:
                 group_id, persona = group["group_id"], group["persona"]
+                if persona == 'denia' and store.option('denia_v2_enabled', False):
+                    continue
                 if group_id not in active_groups or not self.engine.feature_enabled(group_id, "persona_growth"):
                     continue
                 pending = store.pending_interactions(persona, group_id, limit=5)

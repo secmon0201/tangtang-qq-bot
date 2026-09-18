@@ -24,6 +24,8 @@ class PersonaGrowth:
         return self.review_proposal(persona, group_id, proposal, now) == 'accepted'
 
     def review_proposal(self, persona: str, group_id: int, proposal: dict, now: float) -> str:
+        if persona == 'denia' and self.store.option('denia_v2_enabled', False):
+            return 'unified_memory_authority_enabled'
         topic = str(proposal.get("topic", "")).strip()
         content = str(proposal.get("content", "")).strip()
         kind = proposal.get("kind")

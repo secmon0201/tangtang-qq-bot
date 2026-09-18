@@ -81,19 +81,25 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
 
 _background = None
 _speech_background = None
+_memory_background = None
 
 
 @get_driver().on_startup
 async def start_persona_background() -> None:
     from bot.application.persona_background import start_background
-    global _background, _speech_background
+    from bot.application.persona_observer import run_personal_memory
+    global _background, _speech_background, _memory_background
     _background = asyncio.create_task(start_background())
+    _memory_background = asyncio.create_task(run_personal_memory())
     _speech_background = asyncio.create_task(SpeechSupervisor(ROOT, persona_engine().speech, SpeechRuntime(ROOT)).run())
 
 
 @get_driver().on_shutdown
 async def stop_persona_background() -> None:
     await dispatcher.close()
+    if _memory_background:
+        _memory_background.cancel()
+        await asyncio.gather(_memory_background, return_exceptions=True)
     if _background:
         _background.cancel()
         await asyncio.gather(_background, return_exceptions=True)

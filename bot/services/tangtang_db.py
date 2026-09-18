@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from bot.config import ROOT, settings
 from bot.services.persona_mood import mood_decay
+from bot.services.persona_inbox import SCHEMA as INBOX_SCHEMA, capture
 
 DEFAULT_DB_PATH = ROOT / "data" / "tangtang" / "tangtang.db"
 
@@ -136,7 +137,7 @@ class TangtangDb:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
-        conn.executescript(_SCHEMA)
+        conn.executescript(_SCHEMA + INBOX_SCHEMA)
         self._migrate_schema(conn)
         return conn
 
@@ -498,6 +499,7 @@ class TangtangDb:
         text: str,
         message_id: str | int,
         created_at: str,
+        observation: dict | None = None,
     ) -> None:
         """Persist one group message so chat history survives restarts."""
 
@@ -515,6 +517,9 @@ class TangtangDb:
                     created_at,
                 ),
             )
+            if observation:
+                capture(conn, group_id=int(group_id), user_id=int(user_id),
+                        message_id=str(message_id), text=text, **observation)
 
     def recent_group_messages(
         self,

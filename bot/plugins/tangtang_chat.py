@@ -5,9 +5,9 @@ import re
 import time
 from typing import Any
 
-from nonebot import on_message, get_driver, get_bots
+from nonebot import on_message, get_driver, get_bots, logger
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
-from nonebot.message import event_postprocessor
+from nonebot.message import event_preprocessor
 
 from bot.config import settings
 from bot.application.personas import persona_engine
@@ -279,8 +279,16 @@ async def _(bot: Bot, event: GroupMessageEvent):
         proactive=True, request_id=context.request_id, current=lambda: persona_engine().current(context))
 
 
-@event_postprocessor
+@event_preprocessor
 async def _record_group_context(bot: Bot, event: MessageEvent):
+    try:
+        await _capture_group_context(bot, event)
+    except Exception as exc:
+        # Optional memory capture must never cancel game or management matchers.
+        logger.warning('Persona observation capture failed: {}', type(exc).__name__)
+
+
+async def _capture_group_context(bot: Bot, event: MessageEvent):
     """Keep the latest group texts in memory for call-time atmosphere context."""
 
     if not isinstance(event, GroupMessageEvent):
@@ -288,6 +296,10 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
     config = runtime_config()
     if not config.enabled or int(event.group_id) not in group_domains().all_group_ids():
         return
+    if str(event.user_id) == str(bot.self_id):
+        return
+    engine = persona_engine()
+    frozen = engine.snapshot(event, config.model, False)
     at_labels = await resolve_at_labels(bot, event, use_api=False)
     text = render_message_text(event.message, at_labels)
     media_references = extract_image_references(event, config.vision_max_images)
@@ -303,6 +315,18 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
             user_id=int(event.user_id),
             message_id=str(getattr(event, "message_id", "") or ""),
             media_references=media_references,
+            observation={
+                'persona': frozen.persona.key,
+                'route_version': f'{frozen.selection_revision}:{frozen.persona.version}',
+                'occurred_at': float(getattr(event, 'time', time.time())),
+                'received_at': time.time(),
+                'reply_to': str(getattr(getattr(event, 'reply', None), 'message_id', '') or ''),
+                'attribution': 'direct' if is_call_event(event) else 'ambient',
+            } if (config.memory_enabled and engine.v2_enabled(frozen.persona.key)
+                  and not _is_stale(event) and not db.passive_filter_contains(int(event.user_id))
+                  and not text.startswith((settings.command_prefix, '/', '!', '！'))
+                  and not _GAME_CODE_RE.match(text) and not GAME_COMMAND_RE.match(text)
+                  and (engine.chat_enabled(int(event.group_id), False) or engine.chat_enabled(int(event.group_id), True))) else None,
         )
 
 

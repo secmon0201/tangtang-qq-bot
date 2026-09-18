@@ -19,6 +19,7 @@ from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.persona_memory_store import PersonMemoryStore
 from bot.services.expression_selection import ExpressionSelection
 from bot.services.persona_expressions import expression_request
+from bot.services.persona_cognition import CognitionStore
 
 
 class PersonaEngine:
@@ -41,10 +42,19 @@ class PersonaEngine:
         self.growth = PersonaGrowth(store, self.evidence_allowed)
         self._databases: dict[str, TangtangDb] = {}
         self._memories: dict[str, TangtangMemoryKernel] = {}
+        self._cognition: dict[str, CognitionStore] = {}
         self.topics = None
 
     def profile(self, group_id: int) -> PersonaProfile:
         return self.profiles[self.store.selection(group_id)[0]]
+
+    def v2_enabled(self, persona: str) -> bool:
+        return persona == 'denia' and bool(self.store.option('denia_v2_enabled', False))
+
+    def cognition(self, persona: str, default: TangtangDb) -> CognitionStore:
+        if persona not in self._cognition:
+            self._cognition[persona] = CognitionStore(self.history(persona, default))
+        return self._cognition[persona]
 
     def snapshot(self, event, model: str, proactive: bool) -> ChatContext:
         group_id = int(event.group_id)
@@ -92,6 +102,8 @@ class PersonaEngine:
             return '当前人格不是达妮娅。'
         if self._default_history is None:
             return '个人记忆暂时不可用。'
+        if self.v2_enabled(profile.key):
+            return self.cognition(profile.key, self._default_history).own_impression(user_id)
         memory = self.memory(profile.key, self._default_history,
                              lambda: datetime.now(self.store.timezone).isoformat())
         return memory.impression_text(user_id)
@@ -137,10 +149,12 @@ class PersonaEngine:
         parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。个人资料与本人自述记忆跨群共享，不能因换群装作不认识。群聊上下文、话题与未完问题只使用本群记录，不能引用其他群聊天原文续聊。明确限定本群的约定和称呼仍只在本群使用。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if context.persona.key == 'denia':
             parts[0] = '个人资料、经历、称呼、约定、交流印象与熟悉程度按人格和用户全局共享，群号仅表示来源。只有聊天上下文、话题与未完问题限当前群，不引用其他群聊天原文续聊。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。'
+            if self.v2_enabled('denia'):
+                parts[0] = '你在多个群里是同一个个体。个人认识、关系、经历和待办约定跨群延续，原始对话上下文只取本群。知道、推测、已告知和实际完成是不同状态，不把旁观当共同经历。'
         scene_rules = context.persona.resource_dir / "scene-expression.md"
         if scene_rules.is_file():
             parts.append(scene_rules.read_text(encoding="utf-8"))
-        if self.feature_enabled(context.group_id, "persona_growth"):
+        if self.feature_enabled(context.group_id, "persona_growth") and not self.v2_enabled(context.persona.key):
             parts.append(self.growth.prompt(context.persona.key, context.group_id))
             if context.persona.key == 'denia':
                 parts.append('本轮可在回复JSON附 growth_updates 数组，最多1项：'
@@ -166,7 +180,7 @@ class PersonaEngine:
         return "\n\n".join(p for p in parts if p)
 
     def observe(self, context: ChatContext, source: str, reply: str, *, growth_updates=()) -> None:
-        if self.feature_enabled(context.group_id, "persona_growth"):
+        if self.feature_enabled(context.group_id, "persona_growth") and not self.v2_enabled(context.persona.key):
             self.store.observe(persona=context.persona.key, group_id=context.group_id,
                                user_id=context.user_id, request_id=context.request_id,
                                source=source, reply=reply, now=time.time())

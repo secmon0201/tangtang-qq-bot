@@ -28,6 +28,8 @@ from bot.services.continuation_policy import continuation_turn
 from bot.services.replies import quote_message
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
+from bot.services.persona_capacity import provider_post
+from bot.services.persona_turn import PersonaTurn
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
 from bot.services.tangtang_media import (
@@ -924,7 +926,7 @@ class TangtangProvider:
             payload = self._chat_payload(config, persona, prompt, images=images)
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
-            response = await client.post(self.endpoint(config), headers=headers, json=payload)
+            response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
         text = self._extract_text(data)[: config.max_response_chars].strip()
@@ -956,7 +958,7 @@ class TangtangProvider:
             )
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
-            response = await client.post(self.endpoint(config), headers=headers, json=payload)
+            response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
             if response.status_code >= 400 and tools and self._unsupported_tools_error(response):
                 logger.warning(
                     "Tangtang API rejected tool parameters; falling back to plain generation"
@@ -1242,6 +1244,7 @@ class TangtangService:
         self.turn_observer = turn_observer
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
+        self._cognition_turn: ContextVar[PersonaTurn | None] = ContextVar('cognition_turn', default=None)
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
         self.media_resolver = media_resolver
@@ -1285,16 +1288,20 @@ class TangtangService:
         return ((not context or not self.personas or self.personas.current(context))
                 and (scheduled is None or scheduled.current())
                 and (continuation is None or continuation.current())
-                and (self._memory_revision.get() is None or self._memory_revision.get() == self.memory.people.revision()))
+                and (self._cognition_turn.get().current() if self._cognition_turn.get() else
+                     (self._memory_revision.get() is None or self._memory_revision.get() == self.memory.people.revision())))
 
     async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
         context = context or (self.personas.snapshot(event, config.model, proactive) if self.personas else None)
         token = self._turn.set(context)
         memory_token = self._memory_revision.set(self.memory.people.revision())
+        cognition_token = self._cognition_turn.set(None)
         try:
             request_ids = tuple(f"{context.group_id}:{mid}" for mid in getattr(event, "source_message_ids", (event.message_id,))) if context else ()
             if context and (not self._turn_current() or not self.personas.store.claim_requests(request_ids, time.time())):
                 return
+            if context and config.memory_enabled and self.personas.v2_enabled(context.persona.key):
+                self._cognition_turn.set(PersonaTurn(self.personas, self._base_db, context, event))
             if config.memory_enabled:
                 self.memory.apply_restore_request(int(event.group_id), int(event.user_id), event.get_plaintext())
                 self.memory.apply_forget_request(int(event.group_id), int(event.user_id), event.get_plaintext())
@@ -1305,6 +1312,12 @@ class TangtangService:
             with guard_outbound_for(self._turn_current):
                 await handler(bot, event, config)
         finally:
+            if self._cognition_turn.get():
+                try:
+                    self._cognition_turn.get().release()
+                except Exception as exc:
+                    logger.warning('Persona source lease release deferred: {}', type(exc).__name__)
+            self._cognition_turn.reset(cognition_token)
             self._memory_revision.reset(memory_token)
             self._turn.reset(token)
 
@@ -1350,6 +1363,7 @@ class TangtangService:
         message_id: str | int = "",
         created_at: str | None = None,
         media_references: tuple[ImageReference, ...] = (),
+        observation: dict | None = None,
     ) -> None:
         queue = self._group_context.setdefault(
             int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
@@ -1372,13 +1386,14 @@ class TangtangService:
         )
         media_queue.append((str(message_id or ""), owned_references))
         try:
-            self.db.insert_group_message(
+            self._base_db.insert_group_message(
                 group_id=int(group_id),
                 user_id=int(user_id),
                 nickname=nickname,
                 text=text,
                 message_id=message_id,
                 created_at=created_at or self._now(),
+                observation=observation,
             )
         except Exception as exc:
             logger.warning("Tangtang group message persist failed: {}", exc)
@@ -1783,7 +1798,10 @@ class TangtangService:
         fixed_parts.append(
             "未提供视觉输入的[图片]不可见，不知道就说不知道，不能猜。"
         )
-        fixed_parts.append(reply_style_instruction(call_text))
+        if self._cognition_turn.get():
+            fixed_parts.append('用自然的群友口吻。长短服从内容，需要解释就讲清楚；避免服务式收尾，不刻意压成几个字。最终输出统一JSON合同，不使用前面的方括号消息标记。')
+        else:
+            fixed_parts.append(reply_style_instruction(call_text))
         fixed_text = "\n".join(fixed_parts)
         if len(fixed_text) >= config.max_input_chars:
             # The current call and the format instruction always stay intact,
@@ -1802,7 +1820,7 @@ class TangtangService:
         context_joined = "\n".join(context_parts)
         knowledge = self._local_knowledge(call_text)
         memory_sections: list[str] = []
-        if config.memory_enabled:
+        if config.memory_enabled and not self._cognition_turn.get():
             try:
                 recalled = self.memory.recall(
                     group_id,
@@ -1817,7 +1835,7 @@ class TangtangService:
                     memory_sections.append(episode)
             except Exception as exc:
                 logger.warning("Tangtang memory recall failed: {}", exc)
-        if config.persona_state_enabled:
+        if config.persona_state_enabled and not self._cognition_turn.get():
             try:
                 memory_sections.append(
                     self.memory.state_prompt(group_id, int(event.user_id))
@@ -2246,7 +2264,11 @@ class TangtangService:
                 prompt += delivery_instruction(voice_status, voice_candidate, self.personas.expression_ids(context))
                 if self.personas:
                     prompt += "\n" + self.personas.expression_prompt(context)
-            if config.memory_enabled:
+            cognition = self._cognition_turn.get()
+            if cognition:
+                config = replace(config, max_output_tokens=max(config.max_output_tokens, 4000))
+                prompt += '\n' + cognition.snapshot.prompt()
+            elif config.memory_enabled:
                 prompt += "\n" + self.memory.memory_prompt(group_id, user_id, event.get_plaintext().strip())
             else:
                 prompt += "\n个人长期记忆已关闭，不能声称本轮保存了个人记忆。"
@@ -2292,6 +2314,17 @@ class TangtangService:
                 usage = self._merge_usage(usage, result.usage)
                 loops += 1
             answer_raw = result.text
+            if cognition:
+                try:
+                    answer_raw = cognition.apply(answer_raw)
+                except ValueError as exc:
+                    repair = cognition.repair_prompt(','.join(cognition.result.rejected) or str(exc))
+                    if not self._turn_current():
+                        return
+                    repaired = await self.provider.generate_agent(config, persona,
+                        prompt + '\n[本轮校验修复，以下为最新状态]\n' + repair, (), ())
+                    usage = self._merge_usage(usage, repaired.usage)
+                    answer_raw = cognition.repaired_reply(repaired.text)
             plan = parse_reply_plan(
                 answer_raw,
                 max_bubbles=reply_bubble_limit(call_text, config.reply_max_bubbles),
@@ -2416,7 +2449,10 @@ class TangtangService:
         if not self._turn_current():
             return
         source_memory = event.get_plaintext().strip()
+        cognition = self._cognition_turn.get()
         memory_control = self.memory.control_reply(user_id, source_memory)
+        if cognition:
+            memory_control = cognition.control_reply(user_id, source_memory, memory_control)
         if memory_control:
             parts = (memory_control,)
             reply_plan = ReplyPlan(True, parts, voice='text', text_fallback=parts, structured=True)
@@ -2428,7 +2464,7 @@ class TangtangService:
         if reply_plan and not choose_delivery(reply_plan, source_memory,
                 available=True, random_candidate=True).voice:
             reply_plan = replace(reply_plan, voice="text")
-        receipt = self.memory.prepare_memory(group_id=group_id, user_id=user_id,
+        receipt = cognition.receipt() if cognition else self.memory.prepare_memory(group_id=group_id, user_id=user_id,
             message_id=memory_source_id, text=source_memory,
             proposals=updates, enabled=config.memory_enabled)
         self._memory_revision.set(self.memory.people.revision())
@@ -2460,10 +2496,18 @@ class TangtangService:
             parts = decision.fallback
             if decision.voice:
                 self.personas.choose_expression(context, source, plan, 0, blocked="voice")
+                if cognition and (not cognition.prepare((decision.text,), 'voice') or not cognition.start(0)):
+                    return
                 voice_delivery = await speech.deliver(bot, context, decision.text,
                     explicit=decision.explicit, current=lambda: self._turn_current()
                     and self.personas.feature_enabled(group_id, "persona_voice")
                     and self.personas.store.option("speech_enabled", True))
+                if cognition:
+                    if voice_delivery.status == 'delivered':
+                        cognition.delivered(0, voice_delivery.message_id)
+                    else:
+                        cognition.failed(0, voice_delivery.status,
+                            definite=voice_delivery.status not in {'uncertain', 'duplicate'})
                 self._write_usage(config, group_id, user_id, "voice_result", mode=mode,
                     tokens={}, detail=f"status={voice_delivery.status}; reason={voice_delivery.reason}")
                 if voice_delivery.status in {"uncertain", "cancelled", "duplicate"}:
@@ -2488,6 +2532,8 @@ class TangtangService:
         delivery_rows: list[dict[str, Any]] = []
         delivered: list[str] = []
         send_error: Exception | None = None
+        if cognition and not voice_delivery and not cognition.prepare(parts):
+            return
         for index, part in enumerate(parts):
             if index:
                 delay_ms = random.uniform(
@@ -2498,6 +2544,8 @@ class TangtangService:
             if not voice_delivery and not self._turn_current():
                 break
             try:
+                if cognition and not voice_delivery and not cognition.start(index):
+                    break
                 if inline_expression and index == 0 and (not self.personas.feature_enabled(group_id, "persona_expressions") or self.personas.expression(context, expression_key) is None):
                     self.personas.expressions.result(context, "cancelled", reason="disabled_before_send")
                     inline_expression, expression = False, None
@@ -2524,6 +2572,8 @@ class TangtangService:
                     )
                     raise ValueError("missing text delivery acknowledgement")
                 delivered.append(part)
+                if cognition and not voice_delivery:
+                    cognition.delivered(index, self._platform_message_id(result))
                 if inline_expression and index == 0:
                     self._expression_outcome(context, result=result)
                 self._write_usage(config, group_id, user_id, "send_result", mode=mode, tokens={},
@@ -2537,6 +2587,9 @@ class TangtangService:
                     }
                 )
             except Exception as exc:
+                if cognition and not voice_delivery:
+                    cause = exc.__cause__ or exc
+                    cognition.failed(index, type(cause).__name__, definite=isinstance(cause, (ActionFailed, OutboundCancelled)))
                 if inline_expression and index == 0:
                     self._expression_outcome(context, error=exc)
                 send_error = exc
@@ -2602,7 +2655,7 @@ class TangtangService:
                         nickname="群友", text=source_text, message_id=context.request_id, created_at=created_at)
             except Exception as exc:
                 logger.warning("Persona group context record failed: {}", type(exc).__name__)
-        if config.memory_enabled:
+        if config.memory_enabled and not cognition:
             try:
                 if receipt.requested:
                     memory_result = self.memory.confirm_memory_delivery(receipt,
@@ -2621,7 +2674,7 @@ class TangtangService:
                         reply_plan.impression_updates if reply_plan else (), created_at)
                 except Exception as exc:
                     logger.warning("Persona impression record failed: {}", type(exc).__name__)
-        if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
+        if not cognition and config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
             try:
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))
             except Exception as exc:

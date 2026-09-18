@@ -17,11 +17,12 @@ def report(root: Path) -> dict:
         if not path.is_file():
             continue
         with sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as conn:
+            conn.execute('BEGIN')
             existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             for table in tables:
                 if table in existing:
                     result[table] = dict(conn.execute(f'SELECT state,count(*) FROM {table} GROUP BY state'))
-            if 'persona_observation_inbox' in existing:
+            if 'persona_observation_inbox' in tables and 'persona_observation_inbox' in existing:
                 row = conn.execute("""SELECT min(received_at),count(DISTINCT user_id),sum(length(text))
                     FROM persona_observation_inbox WHERE state<>'applied'""").fetchone()
                 result.update(oldest_pending_seconds=round(max(0, now - row[0]), 2) if row[0] else 0,

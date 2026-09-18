@@ -39,6 +39,24 @@ def output(decision='reply'):
                     'evidence': [{'event_key': '1001:1', 'quote': '我在修改画稿'}]}]}
 
 
+def test_diagnostics_preserve_source_queue_when_persona_db_has_empty_inbox(tmp_path):
+    from bot.services.tangtang_db import TangtangDb
+    from bot.services.persona_inbox import capture as capture_observation
+    from scripts.report_persona_memory import report
+
+    source = TangtangDb(tmp_path / 'data/tangtang/tangtang.db')
+    TangtangDb(tmp_path / 'data/personas/denia-history.db')
+    with source._connect() as conn:
+        capture_observation(conn, persona='denia', route_version='test', group_id=1001,
+            user_id=2001, message_id='1', text='我在修改画稿',
+            occurred_at=time.time() - 60, received_at=time.time() - 60)
+    result = report(tmp_path)
+    assert result['persona_observation_inbox'] == {'pending': 1}
+    assert result['pending_users'] == 1
+    assert result['protected_characters'] == len('我在修改画稿')
+    assert result['oldest_pending_seconds'] >= 60
+
+
 @pytest.mark.parametrize('decision,ack', [('reply', True), ('reply', False), ('observe', True)])
 @async_test
 async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, decision, ack):

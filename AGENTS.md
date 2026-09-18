@@ -68,6 +68,8 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 
 Do not restart SnowLuma or QQ for ordinary Python changes. Prefer `scripts\stop.ps1` followed by `scripts\start.ps1`, then verify the PID, port 8080, logs, and OneBot connection.
 
+Watchdog startup registers a current-user Windows scheduled check every minute and at logon. It restores missing watchdogs or completed heartbeats older than 180 seconds through a detached WMI launch. Lifecycle operations share a file lock; explicit watchdog/full-stack stop disables `data/watchdog_enabled.flag` before stopping the process, so scheduled checks must not undo operator shutdown. Verify watchdog termination recovery and the disabled gate after lifecycle changes.
+
 ## Git Rules
 
 - Commit the complete project-owned QQ bot in this repository; NTE is not a separate repository.

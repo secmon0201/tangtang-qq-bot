@@ -61,6 +61,13 @@ if (Test-Path -LiteralPath $watchdogStatePath -PathType Leaf) {
 }
 
 $corePort = 8765
+$watchdogSupervisorReady = $false
+try {
+    . (Join-Path $PSScriptRoot 'watchdog_lifecycle.ps1')
+    $supervisorTask = Get-ScheduledTask -TaskName (Get-WatchdogTaskName) -ErrorAction Stop
+    $watchdogSupervisorReady = (Test-Path -LiteralPath $WatchdogGate) -and $supervisorTask.State -ne 'Disabled'
+} catch { $watchdogSupervisorReady = $false }
+
 if ([string]$settings.Values['GSUID_CORE_PORT'] -match '^\d+$') {
     $corePort = [int]$settings.Values['GSUID_CORE_PORT']
 }
@@ -89,12 +96,13 @@ $status = [pscustomobject]@{
     SnowLumaWebUi = $webUiReady
     Watchdog = $watchdogReady
     WatchdogHeartbeat = $watchdogHeartbeatReady
+    WatchdogSupervisor = $watchdogSupervisorReady
     GsUIDCore = $coreListener
     BotErrorLogEmpty = $botErrorEmpty
     SpeechRuntime = $speechReady
 }
 
-if (-not $healthy -or -not $watchdogReady -or -not $watchdogHeartbeatReady -or -not $coreListener -or -not $botErrorEmpty) {
+if (-not $healthy -or -not $watchdogReady -or -not $watchdogHeartbeatReady -or -not $watchdogSupervisorReady -or -not $coreListener -or -not $botErrorEmpty) {
     throw ('Full-stack verification failed: ' + ($status | ConvertTo-Json -Compress))
 }
 

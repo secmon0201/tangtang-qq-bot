@@ -22,6 +22,9 @@
 
 ## Watchdog recovery
 
+- `start_watchdog.ps1` installs a per-workspace, current-user scheduled check at logon and every minute. `ensure_watchdog.ps1` restores exited or stale (180-second completed heartbeat) watchdogs, allowing 180 seconds for startup. Launch via WMI outside the invoking terminal/task process tree. The scheduled action is bounded to 50 seconds. Keep lifecycle operations serialized with the shared file lock.
+- Explicit watchdog/full-stack stop removes `data/watchdog_enabled.flag` before stopping the owned watcher; scheduled checks must stay inert until an explicit start enables the gate. When modifying lifecycle supervision, verify actual scheduled recovery after terminating the watchdog and verify manual stop survives a scheduled check. Never require credentials or elevated task execution.
+
 - Opt-in local model gateway supervision uses `MODEL_GATEWAY_*` in the ignored `.env` and `scripts/model_gateway.py`. Probe only the loopback model list with a 3-second HTTP timeout, never periodic paid generation. Recover after 3 misses with a 120-second cooldown; controller deadlines are 15 seconds for inspection and 40 seconds for recovery. Verify Node executable, script entrypoint, listener ownership and process creation time before stopping anything. Foreign listeners and ambiguous owners must remain untouched.
 - Bot, tunnel and model gateway checks isolate exceptions. Model gateway recovery is single-flight and must not restart QQ or Core. The independently installed gateway remains running when the watchdog/full stack is stopped; this avoids stopping a service shared with other clients. For gateway changes also fault-drill its exit and verify automatic recovery plus a real model response without sending QQ messages.
 

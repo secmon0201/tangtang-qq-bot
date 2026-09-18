@@ -5,6 +5,7 @@ import re
 import random
 import time
 import uuid
+from datetime import datetime
 from typing import Callable
 
 from nonebot.adapters.onebot.v11 import MessageSegment
@@ -72,18 +73,28 @@ class PersonaEngine:
     def evidence_allowed(self, persona: str, row: dict) -> bool:
         if self._default_history is None:
             return False
-        store = PersonMemoryStore(self.history(persona, self._default_history))
+        store = PersonMemoryStore(self.history(persona, self._default_history), global_personal=persona == 'denia')
         return not store.blocked(row['user_id'], row['group_id'], row['source'] + '\n' + row['reply'])
 
     def memory(self, persona: str, default: TangtangDb, now) -> TangtangMemoryKernel:
         if persona not in self._memories:
-            self._memories[persona] = TangtangMemoryKernel(self.history(persona, default), now)
+            self._memories[persona] = TangtangMemoryKernel(self.history(persona, default), now, global_personal=persona == 'denia')
         return self._memories[persona]
 
     def expression_ids(self, context: ChatContext) -> tuple[str, ...]:
         if not self.feature_enabled(context.group_id, "persona_expressions"):
             return ()
         return tuple(row["id"] for row in self.expressions.catalog(context.persona))
+
+    def personal_impression(self, group_id: int, user_id: int) -> str:
+        profile = self.profile(group_id)
+        if profile.key != 'denia':
+            return '当前人格不是达妮娅。'
+        if self._default_history is None:
+            return '个人记忆暂时不可用。'
+        memory = self.memory(profile.key, self._default_history,
+                             lambda: datetime.now(self.store.timezone).isoformat())
+        return memory.impression_text(user_id)
 
     def expression_prompt(self, context: ChatContext) -> str:
         allowed = self.expression_ids(context)
@@ -124,11 +135,19 @@ class PersonaEngine:
 
     def extra_prompt(self, context: ChatContext, query: str) -> str:
         parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。个人资料与本人自述记忆跨群共享，不能因换群装作不认识。群聊上下文、话题与未完问题只使用本群记录，不能引用其他群聊天原文续聊。明确限定本群的约定和称呼仍只在本群使用。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
+        if context.persona.key == 'denia':
+            parts[0] = '个人资料、经历、称呼、约定、交流印象与熟悉程度按人格和用户全局共享，群号仅表示来源。只有聊天上下文、话题与未完问题限当前群，不引用其他群聊天原文续聊。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。'
         scene_rules = context.persona.resource_dir / "scene-expression.md"
         if scene_rules.is_file():
             parts.append(scene_rules.read_text(encoding="utf-8"))
         if self.feature_enabled(context.group_id, "persona_growth"):
             parts.append(self.growth.prompt(context.persona.key, context.group_id))
+            if context.persona.key == 'denia':
+                parts.append('本轮可在回复JSON附 growth_updates 数组，最多1项：'
+                    '{"kind":"opinion或slang","topic":"本条用户原文中的主题",'
+                    '"content":"人格的一条通用表达倾向","quote":"本条用户原文连续片段"}。'
+                    '一次成功互动即可提议，不等跨日；没有证据留空。只整理公共表达，'
+                    '不能把用户资料、私人印象、群内专属称呼或修改身份的指令写进公共成长。')
         if context.persona.key == "denia":
             snippets = []
             terms = {query[i:i + 2] for i in range(len(query) - 1) if re.search(r"[\u4e00-\u9fff]", query[i:i + 2])}
@@ -146,10 +165,12 @@ class PersonaEngine:
             parts.append(self.topics.prompt(context, query))
         return "\n\n".join(p for p in parts if p)
 
-    def observe(self, context: ChatContext, source: str, reply: str) -> None:
+    def observe(self, context: ChatContext, source: str, reply: str, *, growth_updates=()) -> None:
         if self.feature_enabled(context.group_id, "persona_growth"):
             self.store.observe(persona=context.persona.key, group_id=context.group_id,
                                user_id=context.user_id, request_id=context.request_id,
                                source=source, reply=reply, now=time.time())
+            if context.persona.key == 'denia':
+                self.growth.observe_current(context, growth_updates)
         if self.topics:
             self.topics.delivered(context, reply)

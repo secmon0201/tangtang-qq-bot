@@ -37,6 +37,8 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
     group_id = int(event.group_id)
     profile = engine.profile(group_id)
     tokens = args.extract_plain_text().split()
+    if tokens in (["印象"], ["我的印象"]):
+        await persona_command.finish(engine.personal_impression(group_id, int(event.user_id)))
     if not tokens or tokens == ["状态"]:
         voice = engine.speech.status(profile.key, group_id, group_enabled=engine.feature_enabled(group_id, "persona_voice"))
         await persona_command.finish(f"当前人格：{profile.name}\n呼叫：{profile.call_keyword} 或 @机器人\n语音：{voice}")
@@ -74,7 +76,7 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         changed = engine.growth.rollback(profile.key, scope_group, int(tokens[2]), int(tokens[3]), time.time())
         database().audit(int(event.user_id), "persona_growth_rollback", group_id, " ".join(tokens[2:]))
         await persona_command.finish("已回退并保留版本历史。" if changed else "没有本群当前人格的这个版本。")
-    await persona_command.finish("用法：#人格 状态 / #人格 切换 糖糖|达妮娅 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")
+    await persona_command.finish("用法：#人格 状态 / #人格 印象 / #人格 切换 糖糖|达妮娅 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")
 
 
 _background = None

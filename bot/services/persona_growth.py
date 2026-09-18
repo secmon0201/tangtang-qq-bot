@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from bot.services.persona_store import PersonaStore
 from bot.services.persona_memory_store import LOCAL_SCOPE, THIRD_PARTY, STABLE_PERSON
@@ -27,7 +28,7 @@ class PersonaGrowth:
         content = str(proposal.get("content", "")).strip()
         kind = proposal.get("kind")
         citations = proposal.get("evidence", [])
-        global_scope = proposal.get('scope') == 'persona'
+        global_scope = persona == 'denia' or proposal.get('scope') == 'persona'
         if global_scope and (LOCAL_SCOPE.search(topic + content) or THIRD_PARTY.search(topic + content)):
             return 'local_or_third_party_global'
         scope = 0 if global_scope else group_id
@@ -53,10 +54,12 @@ class PersonaGrowth:
                 verified[row["id"]] = row
             else:
                 invalid_quotes += 1
-        if len(verified) < 3 or len({r["day"] for r in verified.values()}) < 2:
+        enough = bool(verified) if persona == 'denia' else len(verified) >= 3 and len({r['day'] for r in verified.values()}) >= 2
+        if not enough:
             return 'invalid_or_unavailable_citations' if invalid_quotes else 'insufficient_cross_day_evidence'
         if global_scope and any(LOCAL_SCOPE.search(r['source']) or THIRD_PARTY.search(r['source'])
-                                or STABLE_PERSON.search(r['source']) or '记住' in r['source'] for r in verified.values()):
+                                or STABLE_PERSON.search(r['source']) or re.search(r'我(?:喜欢|讨厌|的爱好|是|叫)', r['source'])
+                                or '记住' in r['source'] for r in verified.values()):
             return 'personal_or_local_source_global'
         group_id = scope
         with self.store.connect() as conn:
@@ -74,6 +77,24 @@ class PersonaGrowth:
                 version = 1
             conn.execute("INSERT INTO growth_versions VALUES(?,?,?,?,?)", (entry_id, version, content, json.dumps(sorted(verified)), now))
         return 'accepted'
+
+    def observe_current(self, context, proposals) -> None:
+        """Reuse this delivered chat's model result; no background/day gate."""
+        with self.store.connect() as conn:
+            row = conn.execute('SELECT id,source FROM evidence WHERE persona=? AND request_id=?',
+                               (context.persona.key, context.request_id)).fetchone()
+        if row is None:
+            return
+        decisions = []
+        for proposal in (proposals[:1] if isinstance(proposals, (tuple, list)) else ()):
+            if not isinstance(proposal, dict):
+                continue
+            grounded = {**proposal, 'scope': 'persona',
+                        'evidence': [{'id': row['id'], 'quote': proposal.get('quote', '')}]}
+            decisions.append({'reason': self.review_proposal(context.persona.key, context.group_id, grounded, time.time())})
+        self.store.growth_review(context.persona.key, context.group_id, time.time(),
+                                 'evaluated' if decisions else 'empty_proposals', [row['id']], decisions)
+        self.store.mark_processed([row['id']])
 
     def entries(self, persona: str, group_id: int) -> list[dict]:
         with self.store.connect() as conn:

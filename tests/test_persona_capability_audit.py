@@ -203,5 +203,5 @@ def test_background_malformed_output_retains_evidence_then_real_growth_is_applie
         review = store.growth_diagnostics("denia", 1001)[0]
         assert json.loads(review["decisions"]) == [{"reason": "accepted"}]
         assert "累了可以先休息" in engine.growth.prompt("denia", 1001)
-        assert not engine.growth.prompt("denia", 1002)
+        assert "累了可以先休息" in engine.growth.prompt("denia", 1002)
     asyncio.run(run())

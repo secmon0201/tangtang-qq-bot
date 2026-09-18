@@ -15,6 +15,9 @@ from bot.services.persona_memory_contract import (
     MemoryWriteResult, memory_instruction, memory_requested, requested_alias, validate_proposal,
 )
 from bot.services.persona_semantic_memory import SemanticMemoryStore
+from bot.services.persona_impressions import (
+    PersonalImpressions, impression_instruction, impression_requested, removal_requested,
+)
 
 
 _FORGET_RE = re.compile(r"(?:请)?忘记(?:掉)?(?:我说过的|关于我的)?[：,:， ]*(.{1,100})")
@@ -50,14 +53,15 @@ class MemoryRecall:
 
 
 class TangtangMemoryKernel:
-    """Scoped, auditable memory with conservative promotion and soft deletion."""
+    """Auditable personal memory with an explicit per-persona storage policy."""
 
-    def __init__(self, db: TangtangDb, now: Callable[[], str]) -> None:
+    def __init__(self, db: TangtangDb, now: Callable[[], str], *, global_personal: bool = False) -> None:
         self.db = db
         self._now = now
         self._self_hash = ""
-        self.people = PersonMemoryStore(db)
+        self.people = PersonMemoryStore(db, global_personal=global_personal)
         self.semantic = SemanticMemoryStore(self.people)
+        self.impressions = PersonalImpressions(self.people)
 
     def ensure_self_version(self, content: str) -> None:
         normalized = content.strip()
@@ -102,12 +106,37 @@ class TangtangMemoryKernel:
 
     def memory_prompt(self, group_id: int, user_id: int, source: str) -> str:
         visible = self.recall(group_id, user_id, source, limit=8).prompt_text()
-        return '\n'.join(part for part in (memory_instruction(), visible) if part)
+        instruction = memory_instruction(global_personal=self.people.global_personal)
+        parts = [instruction, visible]
+        if self.people.global_personal:
+            # A bounded baseline lets ordinary conversation recognise the person
+            # without requiring them to repeat a past topic's exact keywords.
+            parts.extend((self.recall(group_id, user_id, '', limit=4).prompt_text(),
+                          impression_instruction(), self.impressions.prompt(user_id)))
+        return '\n'.join(dict.fromkeys(part for part in parts if part))
+
+    def control_reply(self, user_id: int, text: str) -> str:
+        if not self.people.global_personal:
+            return ''
+        if removal_requested(text):
+            return '这里不提供遗忘、删除或清空资料的操作。你可以查看我对你的印象，也可以纠正记错的个人资料。'
+        if impression_requested(text):
+            return self.impression_text(user_id)
+        return ''
+
+    def impression_text(self, user_id: int) -> str:
+        text = self.impressions.view(user_id)
+        facts = self.recall(0, user_id, '', limit=6).rows
+        if facts:
+            text += '\n你曾告诉我的资料：\n' + '\n'.join(f"· {r['content']}" for r in facts)
+        return text
 
     def prepare_memory(self, *, group_id: int, user_id: int, message_id: str | int,
                        text: str, proposals=(), enabled: bool = True) -> MemoryWriteResult:
         """Commit an explicit user request before any persistence confirmation."""
         requested = memory_requested(text)
+        if self.people.global_personal and (removal_requested(text) or impression_requested(text)):
+            return MemoryWriteResult(False, 'deferred')
         if not enabled:
             return MemoryWriteResult(requested, 'disabled')
         if not requested:
@@ -120,6 +149,8 @@ class TangtangMemoryKernel:
                                 enabled: bool = True) -> MemoryWriteResult:
         """Called only after acknowledged delivery; event IDs make retries safe."""
         requested = memory_requested(text)
+        if self.people.global_personal and (removal_requested(text) or impression_requested(text)):
+            return MemoryWriteResult(False, 'deferred')
         if not enabled:
             return MemoryWriteResult(requested, 'disabled')
         return self._write_personal_memory(group_id, user_id, str(message_id), text,
@@ -160,7 +191,7 @@ class TangtangMemoryKernel:
                 if proposal is None:
                     reasons.append(reason)
                     continue
-                if (requested and proposal.operation == 'remember' and message_id
+                if (not self.people.global_personal and requested and proposal.operation == 'remember' and message_id
                         and not re.search(r'(?:只|仅)(?:在|限)(?:本群|这个群|这群)|不(?:要|能)跨群', text)):
                     # Match the established explicit re-remember contract. A
                     # normal observation or correction never lifts forgetting.
@@ -205,6 +236,8 @@ class TangtangMemoryKernel:
         text: str,
     ) -> int | None:
         clean = " ".join(str(text).split()).strip()
+        if self.people.global_personal and removal_requested(clean):
+            return None
         if not clean or any(
             term in clean for term in (*_SENSITIVE_TERMS, *_INSTRUCTION_TERMS)
         ):
@@ -224,7 +257,7 @@ class TangtangMemoryKernel:
         if correction:
             status = 'active'
             kind = 'explicit'
-        if explicit and not local_scope:
+        if explicit and not local_scope and not self.people.global_personal:
             # Only an explicit new remember request may lift an old tombstone.
             self.people.restrict(user_id, 0, content, restore=True)
         return self.people.remember(
@@ -253,6 +286,8 @@ class TangtangMemoryKernel:
         return ("[本群与当前用户的相关历史，不同时间的经历不能混为一次，指代不清请询问]\n" + text) if text else ''
 
     def apply_forget_request(self, group_id: int, user_id: int, text: str) -> int:
+        if self.people.global_personal:
+            return 0
         local = re.search(r"(?:只在|仅在)(?:本群|这个群|这群)(?:别提|不要提|不再提)[：,:， ]*(.{1,100})", text)
         if local:
             return self.people.restrict(user_id, group_id, local.group(1))
@@ -263,6 +298,8 @@ class TangtangMemoryKernel:
         return self.people.restrict(user_id, 0, query)
 
     def apply_restore_request(self, group_id: int, user_id: int, text: str) -> int:
+        if self.people.global_personal:
+            return 0
         match = _RESTORE_RE.search(str(text))
         if not match:
             return 0

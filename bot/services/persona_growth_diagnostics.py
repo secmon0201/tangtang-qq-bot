@@ -36,7 +36,8 @@ def _decision_text(decision: dict, timezone) -> str:
 
 
 def diagnostic_text(store, persona: str, group_id: int) -> str:
-    lines = ['人格成长诊断：' + store.option('background_status', '尚未整理')]
+    status = '每轮成功互动即时整理；不等待跨日或后台额度' if persona == 'denia' else store.option('background_status', '尚未整理')
+    lines = ['人格成长诊断：' + status]
     for row in store.growth_diagnostics(persona, group_id):
         stamp = datetime.fromtimestamp(row['created_at'], store.timezone).strftime('%m-%d %H:%M')
         reasons = [_decision_text(d, store.timezone) for d in json.loads(row['decisions'])]

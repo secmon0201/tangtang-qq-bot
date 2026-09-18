@@ -395,16 +395,17 @@ async def test_switch_during_generation_discards_old_persona(tmp_path, monkeypat
 
 
 @async_test
-async def test_forget_in_other_group_cancels_generated_reply(tmp_path, monkeypatch):
+async def test_correction_in_other_group_cancels_generated_reply(tmp_path, monkeypatch):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, 'denia')
     provider = Provider({'decision':'reply', 'messages':['你喜欢草莓'], 'voice':'text'})
     service, config = service_for(tmp_path, engine, provider)
     memory = engine.memory('denia', service._base_db, service._now)
     memory.observe_user_message(group_id=1001, user_id=2001, message_id='old', text='记住我喜欢草莓')
-    provider.after = lambda: memory.apply_forget_request(1002, 2001, '忘记草莓')
+    provider.after = lambda: memory.observe_user_message(group_id=1002, user_id=2001,
+        message_id='new', text='我现在不喜欢草莓了')
     async def forbidden(*args, **kwargs):
-        pytest.fail('reply containing pre-forget memory was sent')
+        pytest.fail('reply containing pre-correction memory was sent')
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', forbidden)
     await service.handle(None, event('娅娅，我喜欢什么'), config)
     assert not engine.store.interactions('denia', 1001)

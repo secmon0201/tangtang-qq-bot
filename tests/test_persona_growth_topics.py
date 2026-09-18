@@ -6,24 +6,23 @@ from bot.services.persona_store import PersonaStore
 from bot.services.persona_topics import PersonaTopics
 
 
-def test_growth_requires_distinct_cross_day_evidence_and_retains_history(tmp_path):
+def test_denia_growth_is_immediate_global_and_retains_versions(tmp_path):
     store = PersonaStore(tmp_path / "personas.db")
     growth = PersonaGrowth(store)
     start = 1789488000
-    for index, offset in enumerate((0, 10, 86400)):
+    for index, offset in enumerate((0,)):
         store.observe(persona="denia", group_id=1001, user_id=2001, request_id=str(index),
                       source="休息很重要，可以慢慢来", reply="嗯", now=start + offset)
     rows = store.interactions("denia", 1001)
     proposal = {"kind": "opinion", "topic": "休息", "content": "休息不必觉得愧疚，可以慢慢来。",
                 "evidence": [{"id": r["id"], "quote": "休息很重要，可以慢慢来"} for r in rows]}
     assert not growth.propose("tangtang", 1001, proposal, start + 86401)
-    assert not growth.propose("denia", 1002, proposal, start + 86401)
-    assert growth.propose("denia", 1001, proposal, start + 86401)
+    assert growth.propose("denia", 1002, proposal, start + 1)
+    assert not growth.propose("denia", 1001, proposal, start + 2)
     entry = growth.entries("denia", 1001)[0]
-    assert not growth.disable("denia", 1002, entry["id"])
-    assert growth.disable("denia", 1001, entry["id"])
+    assert growth.disable("denia", 0, entry["id"])
     assert growth.prompt("denia", 1001) == ""
-    assert growth.rollback("denia", 1001, entry["id"], 1, start + 90000)
+    assert growth.rollback("denia", 0, entry["id"], 1, start + 3)
     assert growth.entries("denia", 1001)[0]["version"] == 2
     with store.connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM growth_versions").fetchone()[0] == 2

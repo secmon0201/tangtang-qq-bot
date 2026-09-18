@@ -89,8 +89,9 @@ def restriction_needle(query: str) -> str:
 
 
 class PersonMemoryStore:
-    def __init__(self, db) -> None:
+    def __init__(self, db, *, global_personal: bool = False) -> None:
         self.db = db
+        self.global_personal = global_personal
 
     @contextmanager
     def connect(self):
@@ -116,12 +117,12 @@ class PersonMemoryStore:
     def restrictions(self, user_id: int, group_id: int, *, include_superseded: bool = True) -> list[str]:
         with self.connect() as conn:
             rows = [r[0] for r in conn.execute(
-                "SELECT needle FROM person_restrictions WHERE user_id=? AND scope_group IN (0,?) AND active=1",
-                (user_id, group_id))]
+                "SELECT needle FROM person_restrictions WHERE user_id=? AND (? OR scope_group IN (0,?)) AND active=1",
+                (user_id, self.global_personal, group_id))]
             if include_superseded:
                 rows.extend(r[0] for r in conn.execute(
-                    "SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1",
-                    (user_id, group_id)))
+                    "SELECT needle FROM person_superseded_memory WHERE user_id=? AND (? OR scope_group IN (0,?)) AND active=1",
+                    (user_id, self.global_personal, group_id)))
             return rows
 
     def blocked(self, user_id: int, group_id: int, text: str, *, include_superseded: bool = True) -> bool:
@@ -131,10 +132,12 @@ class PersonMemoryStore:
     def superseded(self, user_id: int, group_id: int) -> set[str]:
         with self.connect() as conn:
             return {r[0] for r in conn.execute(
-                "SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1",
-                (user_id, group_id))}
+                "SELECT needle FROM person_superseded_memory WHERE user_id=? AND (? OR scope_group IN (0,?)) AND active=1",
+                (user_id, self.global_personal, group_id))}
 
     def restrict(self, user_id: int, group_id: int, query: str, *, restore: bool = False) -> int:
+        if self.global_personal:
+            return 0
         needle = restriction_needle(query)
         if not needle:
             return 0
@@ -164,13 +167,15 @@ class PersonMemoryStore:
         if self.blocked(user_id, group_id, content, include_superseded=not correction):
             return None
         scope = fact_scope(content, group_id) if scope_group is None else scope_group
+        if self.global_personal:
+            scope, status = 0, 'active'
         clean = normalize(content)
         event = f"{group_id}:{message_id}" if message_id else "unknown:" + hashlib.sha256(clean.encode()).hexdigest()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             if correction and (subject := fact_subject(content)):
                 conn.execute("UPDATE person_superseded_memory SET active=0 WHERE user_id=? AND scope_group=? AND needle=?", (user_id, scope, clean))
-                old = conn.execute("SELECT id,content,normalized FROM person_facts WHERE user_id=? AND scope_group=? AND status<>'deleted'", (user_id, scope)).fetchall()
+                old = conn.execute("SELECT id,content,normalized FROM person_facts WHERE user_id=? AND (? OR scope_group=?) AND status<>'deleted'", (user_id, self.global_personal, scope)).fetchall()
                 for previous in old:
                     if previous['normalized'] != clean and fact_subject(previous['content']) == subject:
                         conn.execute("UPDATE person_facts SET status='archived' WHERE id=?", (previous['id'],))
@@ -190,8 +195,8 @@ class PersonMemoryStore:
             return [r for r in self.db.active_memories(group_id, user_id) if not self.blocked(user_id, group_id, r['content']) and not fact_rejection(r['content'])]
         with self.connect() as conn:
             rows = [dict(r) for r in conn.execute(
-                "SELECT * FROM person_facts WHERE user_id=? AND scope_group IN (0,?) AND status='active' ORDER BY importance DESC,updated_at DESC LIMIT 100",
-                (user_id, group_id))]
+                "SELECT * FROM person_facts WHERE user_id=? AND (? OR scope_group IN (0,?)) AND status='active' ORDER BY importance DESC,updated_at DESC LIMIT 100",
+                (user_id, self.global_personal, group_id))]
         blocked = self.restrictions(user_id, group_id, include_superseded=False)
         obsolete = self.superseded(user_id, group_id)
         return [r for r in rows if r['normalized'] not in obsolete and not fact_rejection(r['content']) and not any(n in r['normalized'] for n in blocked)]

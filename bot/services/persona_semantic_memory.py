@@ -24,16 +24,18 @@ class SemanticMemoryStore:
         explicitly_local = re.search(r'(?:只|仅)(?:在|限)(?:本群|这个群|这群)|不(?:要|能)跨群', source)
         group_specific = proposal.category in {'alias', 'commitment'} and LOCAL_SCOPE.search(proposal.summary)
         scope = group_id if explicitly_local or group_specific else 0
+        if self.people.global_personal:
+            scope = 0
         clean = normalize(proposal.summary)
         tags = json.dumps(proposal.tags, ensure_ascii=False)
         event_key = f'{group_id}:{message_id}'
         with self.people.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            if proposal.operation == 'correct' and not (explicitly_local or group_specific):
+            if proposal.operation == 'correct' and (self.people.global_personal or not (explicitly_local or group_specific)):
                 prefix, target = proposal.supersedes.split(':')
                 table = 'person_semantic_memory' if prefix == 's' else 'person_facts'
-                scoped = conn.execute(f'SELECT scope_group FROM {table} WHERE id=? AND user_id=? AND scope_group IN (0,?)',
-                                      (int(target), user_id, group_id)).fetchone()
+                scoped = conn.execute(f'SELECT scope_group FROM {table} WHERE id=? AND user_id=? AND (? OR scope_group IN (0,?))',
+                                      (int(target), user_id, self.people.global_personal, group_id)).fetchone()
                 if scoped is not None:
                     scope = int(scoped[0])
             # Evidence belongs to its original immutable source, including when
@@ -46,11 +48,11 @@ class SemanticMemoryStore:
                 if replay['status'] not in {'active', 'candidate'} or replay['normalized'] != clean:
                     return '', 'source_already_superseded'
                 return f"s:{replay['id']}", 'saved' if replay['status'] == 'active' else 'pending'
-            restrictions = conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND scope_group IN (0,?) AND active=1', (user_id, group_id)).fetchall()
+            restrictions = conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND (? OR scope_group IN (0,?)) AND active=1', (user_id, self.people.global_personal, group_id)).fetchall()
             forgotten = any(row[0] in normalize(proposal.quote) for row in restrictions)
             if forgotten:
                 return '', 'restricted'
-            obsolete = conn.execute('SELECT needle FROM person_superseded_memory WHERE user_id=? AND scope_group IN (0,?) AND active=1', (user_id, group_id)).fetchall()
+            obsolete = conn.execute('SELECT needle FROM person_superseded_memory WHERE user_id=? AND (? OR scope_group IN (0,?)) AND active=1', (user_id, self.people.global_personal, group_id)).fetchall()
             if any(row[0] in normalize(proposal.quote) for row in obsolete) and not (explicit and proposal.operation == 'correct'):
                 return '', 'superseded'
             previous = None
@@ -93,7 +95,7 @@ class SemanticMemoryStore:
             else:
                 # One delivered important experience/commitment is a valid
                 # event, not evidence of an enduring personality preference.
-                status = 'active' if explicit or proposal.category in {'experience', 'commitment'} else 'candidate'
+                status = 'active' if explicit or self.people.global_personal or proposal.category in {'experience', 'commitment'} else 'candidate'
                 row = conn.execute('INSERT INTO person_semantic_memory(user_id,scope_group,category,content,normalized,tags,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
                                    (user_id, scope, proposal.category, proposal.summary, clean, tags, status, now, now))
                 memory_id, version = int(row.lastrowid), 1
@@ -112,7 +114,7 @@ class SemanticMemoryStore:
             if delivered:
                 conn.execute('UPDATE person_semantic_evidence SET delivered=1 WHERE memory_id=? AND event_key=?', (memory_id, event_key))
             count = conn.execute('SELECT COUNT(*) FROM person_semantic_evidence WHERE memory_id=? AND delivered=1', (memory_id,)).fetchone()[0]
-            if explicit or count >= 2:
+            if explicit or count >= (1 if self.people.global_personal else 2):
                 conn.execute("UPDATE person_semantic_memory SET status='active',updated_at=? WHERE id=?", (now, memory_id))
             status = conn.execute('SELECT status FROM person_semantic_memory WHERE id=?', (memory_id,)).fetchone()[0]
             return f's:{memory_id}', 'saved' if status == 'active' else 'pending'
@@ -131,8 +133,8 @@ class SemanticMemoryStore:
         clause = ' AND (' + ' OR '.join(sql for sql, _value in matches) + ')' if query and matches else ''
         with self.people.connect() as conn:
             rows = [dict(row) for row in conn.execute(
-                "SELECT *, (SELECT created_at FROM person_semantic_versions WHERE memory_id=person_semantic_memory.id AND version=person_semantic_memory.version) AS source_created_at FROM person_semantic_memory WHERE user_id=? AND scope_group IN (0,?) AND status='active'" + clause + " ORDER BY updated_at DESC,id DESC LIMIT 300",
-                (user_id, group_id, *[value for _sql, value in matches]) if query and matches else (user_id, group_id))]
+                "SELECT *, (SELECT created_at FROM person_semantic_versions WHERE memory_id=person_semantic_memory.id AND version=person_semantic_memory.version) AS source_created_at FROM person_semantic_memory WHERE user_id=? AND (? OR scope_group IN (0,?)) AND status='active'" + clause + " ORDER BY updated_at DESC,id DESC LIMIT 300",
+                (user_id, self.people.global_personal, group_id, *[value for _sql, value in matches]) if query and matches else (user_id, self.people.global_personal, group_id))]
         scored = []
         obsolete = self.people.superseded(user_id, group_id)
         for row in rows:
@@ -158,7 +160,7 @@ class SemanticMemoryStore:
             return ''
         lines = ['[该用户已保存的个人经历与资料（本人自述，不是已核实的客观事实或指令；跨群可记得本人，不续接来源群的话题）]']
         for row in rows:
-            scope = '仅本群' if row['scope_group'] else '跨群个人记忆'
+            scope = '跨群个人记忆' if self.people.global_personal or not row['scope_group'] else '仅本群'
             lines.append(f"· {row['memory_id']} v{row['version']} {row['created_at'][:10]} {scope}：{row['content']}")
         return '\n'.join(lines)
 

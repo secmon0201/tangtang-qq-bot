@@ -24,6 +24,8 @@ class ReplyPlan:
     structured: bool = False
     expression_candidates: tuple[str, ...] = ()
     memory_updates: tuple[dict, ...] = ()
+    impression_updates: tuple[dict, ...] = ()
+    growth_updates: tuple[dict, ...] = ()
 
     @property
     def text(self) -> str:
@@ -128,9 +130,13 @@ def parse_reply_plan(
     candidates = tuple(v for v in candidates[:3] if isinstance(v, str) and len(v) <= 64) if isinstance(candidates, list) else ()
     updates = payload.get("memory_updates", []) if payload else []
     updates = tuple(v for v in updates[:3] if isinstance(v, dict)) if isinstance(updates, list) else ()
+    impressions = payload.get('impression_updates', []) if payload else []
+    impressions = tuple(v for v in impressions[:2] if isinstance(v, dict)) if isinstance(impressions, list) else ()
+    growth = payload.get('growth_updates', []) if payload else []
+    growth = tuple(v for v in growth[:1] if isinstance(v, dict)) if isinstance(growth, list) else ()
     return ReplyPlan(bool(cleaned), tuple(cleaned), voice if valid else "text",
                      tuple(v.strip() for v in fallback if v.strip())[:max_bubbles],
-                     str(payload.get("expression", "")) if payload else "", valid, candidates, updates)
+                     str(payload.get("expression", "")) if payload else "", valid, candidates, updates, impressions, growth)
 
 
 def _reply_object(text: str) -> dict:

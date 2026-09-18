@@ -1954,6 +1954,13 @@ class TangtangService:
             return
         if continuation_turn() is not None and not self.proactive_text_allowed(text):
             return
+        memory_control = self.memory.control_reply(user_id, text)
+        if memory_control:
+            await self._send_and_record(bot, event, config, memory_control,
+                reply_kind='canned', mode='local', tokens={}, call_text=call_text,
+                reply_plan=ReplyPlan(True, (memory_control,), voice='text', structured=True),
+                voice_candidate=False)
+            return
         group_identity_answer = self._group_identity_answer(group_id, call_text)
         context = self._turn.get()
         if context and self.personas and self.personas.expression_intent(context, text) == "explicit" and voice_request(text) != "voice":
@@ -2409,6 +2416,10 @@ class TangtangService:
         if not self._turn_current():
             return
         source_memory = event.get_plaintext().strip()
+        memory_control = self.memory.control_reply(user_id, source_memory)
+        if memory_control:
+            parts = (memory_control,)
+            reply_plan = ReplyPlan(True, parts, voice='text', text_fallback=parts, structured=True)
         memory_source_id = ",".join(str(mid) for mid in getattr(event, "source_message_ids", (event.message_id,)))
         updates = reply_plan.memory_updates if reply_plan else ()
         # A persistence receipt changes the wording, never the original voice
@@ -2581,7 +2592,8 @@ class TangtangService:
             logger.warning("Tangtang history record failed: {}", type(exc).__name__)
         if context and self.personas:
             try:
-                self.personas.observe(context, source_text, delivered_text)
+                self.personas.observe(context, source_text, delivered_text,
+                    growth_updates=reply_plan.growth_updates if reply_plan and not memory_control else ())
             except Exception as exc:
                 logger.warning("Persona growth evidence record failed: {}", type(exc).__name__)
             try:
@@ -2603,6 +2615,12 @@ class TangtangService:
                     detail=f"status={memory_result.status}; ids={','.join(memory_result.ids)}; reasons={','.join(memory_result.reasons)}")
             except Exception as exc:
                 logger.warning("Persona personal memory record failed: {}", type(exc).__name__)
+            if self.memory.people.global_personal and not memory_control:
+                try:
+                    self.memory.impressions.record(user_id, group_id, memory_source_id, source_memory,
+                        reply_plan.impression_updates if reply_plan else (), created_at)
+                except Exception as exc:
+                    logger.warning("Persona impression record failed: {}", type(exc).__name__)
         if config.persona_state_enabled and (not self.personas or self.personas.feature_enabled(group_id, "persona_growth")):
             try:
                 self.memory.update_states_after_reply(group_id, user_id, source_text, event_id=str(event.message_id))

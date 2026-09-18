@@ -1360,5 +1360,72 @@
     ],
     "sha256": "55fcddd81ea6918f562183b4343e9bccb904d81ff1476b68510d3a18fac27d8a",
     "explicit_only": false
+  },
+  {
+    "id": "expr_050",
+    "file": "脸红嘟嘴.gif",
+    "name": "脸红嘟嘴",
+    "use": "轻松打趣后害羞又有点不服气、被逗后嘟嘴、无伤大雅的闹别扭",
+    "avoid": "不用于真实争执、严肃投诉或悲伤求助；不把脸红自动解释为恋爱示好",
+    "emotion": [
+      "羞恼",
+      "轻微不满",
+      "闹别扭"
+    ],
+    "intensity": 0.55,
+    "action": "从睁眼微笑逐渐变成双颊泛红、眉头收紧、眼睛微眯，嘴角下压并嘟嘴",
+    "group": "pout",
+    "aliases": [
+      "脸红嘟嘴",
+      "羞恼嘟嘴",
+      "羞恼",
+      "小脾气"
+    ],
+    "visible_text": "",
+    "reviewed_frames": [
+      0,
+      4,
+      9,
+      14,
+      18
+    ],
+    "frames": 19,
+    "sha256": "6d9feb1d3ba384fb8f88f8465eccbf41f6f92c2f82b1302f711381b4bf280b24",
+    "explicit_only": false,
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "从睁眼微笑逐渐变成双颊泛红、眉头收紧、眼睛微眯，嘴角下压并嘟嘴",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。"
+  },
+  {
+    "id": "expr_051",
+    "file": "歪头疑惑.jpg",
+    "name": "歪头疑惑",
+    "use": "没听懂一句话、觉得说法有些奇怪、轻松追问或表达温和质疑",
+    "avoid": "不嘲弄用户的理解能力；不质疑真实痛苦；事实核查时不能用问号代替解释",
+    "emotion": [
+      "疑惑",
+      "不解",
+      "轻度质疑"
+    ],
+    "intensity": 0.35,
+    "action": "侧脸略微歪头看向一旁，眉眼微收，嘴角轻抿，头顶叠有醒目的黑白问号",
+    "group": "skeptical",
+    "aliases": [
+      "歪头疑惑",
+      "歪头问号",
+      "疑惑",
+      "问号",
+      "不解"
+    ],
+    "visible_text": "?",
+    "reviewed_frames": [
+      0
+    ],
+    "frames": 1,
+    "sha256": "ac110173839a7342dde4437d2a487160c7e28fea16b39e02ee95c93309fe027b",
+    "explicit_only": false,
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "侧脸略微歪头看向一旁，眉眼微收，嘴角轻抿，头顶叠有醒目的黑白问号",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。"
   }
 ]

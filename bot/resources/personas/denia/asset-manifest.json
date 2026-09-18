@@ -41,6 +41,16 @@
       "source": "denia/共享/工具/表情包/探头.jpg",
       "path": "expressions/peek.jpg",
       "sha256": "f36bd7d97ef7296b49e0e10ee882172907c517fdcd5b654bdb1a114e1d92fe11"
+    },
+    {
+      "source": "operator-supplied/2026-09-18/脸红嘟嘴.gif",
+      "path": "expressions/脸红嘟嘴.gif",
+      "sha256": "6d9feb1d3ba384fb8f88f8465eccbf41f6f92c2f82b1302f711381b4bf280b24"
+    },
+    {
+      "source": "operator-supplied/2026-09-18/歪头疑惑.jpg",
+      "path": "expressions/歪头疑惑.jpg",
+      "sha256": "32c1609e4f540ba1d438ded1c49f6c8d0317b86ae9e0d5a4e2d3e371703e36dd"
     }
   ]
 }

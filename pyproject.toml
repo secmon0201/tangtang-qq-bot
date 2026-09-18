@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.27.0,<1.0.0",
     "truststore>=0.10.0,<1.0.0",
     "python-dotenv>=1.0.1,<2.0.0",
+    "psutil>=6.0,<8.0",
     "Pillow>=11.0.0,<13.0.0",
     "Brotli>=1.1.0,<2.0.0",
     "playwright>=1.61.0,<2.0.0",
@@ -26,7 +27,6 @@ qq-local-bot = "bot.__main__:main"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0,<9.0",
-    "psutil>=6.0,<8.0",
 ]
 gsuid = [
     "nonebot-plugin-apscheduler>=0.3.0,<1.0.0",

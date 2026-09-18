@@ -22,6 +22,9 @@
 
 ## Watchdog recovery
 
+- Opt-in local model gateway supervision uses `MODEL_GATEWAY_*` in the ignored `.env` and `scripts/model_gateway.py`. Probe only the loopback model list with a 3-second HTTP timeout, never periodic paid generation. Recover after 3 misses with a 120-second cooldown; controller deadlines are 15 seconds for inspection and 40 seconds for recovery. Verify Node executable, script entrypoint, listener ownership and process creation time before stopping anything. Foreign listeners and ambiguous owners must remain untouched.
+- Bot, tunnel and model gateway checks isolate exceptions. Model gateway recovery is single-flight and must not restart QQ or Core. The independently installed gateway remains running when the watchdog/full stack is stopped; this avoids stopping a service shared with other clients. For gateway changes also fault-drill its exit and verify automatic recovery plus a real model response without sending QQ messages.
+
 - Every external recovery process must have a finite timeout and return control to the main watchdog loop on success, failure, or timeout. Never use `Start-Process -Wait` for a script that launches long-lived descendants.
 - Named Tunnel recovery uses `-SkipCoreRestart`; a fixed public URL does not require restarting Core.
 - `data\qq-transport-watchdog-state.json` must update `last_check_started_at` and `last_check_completed_at` every loop. A completed heartbeat older than 180 seconds means the watchdog is unhealthy even if its PID still exists.

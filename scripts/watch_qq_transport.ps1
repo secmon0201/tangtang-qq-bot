@@ -5,6 +5,7 @@ param(
     [ValidateRange(300, 86400)][int]$TransportRecoveryCooldownSeconds = 900,
     [ValidateRange(60, 3600)][int]$BotRecoveryCooldownSeconds = 300,
     [ValidateRange(300, 86400)][int]$NteTunnelRecoveryCooldownSeconds = 900,
+    [ValidateRange(60, 3600)][int]$ModelGatewayRecoveryCooldownSeconds = 120,
     [ValidateRange(30, 300)][int]$RecoveryProcessTimeoutSeconds = 120,
     [switch]$LibraryOnly
 )
@@ -38,6 +39,9 @@ function New-WatchdogState {
     return [pscustomobject]@{
         missing_connection_checks = 0
         missing_listener_checks = 0
+        missing_model_gateway_checks = 0
+        last_model_gateway_recovery_at = ''
+        last_model_gateway_status = ''
         last_transport_recovery_at = ''
         last_bot_recovery_at = ''
         last_nte_tunnel_recovery_at = ''
@@ -54,6 +58,7 @@ function Get-WatchdogState {
         $state = Get-Content -LiteralPath $StatePath -Raw -Encoding utf8 | ConvertFrom-Json
         foreach ($name in @(
             'missing_connection_checks', 'missing_listener_checks',
+            'missing_model_gateway_checks', 'last_model_gateway_recovery_at', 'last_model_gateway_status',
             'last_transport_recovery_at', 'last_bot_recovery_at',
             'last_nte_tunnel_recovery_at', 'last_status', 'last_nte_tunnel_status',
             'last_check_started_at', 'last_check_completed_at'
@@ -112,7 +117,7 @@ function Invoke-BoundedPowerShellScript {
 
     $engineArgs = @(
         '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-        '-File', $ScriptPath
+        '-File', ('"{0}"' -f $ScriptPath)
     ) + $ScriptArguments
     $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $engineArgs -WindowStyle Hidden -PassThru
     try {
@@ -342,15 +347,94 @@ function Invoke-NteTunnelCheck {
     return [pscustomobject]@{ Status = 'nte_tunnel_unhealthy'; Healthy = $false }
 }
 
+function Invoke-ModelGatewayCommand {
+    param([switch]$Recover)
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = Join-Path $Root '.venv\Scripts\python.exe'
+    $controller = Join-Path $PSScriptRoot 'model_gateway.py'
+    $startInfo.Arguments = '-X utf8 "{0}"' -f $controller
+    if ($Recover) { $startInfo.Arguments += ' --recover' }
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        [void]$process.Start()
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $timeout = if ($Recover) { 40000 } else { 15000 }
+        if (-not $process.WaitForExit($timeout)) {
+            $process.Kill()
+            return [pscustomobject]@{ status = 'timed_out'; healthy = $false }
+        }
+        if ($process.ExitCode -ne 0) { throw 'Model gateway controller failed.' }
+        return ($stdout.GetAwaiter().GetResult() | ConvertFrom-Json)
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function Invoke-ModelGatewayCheck {
+    param([Parameter(Mandatory)][object]$State, [switch]$AllowRecovery)
+
+    $result = Invoke-ModelGatewayCommand
+    if ($result.status -in @('missing', 'unresponsive')) {
+        $State.missing_model_gateway_checks = [int]$State.missing_model_gateway_checks + 1
+        if ($AllowRecovery -and $State.missing_model_gateway_checks -ge $MissingChecksBeforeRecovery -and
+            (Test-RecoveryCooldown -Timestamp $State.last_model_gateway_recovery_at -CooldownSeconds $ModelGatewayRecoveryCooldownSeconds)) {
+            $State.last_model_gateway_recovery_at = [DateTime]::UtcNow.ToString('o')
+            $State.missing_model_gateway_checks = 0
+            Save-WatchdogState -State $State
+            Write-WatchdogLog -Event 'model_gateway_recovery_started'
+            $result = Invoke-ModelGatewayCommand -Recover
+            Write-WatchdogLog -Event 'model_gateway_recovery_finished' -Detail "status=$($result.status)"
+        }
+    } else {
+        $State.missing_model_gateway_checks = 0
+    }
+    if ($State.last_model_gateway_status -ne $result.status) {
+        Write-WatchdogLog -Event 'model_gateway_status' -Detail "status=$($result.status)"
+        $State.last_model_gateway_status = [string]$result.status
+    }
+    return $result
+}
+
+function Invoke-WatchdogChecks {
+    param([Parameter(Mandatory)][object]$Settings, [Parameter(Mandatory)][object]$State, [switch]$AllowRecovery)
+
+    # Keep failures in one component from suppressing the other components.
+    $results = @{}
+    foreach ($component in @('Bot', 'NteTunnel', 'ModelGateway')) {
+        try {
+            $results[$component] = switch ($component) {
+                'Bot' { Invoke-WatchdogCheck -Settings $Settings -State $State -AllowRecovery:$AllowRecovery }
+                'NteTunnel' { Invoke-NteTunnelCheck -State $State -AllowRecovery:$AllowRecovery }
+                'ModelGateway' { Invoke-ModelGatewayCheck -State $State -AllowRecovery:$AllowRecovery }
+            }
+        } catch {
+            Write-WatchdogLog -Event 'component_check_failed' -Detail "component=$component error=$($_.Exception.GetType().Name)"
+            $results[$component] = [pscustomobject]@{ Status = 'check_failed'; Healthy = $false }
+            if ($component -eq 'Bot') { $State.last_status = 'check_failed' }
+            if ($component -eq 'ModelGateway') { $State.last_model_gateway_status = 'check_failed' }
+        }
+    }
+    if ($State.last_nte_tunnel_status -ne [string]$results.NteTunnel.Status) {
+        Write-WatchdogLog -Event ('nte_tunnel_status=' + $results.NteTunnel.Status)
+    }
+    $State.last_nte_tunnel_status = [string]$results.NteTunnel.Status
+    return [pscustomobject]$results
+}
+
 if ($LibraryOnly) { return }
 
 $settings = Get-QqTransportSettings -Root $Root
 if ($Once) {
     $state = Get-WatchdogState
-    $result = Invoke-WatchdogCheck -Settings $settings -State $state
-    $tunnel = Invoke-NteTunnelCheck -State $state
-    $result | Add-Member -NotePropertyName 'NteTunnel' -NotePropertyValue $tunnel
-    $result | ConvertTo-Json -Compress
+    $result = Invoke-WatchdogChecks -Settings $settings -State $state
+    $result | ConvertTo-Json -Depth 5 -Compress
     exit 0
 }
 
@@ -371,12 +455,7 @@ try {
         $state.last_check_started_at = [DateTime]::UtcNow.ToString('o')
         Save-WatchdogState -State $state
         try {
-            [void](Invoke-WatchdogCheck -Settings $settings -State $state -AllowRecovery)
-            $tunnel = Invoke-NteTunnelCheck -State $state -AllowRecovery
-            if ([string]$state.last_nte_tunnel_status -ne [string]$tunnel.Status) {
-                Write-WatchdogLog -Event ("nte_tunnel_status=" + $tunnel.Status)
-                $state.last_nte_tunnel_status = [string]$tunnel.Status
-            }
+            [void](Invoke-WatchdogChecks -Settings $settings -State $state -AllowRecovery)
         } catch {
             Write-WatchdogLog -Event 'watchdog_check_failed' -Detail "error=$($_.Exception.GetType().Name)"
         } finally {

@@ -53,21 +53,22 @@ DEFINITIONS: tuple[Capability, ...] = (
         skills=("nte_game_ui", "wuwa_game_ui"),
         required=("gsuid_core",),
         paths=("GsUID.Core/data/GsData.db",),
-        probe=lambda: _module_available("gsuid_core") and _path_available("GsUID.Core/data/GsData.db"),
+        probe=lambda: _path_available("GsUID.Core/data/GsData.db")
+        and _path_available("GsUID.Core/gsuid_core/core.py"),
     ),
     Capability(
         name="nteuid",
         skills=("nte_game_ui",),
         required=("NTEUID",),
         paths=("GsUID.Core/gsuid_core/plugins/NTEUID",),
-        probe=lambda: _module_available("NTEUID") and _path_available("GsUID.Core/gsuid_core/plugins/NTEUID"),
+        probe=lambda: _path_available("GsUID.Core/gsuid_core/plugins/NTEUID"),
     ),
     Capability(
         name="wuwa_uid",
         skills=("wuwa_game_ui",),
         required=("XutheringWavesUID",),
         paths=("GsUID.Core/gsuid_core/plugins/XutheringWavesUID",),
-        probe=lambda: _module_available("XutheringWavesUID") and _path_available("GsUID.Core/gsuid_core/plugins/XutheringWavesUID"),
+        probe=lambda: _path_available("GsUID.Core/gsuid_core/plugins/XutheringWavesUID"),
     ),
 )
 

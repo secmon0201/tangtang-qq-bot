@@ -102,8 +102,15 @@ async def handle_skill_admin(event: MessageEvent, args: Message = CommandArg()) 
             f"已清理该用户的技能审计与用量记录：审计 {removed['skill_audit_entries']} 条，"
             f"用量 {removed['skill_usage']} 条。"
         )
+    if tokens == ["数据", "导出"]:
+        from bot import config as bot_config
+
+        target = bot_config.ROOT / "data" / "skills" / "export-audit.json"
+        count = ledger.export(target)
+        await skill_admin.finish(f"已导出最近 {count} 条技能审计记录到本机数据目录。")
     await skill_admin.finish(
         "用法：#技能 状态 / #技能 列表 / #技能 开关 开|关 <技能ID> [群号...] / "
         "#技能 开关 状态 <技能ID> / #技能 纠错 列表 [状态] / "
-        "#技能 纠错 解决 <编号> [说明] / #技能 纠错 类别 / #技能 数据 清理 <QQ号>"
+        "#技能 纠错 解决 <编号> [说明] / #技能 纠错 类别 / "
+        "#技能 数据 清理 <QQ号> / #技能 数据 导出"
     )

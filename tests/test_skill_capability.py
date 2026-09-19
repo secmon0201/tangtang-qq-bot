@@ -15,6 +15,10 @@ def test_live_capabilities_report_upstream_state():
     names = {item["name"] for item in snapshot}
     assert {"gsuid_core", "nteuid", "wuwa_uid"} <= names
     assert all(item["state"] in {SUPPORTED, "degraded", UNAVAILABLE} for item in snapshot)
+    by_name = {item["name"]: item for item in snapshot}
+    assert by_name["gsuid_core"]["state"] == SUPPORTED
+    assert by_name["nteuid"]["state"] == SUPPORTED
+    assert by_name["wuwa_uid"]["state"] == SUPPORTED
 
 
 def test_probe_success_and_failure_are_reported():

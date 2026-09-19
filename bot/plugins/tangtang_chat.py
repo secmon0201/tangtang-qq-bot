@@ -36,6 +36,7 @@ from bot.services.tangtang_features import (
     TangtangFeatureClassifier,
     classify_local_feature,
     has_feature_hint,
+    persona_rejection,
 )
 from bot.services.skills import local_action_skill
 from bot.services.skill_audit import ledger as skill_ledger
@@ -120,13 +121,19 @@ async def _feature_router(
     skill = local_action_skill(request.action)
     if skill is None:
         # The proposer returned an action outside the closed skill registry.
-        await tangtang_call.send("这个功能目前没有对应的本地技能，不能凭空执行。")
+        await tangtang_call.send(
+            persona_rejection("unknown_skill", call_keyword=config.call_keyword)
+        )
         return True, usage
     if not skill_ledger.enabled_for_group(skill.skill_id, int(event.group_id)):
-        await tangtang_call.send("这个技能当前没有对本群启用，暂时不能执行。")
+        await tangtang_call.send(
+            persona_rejection("group_disabled", call_keyword=config.call_keyword)
+        )
         return True, usage
     if not capabilities.skill_available(skill.skill_id):
-        await tangtang_call.send("这个技能依赖的上游服务当前不可用，暂时不能执行。")
+        await tangtang_call.send(
+            persona_rejection("upstream_unavailable", call_keyword=config.call_keyword)
+        )
         return True, usage
     if not role_allows(
         skill.required_role,

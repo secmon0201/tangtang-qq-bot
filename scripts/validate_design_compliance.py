@@ -80,7 +80,8 @@ def build_checks() -> list[Check]:
     add(
         "A3",
         "未注册能力明确拒绝而不是编造",
-        _has("bot/plugins/tangtang_chat.py", "没有对应的本地技能")
+        _has("bot/plugins/tangtang_chat.py", "persona_rejection")
+        and _has("bot/services/tangtang_features.py", "def persona_rejection")
         and _has("tests/test_tangtang_chat.py", "unregistered"),
         "router rejection branch + test",
     )

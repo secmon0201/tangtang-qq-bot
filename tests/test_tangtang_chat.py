@@ -863,7 +863,10 @@ def test_feature_router_rejects_an_unregistered_action(monkeypatch, tmp_path):
     )
 
     assert handled is True
-    assert sent == ["这个功能目前没有对应的本地技能，不能凭空执行。"]
+    assert len(sent) == 1
+    assert "糖糖" in sent[0]
+    assert "做不到" in sent[0] or "不会" in sent[0]
+    assert "做不到" in sent[0] or "现编" in sent[0]
     assert executed == []
 
 
@@ -910,7 +913,9 @@ def test_feature_router_blocks_a_disabled_skill(monkeypatch, tmp_path):
     )
 
     assert handled is True
-    assert sent == ["这个技能当前没有对本群启用，暂时不能执行。"]
+    assert len(sent) == 1
+    assert "本群" in sent[0]
+    assert "糖糖" in sent[0] or "没开" in sent[0]
     assert executed == []
 
 

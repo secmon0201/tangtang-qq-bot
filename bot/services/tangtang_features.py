@@ -111,7 +111,7 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
             "猜数字": "mini_game_guess",
         }[subject]
         scope = "总" if total else "群"
-        line = f"好呀，这就看看{subject}{'总' if total else '本群'}榜。"
+        line = ""
         return FeatureDecision(
             tier="clear", action=action, scope=scope, cluster=False, line=line
         )
@@ -122,7 +122,7 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
             action="nte_rank",
             scope=scope,
             cluster=False,
-            line="好呀，这就看看异环最强排行。",
+            line="",
         )
     if _WUWA_RANK_RE.search(normalized) and "排行" in normalized:
         scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
@@ -131,9 +131,86 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
             action="wuwa_rank",
             scope=scope,
             cluster=False,
-            line="好呀，这就看看鸣潮最强排行。",
+            line="",
         )
     return None
+
+
+def _extra_feature_line(decision: FeatureDecision, *, call_keyword: str) -> str:
+    """Persona-aware opener for the second skill batch."""
+
+    denia = call_keyword != "糖糖"
+    if decision.action.startswith("mini_game_"):
+        subject = {
+            "mini_game_roulette": "转盘",
+            "mini_game_bomb": "炸弹",
+            "mini_game_dice": "骰子",
+            "mini_game_guess": "猜数",
+        }.get(decision.action, "这个")
+        scope = "总" if decision.scope == "总" else "本群"
+        if denia:
+            return f"唔……{subject}的{scope}榜，我看看。"
+        return f"好呀，这就看看{subject}{scope}榜。"
+    if decision.action == "nte_rank":
+        if denia:
+            return (
+                "异环的总榜呀，我翻一下。"
+                if decision.scope == "总"
+                else "异环的本群榜呀，我翻一下。"
+            )
+        return (
+            "好呀，这就看看异环总最强排行。"
+            if decision.scope == "总"
+            else "好呀，这就看看异环本群最强排行。"
+        )
+    if decision.action == "wuwa_rank":
+        if denia:
+            return (
+                "鸣潮的总榜呀，我看看谁最强。"
+                if decision.scope == "总"
+                else "鸣潮的本群榜呀，我看看谁最强。"
+            )
+        return (
+            "好呀，这就看看鸣潮总榜谁最强。"
+            if decision.scope == "总"
+            else "好呀，这就看看鸣潮本群谁最强。"
+        )
+    return ""
+
+
+_REJECTION_TEXTS = {
+    "unknown_skill": {
+        "糖糖": (
+            "这个糖糖真的不会，也不能现编一个糊弄你。"
+            "要不换个糖糖本来就会的？"
+        ),
+        "denia": (
+            "唔……这个我做不到呢，也没法装作能做。"
+            "换一件我本来就行的吧？"
+        ),
+    },
+    "group_disabled": {
+        "糖糖": "这个功能在本群还没开呢，开起来糖糖就能试。",
+        "denia": "这个功能本群还没打开……等它开了我再看。",
+    },
+    "upstream_unavailable": {
+        "糖糖": (
+            "糖糖这边连着的服务现在有点不听话，暂时查不了。"
+            "等一下再试试。"
+        ),
+        "denia": "唔，连着这块的服务现在没回应呢，稍后我再试一次。",
+    },
+}
+
+
+def persona_rejection(reason: str, *, call_keyword: str) -> str:
+    """Persona-flavoured refusal or unavailability text."""
+
+    texts = _REJECTION_TEXTS.get(str(reason))
+    if texts is None:
+        texts = _REJECTION_TEXTS["unknown_skill"]
+    key = "糖糖" if str(call_keyword) == "糖糖" else "denia"
+    return texts[key]
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +239,9 @@ def classify_local_feature(
     }
     extra = classify_extra_feature(normalized)
     if extra is not None:
-        return extra
+        return replace(
+            extra, line=_extra_feature_line(extra, call_keyword=call_keyword)
+        )
     subject = _RANKING_SUBJECT_RE.search(normalized)
     if subject is None:
         return None

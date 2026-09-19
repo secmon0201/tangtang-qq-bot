@@ -108,6 +108,41 @@ CREATE TABLE IF NOT EXISTS tangtang_persona_state (
     interaction_count INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS group_summary_topics (
+    topic_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '',
+    participants TEXT NOT NULL DEFAULT '',
+    unresolved TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL DEFAULT 'active',
+    source_count INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_summary_topics_group
+    ON group_summary_topics (group_id, state, updated_at DESC);
+CREATE TABLE IF NOT EXISTS group_summary_versions (
+    topic_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    participants TEXT NOT NULL DEFAULT '',
+    unresolved TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (topic_id, version)
+);
+CREATE TABLE IF NOT EXISTS group_summary_topic_sources (
+    topic_id INTEGER NOT NULL,
+    group_message_id INTEGER NOT NULL,
+    PRIMARY KEY (topic_id, group_message_id)
+);
+CREATE TABLE IF NOT EXISTS group_summary_cursors (
+    group_id INTEGER PRIMARY KEY,
+    applied_message_id INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -536,6 +571,169 @@ class TangtangDb:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+    def group_summary_pending(
+        self,
+        group_id: int,
+        *,
+        limit: int = 400,
+    ) -> list[dict[str, Any]]:
+        """Group messages not yet represented by any committed summary batch."""
+
+        with self._connect() as conn:
+            state = conn.execute(
+                "SELECT applied_message_id FROM group_summary_cursors WHERE group_id = ?",
+                (int(group_id),),
+            ).fetchone()
+            cursor = int(state["applied_message_id"]) if state else 0
+            rows = conn.execute(
+                "SELECT * FROM tangtang_group_messages "
+                "WHERE group_id = ? AND id > ? ORDER BY id ASC LIMIT ?",
+                (int(group_id), cursor, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO group_summary_cursors "
+                "(group_id, applied_message_id, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(group_id) DO UPDATE SET "
+                "applied_message_id = MAX(applied_message_id, excluded.applied_message_id), "
+                "updated_at = excluded.updated_at",
+                (int(group_id), int(message_id), str(now)),
+            )
+
+    def group_summary_sources(self, group_id: int) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM group_summary_topics "
+                "WHERE group_id = ? AND state != 'archived' "
+                "ORDER BY updated_at DESC, topic_id DESC",
+                (int(group_id),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def group_summary_matching(
+        self,
+        group_id: int,
+        terms: tuple[str, ...],
+        *,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Score persisted topics by term overlap; runtime-only, no model call."""
+
+        rows = self.group_summary_sources(group_id)
+        scored: list[tuple[int, dict[str, Any]]] = []
+        for row in rows:
+            haystack = f"{row['title']}\n{row['summary']}"
+            score = sum(1 for term in terms if term and term in haystack)
+            if score:
+                scored.append((score, row))
+        scored.sort(key=lambda item: (item[0], item[1]["updated_at"]), reverse=True)
+        return [row for _score, row in scored[: max(1, int(limit))]]
+
+    def group_summary_merge(
+        self,
+        group_id: int,
+        *,
+        topic_id: int | None,
+        title: str,
+        summary: str,
+        keywords: tuple[str, ...],
+        participants: tuple[str, ...],
+        unresolved: tuple[str, ...],
+        state: str,
+        message_ids: tuple[int, ...],
+        now: str,
+    ) -> dict[str, Any]:
+        """Atomically write one topic version and its source-message links."""
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                if topic_id is None:
+                    cursor = conn.execute(
+                        "INSERT INTO group_summary_topics "
+                        "(group_id, title, summary, keywords, participants, unresolved, "
+                        "state, source_count, version, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                        (
+                            int(group_id),
+                            str(title),
+                            str(summary),
+                            "\n".join(keywords),
+                            "\n".join(participants),
+                            "\n".join(unresolved),
+                            str(state),
+                            len(message_ids),
+                            str(now),
+                            str(now),
+                        ),
+                    )
+                    topic_id = int(cursor.lastrowid)
+                else:
+                    row = conn.execute(
+                        "SELECT version FROM group_summary_topics "
+                        "WHERE topic_id = ? AND group_id = ?",
+                        (int(topic_id), int(group_id)),
+                    ).fetchone()
+                    if row is None:
+                        raise ValueError("group summary topic vanished")
+                    version = int(row["version"]) + 1
+                    conn.execute(
+                        "UPDATE group_summary_topics SET title = ?, summary = ?, "
+                        "keywords = ?, participants = ?, unresolved = ?, state = ?, "
+                        "source_count = source_count + ?, version = ?, updated_at = ? "
+                        "WHERE topic_id = ? AND group_id = ?",
+                        (
+                            str(title),
+                            str(summary),
+                            "\n".join(keywords),
+                            "\n".join(participants),
+                            "\n".join(unresolved),
+                            str(state),
+                            len(message_ids),
+                            version,
+                            str(now),
+                            int(topic_id),
+                            int(group_id),
+                        ),
+                    )
+                version_row = conn.execute(
+                    "SELECT version FROM group_summary_topics WHERE topic_id = ?",
+                    (int(topic_id),),
+                ).fetchone()
+                version = int(version_row["version"]) if version_row else 1
+                for message_id in message_ids:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO group_summary_topic_sources "
+                        "(topic_id, group_message_id) VALUES (?, ?)",
+                        (int(topic_id), int(message_id)),
+                    )
+                conn.execute(
+                    "INSERT INTO group_summary_versions "
+                    "(topic_id, version, summary, participants, unresolved, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        int(topic_id),
+                        version,
+                        str(summary),
+                        "\n".join(participants),
+                        "\n".join(unresolved),
+                        str(now),
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM group_summary_topics WHERE topic_id = ?",
+                    (int(topic_id),),
+                ).fetchone()
+                result = dict(row) if row else {}
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        return result
+
     def recent_user_messages(
         self,
         user_id: int,
@@ -737,7 +935,7 @@ class TangtangDb:
         user_id: int,
         group_id: int,
         limit: int,
-        max_chars: int,
+        max_chars: int | None = None,
     ) -> str:
         """Return recent model-generated exchanges formatted for prompt context."""
 
@@ -756,7 +954,7 @@ class TangtangDb:
         if not lines:
             return ""
         text = "\n\n".join(lines)
-        if len(text) <= max_chars:
+        if max_chars is None or max_chars <= 0 or len(text) <= max_chars:
             return text
         return "…" + text[-max_chars:]
 

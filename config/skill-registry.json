@@ -1,0 +1,652 @@
+{
+  "schema_version": 1,
+  "skills": [
+    {
+      "skill_id": "a_coast_archive",
+      "version": "1.0.0",
+      "name": "档案与画像",
+      "kind": "mixed",
+      "plugin": "bot/plugins/a_coast_archive.py",
+      "commands": [
+        {
+          "command": "发言记录",
+          "aliases": []
+        },
+        {
+          "command": "发言搜索",
+          "aliases": []
+        },
+        {
+          "command": "发言画像",
+          "aliases": [
+            "画像"
+          ]
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "archive_search_router"
+      ]
+    },
+    {
+      "skill_id": "asoul",
+      "version": "1.0.0",
+      "name": "A-SOUL与B站",
+      "kind": "mixed",
+      "plugin": "bot/plugins/asoul.py",
+      "commands": [
+        {
+          "command": "A魂帮助",
+          "aliases": [
+            "bot帮助"
+          ]
+        },
+        {
+          "command": "今日直播",
+          "aliases": []
+        },
+        {
+          "command": "明日直播",
+          "aliases": []
+        },
+        {
+          "command": "本周直播",
+          "aliases": []
+        },
+        {
+          "command": "日程高亮",
+          "aliases": []
+        },
+        {
+          "command": "取消日程高亮",
+          "aliases": []
+        },
+        {
+          "command": "日程高亮列表",
+          "aliases": []
+        },
+        {
+          "command": "取消日程高亮记录",
+          "aliases": []
+        },
+        {
+          "command": "bili_status",
+          "aliases": []
+        },
+        {
+          "command": "bili_login",
+          "aliases": []
+        },
+        {
+          "command": "bili_logout",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_dynamic",
+          "aliases": []
+        },
+        {
+          "command": "bili_dump_dynamic",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_video",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_live",
+          "aliases": []
+        },
+        {
+          "command": "bili_dump_live",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_atall",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_comment",
+          "aliases": []
+        },
+        {
+          "command": "bili_test_all",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "codex_completion",
+      "version": "1.0.0",
+      "name": "运行维护",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/codex_completion.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "commands",
+      "version": "1.0.0",
+      "name": "基础指令",
+      "kind": "mixed",
+      "plugin": "bot/plugins/commands.py",
+      "commands": [
+        {
+          "command": "帮助",
+          "aliases": []
+        },
+        {
+          "command": "帮助文字",
+          "aliases": []
+        },
+        {
+          "command": "查重网页",
+          "aliases": [
+            "查重面板",
+            "白名单网页"
+          ]
+        },
+        {
+          "command": "查重1",
+          "aliases": []
+        },
+        {
+          "command": "查重3",
+          "aliases": []
+        },
+        {
+          "command": "查重2",
+          "aliases": []
+        },
+        {
+          "command": "查重4",
+          "aliases": []
+        },
+        {
+          "command": "查重",
+          "aliases": []
+        },
+        {
+          "command": "管理员帮助",
+          "aliases": [
+            "超级管理员帮助"
+          ]
+        },
+        {
+          "command": "主动过滤",
+          "aliases": []
+        },
+        {
+          "command": "移除主动过滤",
+          "aliases": []
+        },
+        {
+          "command": "主动过滤列表",
+          "aliases": []
+        },
+        {
+          "command": "被动过滤",
+          "aliases": []
+        },
+        {
+          "command": "移除被动过滤",
+          "aliases": []
+        },
+        {
+          "command": "被动过滤列表",
+          "aliases": []
+        },
+        {
+          "command": "白名单",
+          "aliases": []
+        },
+        {
+          "command": "白名单菜单",
+          "aliases": [
+            "白名单列表"
+          ]
+        },
+        {
+          "command": "发言排行",
+          "aliases": [
+            "发言榜",
+            "发言统计",
+            "统计"
+          ]
+        },
+        {
+          "command": "集群发言排行",
+          "aliases": [
+            "集群发言榜",
+            "集群发言统计",
+            "集群统计"
+          ]
+        },
+        {
+          "command": "机器人状态",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "compact_ranking",
+        "named_cluster_ranking"
+      ]
+    },
+    {
+      "skill_id": "game_api",
+      "version": "1.0.0",
+      "name": "游戏接口公共",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/game_api.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "global_announcement",
+      "version": "1.0.0",
+      "name": "全局公告",
+      "kind": "mixed",
+      "plugin": "bot/plugins/global_announcement.py",
+      "commands": [
+        {
+          "command": "公告面板",
+          "aliases": [
+            "公告网页"
+          ]
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "group_settings",
+      "version": "1.0.0",
+      "name": "权限与范围",
+      "kind": "mixed",
+      "plugin": "bot/plugins/group_settings.py",
+      "commands": [
+        {
+          "command": "群设置",
+          "aliases": [
+            "本群设置",
+            "开关小游戏",
+            "开关今日老婆",
+            "开关准时报点",
+            "开关被呼叫会话",
+            "开关B站推送",
+            "开关被动互动",
+            "开关NTE",
+            "开关鸣潮"
+          ]
+        },
+        {
+          "command": "系统设置",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "hourly_announcements",
+      "version": "1.0.0",
+      "name": "整点报时",
+      "kind": "mixed",
+      "plugin": "bot/plugins/hourly_announcements.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "knowledge_review",
+      "version": "1.0.0",
+      "name": "本地知识库",
+      "kind": "admin",
+      "plugin": "bot/plugins/knowledge_review.py",
+      "commands": [
+        {
+          "command": "收录待审",
+          "aliases": [
+            "收录待审列表"
+          ]
+        },
+        {
+          "command": "收录确认",
+          "aliases": []
+        },
+        {
+          "command": "收录拒绝",
+          "aliases": []
+        },
+        {
+          "command": "收录恢复待审",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "mini_games",
+      "version": "1.0.0",
+      "name": "小游戏",
+      "kind": "skill",
+      "plugin": "bot/plugins/mini_games.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "mini_games"
+      ]
+    },
+    {
+      "skill_id": "nte_game_ui",
+      "version": "1.0.0",
+      "name": "异环游戏接口",
+      "kind": "skill",
+      "plugin": "bot/plugins/nte_game_ui.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "nte_game_ui"
+      ]
+    },
+    {
+      "skill_id": "official_qq",
+      "version": "1.0.0",
+      "name": "备用传输",
+      "kind": "disabled",
+      "plugin": "bot/plugins/official_qq.py",
+      "commands": [
+        {
+          "command": "官方状态",
+          "aliases": []
+        },
+        {
+          "command": "官方图片测试",
+          "aliases": []
+        },
+        {
+          "command": "官方身份",
+          "aliases": []
+        },
+        {
+          "command": "官方群身份",
+          "aliases": []
+        },
+        {
+          "command": "官方群成员测试",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "operator_web",
+      "version": "1.0.0",
+      "name": "查重与白名单",
+      "kind": "admin",
+      "plugin": "bot/plugins/operator_web.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "outbound_pacing",
+      "version": "1.0.0",
+      "name": "公共基础设施",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/outbound_pacing.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "persona_management",
+      "version": "1.0.0",
+      "name": "人格与语音",
+      "kind": "mixed",
+      "plugin": "bot/plugins/persona_management.py",
+      "commands": [
+        {
+          "command": "人格",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "qq_platform_health",
+      "version": "1.0.0",
+      "name": "平台维护",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/qq_platform_health.py",
+      "commands": [
+        {
+          "command": "QQ平台自检",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "qq_transport_maintenance",
+      "version": "1.0.0",
+      "name": "平台维护",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/qq_transport_maintenance.py",
+      "commands": [
+        {
+          "command": "QQ传输维护状态",
+          "aliases": []
+        },
+        {
+          "command": "QQ传输离线记录",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "random_reactions",
+      "version": "1.0.0",
+      "name": "被动互动",
+      "kind": "skill",
+      "plugin": "bot/plugins/random_reactions.py",
+      "commands": [],
+      "rules": [
+        "is_passive_reaction_event"
+      ],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "runtime_maintenance",
+      "version": "1.0.0",
+      "name": "运行维护",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/runtime_maintenance.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "scope",
+      "version": "1.0.0",
+      "name": "权限与范围",
+      "kind": "infrastructure",
+      "plugin": "bot/plugins/scope.py",
+      "commands": [],
+      "rules": [
+        "is_disabled_game_command"
+      ],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "stats",
+      "version": "1.0.0",
+      "name": "统计与排行",
+      "kind": "mixed",
+      "plugin": "bot/plugins/stats.py",
+      "commands": [],
+      "rules": [
+        "stats_group_rule"
+      ],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "tangtang_chat",
+      "version": "1.0.0",
+      "name": "糖糖聊天",
+      "kind": "skill",
+      "plugin": "bot/plugins/tangtang_chat.py",
+      "commands": [],
+      "rules": [
+        "is_call_event",
+        "is_continuation_event",
+        "is_proactive_event"
+      ],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "tangtang_model_switch",
+      "version": "1.0.0",
+      "name": "糖糖聊天",
+      "kind": "admin",
+      "plugin": "bot/plugins/tangtang_model_switch.py",
+      "commands": [
+        {
+          "command": "糖糖模型",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "tangtang_proactive",
+      "version": "1.0.0",
+      "name": "糖糖聊天",
+      "kind": "admin",
+      "plugin": "bot/plugins/tangtang_proactive.py",
+      "commands": [
+        {
+          "command": "糖糖主动回复",
+          "aliases": [
+            "糖糖主动",
+            "主动回复"
+          ]
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    },
+    {
+      "skill_id": "today_wife",
+      "version": "1.0.0",
+      "name": "今日缘分",
+      "kind": "mixed",
+      "plugin": "bot/plugins/today_wife.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "today_wife_activity",
+        "today_wife"
+      ]
+    },
+    {
+      "skill_id": "wuwa_game_ui",
+      "version": "1.0.0",
+      "name": "鸣潮游戏接口",
+      "kind": "skill",
+      "plugin": "bot/plugins/wuwa_game_ui.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [
+        "wuwa_game_ui"
+      ]
+    },
+    {
+      "skill_id": "zhijiang",
+      "version": "1.0.0",
+      "name": "枝江直播",
+      "kind": "mixed",
+      "plugin": "bot/plugins/zhijiang.py",
+      "commands": [
+        {
+          "command": "枝江直播",
+          "aliases": [
+            "直播日程"
+          ]
+        },
+        {
+          "command": "刷新枝江直播",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": []
+    }
+  ]
+}

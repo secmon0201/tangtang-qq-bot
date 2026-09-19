@@ -72,6 +72,51 @@ def test_ranking_mentions_without_a_request_still_use_ai_router():
     assert classify_local_feature("糖糖觉得今天的发言榜好看吗") is None
 
 
+def test_mini_game_rankings_route_deterministically():
+    cases = {
+        "看看转盘榜": ("mini_game_roulette", "群"),
+        "看一下转盘总榜": ("mini_game_roulette", "总"),
+        "炸弹榜发一下": ("mini_game_bomb", "群"),
+        "骰子总榜": ("mini_game_dice", "总"),
+        "猜数榜看看": ("mini_game_guess", "群"),
+    }
+    for text, (action, scope) in cases.items():
+        decision = classify_local_feature(text)
+        assert decision is not None, text
+        assert decision.action == action
+        assert decision.scope == scope
+
+
+def test_game_rank_requests_route_deterministically():
+    nte = classify_local_feature("看一下异环最强排行")
+    assert nte is not None and nte.action == "nte_rank" and nte.scope == "群"
+    nte_total = classify_local_feature("异环总排行")
+    assert nte_total is not None and nte_total.action == "nte_rank" and nte_total.scope == "总"
+    wuwa = classify_local_feature("看看鸣潮最强排行")
+    assert wuwa is not None and wuwa.action == "wuwa_rank" and wuwa.scope == "群"
+    wuwa_total = classify_local_feature("鸣潮bot排行")
+    assert wuwa_total is not None and wuwa_total.action == "wuwa_rank" and wuwa_total.scope == "总"
+
+
+def test_game_actions_keep_their_scope_through_request_mapping():
+    from bot.services.tangtang_features import FeatureDecision
+
+    for action in (
+        "mini_game_roulette",
+        "mini_game_dice",
+        "nte_rank",
+        "wuwa_rank",
+    ):
+        request = request_from_decision(
+            FeatureDecision("clear", action, "总", False, "line")
+        )
+        assert request.args == "总"
+        local = request_from_decision(
+            FeatureDecision("clear", action, "群", False, "line")
+        )
+        assert local.args == "群"
+
+
 def test_parse_clear_maybe_chat_and_invalid_outputs():
     clear = TangtangFeatureClassifier._parse(
         '{"decision":"clear","action":"today_live","scope":"","cluster":false,'

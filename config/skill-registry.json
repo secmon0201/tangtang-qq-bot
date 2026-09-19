@@ -388,7 +388,12 @@
       "plugin_rules": [
         "mini_games"
       ],
-      "local_actions": [],
+      "local_actions": [
+        "mini_game_roulette",
+        "mini_game_bomb",
+        "mini_game_dice",
+        "mini_game_guess"
+      ],
       "required_role": "member"
     },
     {
@@ -404,7 +409,9 @@
       "plugin_rules": [
         "nte_game_ui"
       ],
-      "local_actions": [],
+      "local_actions": [
+        "nte_rank"
+      ],
       "required_role": "member"
     },
     {
@@ -682,7 +689,9 @@
       "plugin_rules": [
         "wuwa_game_ui"
       ],
-      "local_actions": [],
+      "local_actions": [
+        "wuwa_rank"
+      ],
       "required_role": "member"
     },
     {

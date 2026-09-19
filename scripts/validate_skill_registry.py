@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -36,6 +37,14 @@ FEATURE_ACTIONS = {
     "asoul.py": ("today_live", "tomorrow_live", "week_live"),
     "commands.py": ("ranking",),
     "zhijiang.py": ("zhijiang_schedule",),
+    "mini_games.py": (
+        "mini_game_roulette",
+        "mini_game_bomb",
+        "mini_game_dice",
+        "mini_game_guess",
+    ),
+    "nte_game_ui.py": ("nte_rank",),
+    "wuwa_game_ui.py": ("wuwa_rank",),
 }
 
 def discover_plugins(plugin_dir: Path = PLUGIN_DIR) -> dict[str, dict]:
@@ -84,14 +93,41 @@ def discover_feature_actions(plugin_dir: Path = PLUGIN_DIR) -> dict[str, tuple[s
     for path in sorted(plugin_dir.glob("*.py")):
         if path.stem == "__init__":
             continue
-        names = tuple(
-            match.group(1)
-            for call in pattern.findall(path.read_text(encoding="utf-8"))
-            for match in re.finditer(r"[\"']([^\"']+)[\"']", call)
-        )
+        text = path.read_text(encoding="utf-8")
+        names: list[str] = []
+        for call in pattern.findall(text):
+            names.extend(
+                match.group(1)
+                for match in re.finditer(r"[\"']([^\"']+)[\"']", call)
+            )
+            for splat in re.finditer(r"\*([A-Za-z_][\w]*)", call):
+                names.extend(_dict_keys(text, splat.group(1)))
         if names:
-            result[path.name] = names
+            result[path.name] = tuple(dict.fromkeys(names))
     return result
+
+
+def _dict_keys(text: str, variable: str) -> list[str]:
+    """Resolve a module-level dict[str, ...] assignment by AST."""
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Dict):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == variable
+            for target in node.targets
+        ):
+            continue
+        return [
+            str(key.value)
+            for key in node.value.keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        ]
+    return []
 
 
 def load_registry(path: Path = REGISTRY_PATH) -> dict:

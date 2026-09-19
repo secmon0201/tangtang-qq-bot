@@ -19,14 +19,24 @@ SUPPORTED_ACTIONS = frozenset(
         "week_live",
         "group_ranking",
         "cluster_ranking",
+        "mini_game_roulette",
+        "mini_game_bomb",
+        "mini_game_dice",
+        "mini_game_guess",
+        "nte_rank",
+        "wuwa_rank",
     }
 )
 RANKING_ACTIONS = frozenset({"group_ranking", "cluster_ranking"})
 RANKING_SCOPES = frozenset({"day", "week", "month", "total"})
+MINI_GAME_ACTIONS = frozenset(
+    {"mini_game_roulette", "mini_game_bomb", "mini_game_dice", "mini_game_guess"}
+)
+GAME_RANK_ACTIONS = frozenset({"nte_rank", "wuwa_rank"})
 
 _FEATURE_HINT_RE = re.compile(
     r"直播|在播|有谁在播|谁在播|发言|排行|榜|统计|灌水|集群|日程|枝江|"
-    r"A-SOUL|A手|有直播|直播安排",
+    r"A-SOUL|A手|有直播|直播安排|转盘|炸弹|骰子|猜数|猜数字|异环|鸣潮",
     re.IGNORECASE,
 )
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -45,7 +55,10 @@ _FUNCTION_TABLE = """支持的功能：
 - week_live：本周/这周直播日程
 - zhijiang_schedule：枝江直播/枝江日程/直播日程
 - group_ranking：当前群发言排行，范围 day/week/month/total
-- cluster_ranking：当前群所属集群的发言排行，范围 day/week/month/total"""
+- cluster_ranking：当前群所属集群的发言排行，范围 day/week/month/total
+- mini_game_roulette/mini_game_bomb/mini_game_dice/mini_game_guess：本群或总的小游戏榜单
+- nte_rank：异环（NTE）最强排行，scope 为群或总
+- wuwa_rank：鸣潮最强排行，scope 为群或总"""
 
 _ROUTER_RULES = """把呼叫分成三档：
 - clear：用户明确要求查看某个功能。
@@ -68,6 +81,59 @@ chat 只输出 {"decision":"chat"}。
 时间词规则：今天/现在/今天有人播=day；这周/本周=week；这个月/本月=month；总/累计/历史=total。
 提到“集群”或当前集群名称的发言榜一律使用 cluster_ranking。
 不提供个人发言排行；即使呼叫中出现“我/本人/自己/某人”或 @成员，只要是在请求发言排行，也只能使用群排行。"""
+
+_MINI_GAME_RANK_RE = re.compile(
+    r"(转盘|俄罗斯转盘|炸弹|定时炸弹|骰子|幸运骰局|猜数|猜数字)"
+    r"(?:的)?(?:总)?(?:排行)?(?:榜|榜单)"
+)
+_NTE_RANK_RE = re.compile(r"(异环|nte)", re.IGNORECASE)
+_WUWA_RANK_RE = re.compile(r"(鸣潮|ww)", re.IGNORECASE)
+
+
+def classify_extra_feature(text: str) -> FeatureDecision | None:
+    """Deterministic natural-language routing for the second skill batch."""
+
+    normalized = re.sub(r"[\s，,。.!！?？：:、]", "", text)
+    if not normalized:
+        return None
+    match = _MINI_GAME_RANK_RE.search(normalized)
+    if match is not None:
+        subject = match.group(1)
+        total = "总榜" in normalized or "总排行" in normalized or "总榜单" in normalized
+        action = {
+            "转盘": "mini_game_roulette",
+            "俄罗斯转盘": "mini_game_roulette",
+            "炸弹": "mini_game_bomb",
+            "定时炸弹": "mini_game_bomb",
+            "骰子": "mini_game_dice",
+            "幸运骰局": "mini_game_dice",
+            "猜数": "mini_game_guess",
+            "猜数字": "mini_game_guess",
+        }[subject]
+        scope = "总" if total else "群"
+        line = f"好呀，这就看看{subject}{'总' if total else '本群'}榜。"
+        return FeatureDecision(
+            tier="clear", action=action, scope=scope, cluster=False, line=line
+        )
+    if _NTE_RANK_RE.search(normalized) and "排行" in normalized:
+        scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
+        return FeatureDecision(
+            tier="clear",
+            action="nte_rank",
+            scope=scope,
+            cluster=False,
+            line="好呀，这就看看异环最强排行。",
+        )
+    if _WUWA_RANK_RE.search(normalized) and "排行" in normalized:
+        scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
+        return FeatureDecision(
+            tier="clear",
+            action="wuwa_rank",
+            scope=scope,
+            cluster=False,
+            line="好呀，这就看看鸣潮最强排行。",
+        )
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +160,9 @@ def classify_local_feature(
         for label in cluster_labels
         if str(label).strip()
     }
+    extra = classify_extra_feature(normalized)
+    if extra is not None:
+        return extra
     subject = _RANKING_SUBJECT_RE.search(normalized)
     if subject is None:
         return None
@@ -211,6 +280,9 @@ class TangtangFeatureClassifier:
                 action = "cluster_ranking"
             if action == "cluster_ranking":
                 cluster = True
+        elif action in MINI_GAME_ACTIONS or action in GAME_RANK_ACTIONS:
+            scope = "总" if scope in {"总", "bot"} else "群"
+            cluster = False
         else:
             scope = ""
             cluster = False

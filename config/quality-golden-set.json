@@ -162,6 +162,45 @@
         "must_reply": true,
         "max_chars": 400
       }
+    },
+    {
+      "case_id": "mini-game-ranking",
+      "kind": "skill",
+      "input": "看看转盘榜",
+      "router_expected": true,
+      "expect": {
+        "skill_id": "mini_games",
+        "action": "mini_game_roulette",
+        "args": "群",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "nte-ranking",
+      "kind": "skill",
+      "input": "看一下异环最强排行",
+      "router_expected": true,
+      "expect": {
+        "skill_id": "nte_game_ui",
+        "action": "nte_rank",
+        "args": "群",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "wuwa-ranking",
+      "kind": "skill",
+      "input": "看看鸣潮最强排行",
+      "router_expected": true,
+      "expect": {
+        "skill_id": "wuwa_game_ui",
+        "action": "wuwa_rank",
+        "args": "群",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      }
     }
   ]
 }

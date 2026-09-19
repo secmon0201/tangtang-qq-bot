@@ -22,6 +22,7 @@ from bot.services.mini_game_reports import MiniGameReportRenderer
 from bot.services.mini_games import BOMB, DICE, GUESS, ROULETTE, GameEvent, MiniGameService
 from bot.services.qq_platform import call_qq_action
 from bot.services.media import local_image_segment
+from bot.application.local_features import FeatureRequest, register_local_feature
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, group_domains, passive_settings
 
@@ -80,6 +81,13 @@ RANKING_COMMANDS = {
     "#猜数总榜": (GUESS, True),
     "#猜数字榜单": (GUESS, False),
     "#猜数字总榜单": (GUESS, True),
+}
+
+CHAT_RANKING_ACTIONS = {
+    "mini_game_roulette": ROULETTE,
+    "mini_game_bomb": BOMB,
+    "mini_game_dice": DICE,
+    "mini_game_guess": GUESS,
 }
 
 MINI_GAME_COMMAND_RE = re.compile(
@@ -385,6 +393,31 @@ async def _send_ranking(
     )
     path = renderer.render_ranking(payload, avatars, group_avatars)
     await matcher.finish(local_image_segment(path))
+
+
+@register_local_feature(*CHAT_RANKING_ACTIONS)
+async def _run_chat_ranking(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    game_type = CHAT_RANKING_ACTIONS.get(request.action)
+    if game_type is None:
+        return
+    if (
+        not feature_scopes.is_game_globally_enabled()
+        or not domains.feature_enabled(int(event.group_id), "mini_games")
+    ):
+        await matcher.finish()
+        return
+    await _send_ranking(
+        matcher,
+        game_type,
+        int(event.group_id),
+        total=str(request.args) == "总",
+    )
 
 
 async def _send_due_event(bot: Bot, event: GameEvent) -> None:

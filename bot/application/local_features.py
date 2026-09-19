@@ -52,6 +52,12 @@ def request_from_decision(decision: FeatureDecision) -> FeatureRequest:
             args=_SCOPE_LABELS.get(decision.scope, decision.scope),
             cluster=decision.cluster or decision.action == "cluster_ranking",
         )
+    if (
+        decision.action.startswith("mini_game_")
+        or decision.action in {"nte_rank", "wuwa_rank"}
+    ):
+        scope = "总" if str(decision.scope).strip().lower() in {"总", "bot"} else "群"
+        return FeatureRequest(action=decision.action, args=scope, cluster=False)
     return FeatureRequest(action=decision.action, args="", cluster=False)
 
 

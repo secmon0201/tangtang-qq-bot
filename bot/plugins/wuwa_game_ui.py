@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from nonebot import logger, on_message
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
@@ -26,6 +27,7 @@ from bot.services.wuwa_rank_data import (
     parse_wuwa_rank_command,
 )
 from bot.services.wuwa_rank_render import WuwaRankRenderer
+from bot.application.local_features import FeatureRequest, register_local_feature
 
 
 ORIGINAL_HELP_PATH = ROOT / "data" / "wuwa_original_help.png"
@@ -68,9 +70,25 @@ async def _(event: GroupMessageEvent) -> None:
     if is_wuwa_help_command(text):
         await _send_help(text)
         return
+    await _send_rank(wuwa_game_ui, event, text)
+
+
+@register_local_feature("wuwa_rank")
+async def _chat_wuwa_rank(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    scope = "总" if str(request.args) == "总" else "群"
+    await _send_rank(matcher, event, f"#ww{scope}最强排行")
+
+
+async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     request = parse_wuwa_rank_command(text)
     if request is None:
-        await wuwa_game_ui.finish()
+        await matcher.finish()
         return
     try:
         result = await asyncio.to_thread(rank_service.build, request, int(event.group_id), int(event.user_id))
@@ -81,13 +99,13 @@ async def _(event: GroupMessageEvent) -> None:
         image_path = await asyncio.to_thread(rank_renderer.render, result, avatar_paths)
     except WuwaRankDataError as exc:
         logger.warning("Wuthering Waves ranking unavailable: {}", exc)
-        await wuwa_game_ui.finish(f"鸣潮排行榜暂不可用：{exc}")
+        await matcher.finish(f"鸣潮排行榜暂不可用：{exc}")
         return
     except Exception:
         logger.exception("Wuthering Waves ranking render failed")
-        await wuwa_game_ui.finish("鸣潮排行榜生成失败，请稍后重试。")
+        await matcher.finish("鸣潮排行榜生成失败，请稍后重试。")
         return
-    await wuwa_game_ui.finish(local_image_segment(image_path))
+    await matcher.finish(local_image_segment(image_path))
 
 
 async def _send_help(text: str) -> None:

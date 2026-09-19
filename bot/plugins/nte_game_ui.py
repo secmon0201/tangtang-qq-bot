@@ -25,6 +25,7 @@ from bot.services.nte_rank_data import (
 )
 from bot.services.nte_rank_render import NTERankRenderer
 from bot.services.runtime import passive_settings
+from bot.application.local_features import FeatureRequest, register_local_feature
 
 
 ORIGINAL_HELP_PATH = ROOT / "data" / "nte_original_help.png"
@@ -60,10 +61,25 @@ async def _(bot: Bot, event: GroupMessageEvent) -> None:
     if is_nte_help_command(text):
         await _send_help(text)
         return
+    await _send_rank(nte_game_ui, event, text)
 
+
+@register_local_feature("nte_rank")
+async def _chat_nte_rank(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    scope = "总" if str(request.args) == "总" else "群"
+    await _send_rank(matcher, event, f"#nte{scope}最强排行")
+
+
+async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     request = parse_rank_command(text)
     if request is None:
-        await nte_game_ui.finish()
+        await matcher.finish()
         return
     try:
         result = await asyncio.to_thread(
@@ -89,13 +105,13 @@ async def _(bot: Bot, event: GroupMessageEvent) -> None:
         image_path = await asyncio.to_thread(rank_renderer.render, result, avatar_paths)
     except NTERankDataError as exc:
         logger.warning("NTE ranking unavailable: {}", exc)
-        await nte_game_ui.finish(f"异环排行榜暂不可用：{exc}")
+        await matcher.finish(f"异环排行榜暂不可用：{exc}")
         return
     except Exception:
         logger.exception("NTE ranking render failed")
-        await nte_game_ui.finish("异环排行榜生成失败，请稍后重试。")
+        await matcher.finish("异环排行榜生成失败，请稍后重试。")
         return
-    await nte_game_ui.finish(local_image_segment(image_path))
+    await matcher.finish(local_image_segment(image_path))
 
 
 async def _send_help(text: str) -> None:

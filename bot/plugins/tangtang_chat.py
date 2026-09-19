@@ -180,6 +180,12 @@ async def _feature_router(
         message_id=getattr(event, "message_id", "") or "",
         call_text=text,
         reply_text=decision.line or f"已执行本地功能：{feature_label(request)}",
+        provenance={
+            "skill_id": skill.skill_id,
+            "action": request.action,
+            "args": request.args,
+            "source": "feature_router",
+        },
     )
     return True, usage
 

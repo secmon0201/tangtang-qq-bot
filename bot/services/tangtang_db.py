@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tangtang_calls (
     reply_text TEXT NOT NULL,
     reply_kind TEXT NOT NULL CHECK (reply_kind IN ('model', 'canned', 'feature', 'proactive')),
     mode TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tangtang_calls_user_group
@@ -198,6 +200,15 @@ class TangtangDb:
                 "ALTER TABLE tangtang_group_messages "
                 "ADD COLUMN consumed INTEGER NOT NULL DEFAULT 0"
             )
+        call_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(tangtang_calls)")
+        }
+        if "provenance" not in call_columns:
+            conn.execute(
+                "ALTER TABLE tangtang_calls "
+                "ADD COLUMN provenance TEXT NOT NULL DEFAULT ''"
+            )
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tangtang_calls'"
         ).fetchone()
@@ -209,8 +220,10 @@ class TangtangDb:
         conn.executescript(_SCHEMA)
         conn.execute(
             "INSERT INTO tangtang_calls "
-            "(id, group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, created_at) "
-            "SELECT id, group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, created_at "
+            "(id, group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, "
+            "provenance, created_at) "
+            "SELECT id, group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, "
+            "provenance, created_at "
             "FROM tangtang_calls_old"
         )
         conn.execute("DROP TABLE tangtang_calls_old")
@@ -226,12 +239,13 @@ class TangtangDb:
         reply_kind: str,
         mode: str,
         created_at: str,
+        provenance: Mapping[str, Any] | None = None,
     ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO tangtang_calls "
-                "(group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(group_id, user_id, message_id, call_text, reply_text, reply_kind, mode, "
+                "provenance, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     int(group_id),
                     int(user_id),
@@ -240,6 +254,7 @@ class TangtangDb:
                     reply_text,
                     reply_kind,
                     mode,
+                    json.dumps(dict(provenance or {}), ensure_ascii=False),
                     created_at,
                 ),
             )

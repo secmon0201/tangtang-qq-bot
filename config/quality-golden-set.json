@@ -105,6 +105,63 @@
         "expect_skill": false
       },
       "router_expected": false
+    },
+    {
+      "case_id": "ranking-week",
+      "kind": "skill",
+      "input": "帮我看下这周的发言榜",
+      "router_expected": true,
+      "expect": {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "周",
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "ranking-cluster",
+      "kind": "skill",
+      "input": "看一下集群发言排行",
+      "router_expected": true,
+      "expect": {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "日",
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "live-today",
+      "kind": "skill",
+      "input": "糖糖今天有谁在播",
+      "router_expected": false,
+      "expect": {
+        "expect_skill": false,
+        "must_reply": true,
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "help-chat",
+      "kind": "chat",
+      "input": "糖糖陪我聊聊天吧",
+      "router_expected": false,
+      "expect": {
+        "expect_skill": false,
+        "must_reply": true,
+        "max_chars": 400
+      }
+    },
+    {
+      "case_id": "skill-admin-status",
+      "kind": "skill",
+      "input": "技能状态",
+      "router_expected": false,
+      "expect": {
+        "expect_skill": false,
+        "must_reply": true,
+        "max_chars": 400
+      }
     }
   ]
 }

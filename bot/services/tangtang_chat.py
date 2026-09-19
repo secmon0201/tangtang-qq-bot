@@ -1294,6 +1294,7 @@ class TangtangService:
         self._last_canned: dict[int, str] = {}
         self._recent_call_texts: dict[tuple[int, str], float] = {}
         self._in_flight: set[int] = set()
+        self._provenance: dict[tuple[int, int], dict[str, Any]] = {}
         self._base_memory = memory_kernel or TangtangMemoryKernel(self._base_db, self._now)
 
     @property
@@ -1461,6 +1462,9 @@ class TangtangService:
         context = self._turn.get()
         if context is None or context.persona.key != "denia":
             return []
+        provenance = self._provenance.setdefault(
+            (int(context.group_id), int(context.user_id)), {}
+        )
         try:
             rows = self._base_db.group_summary_sources(int(group_id))
         except Exception as exc:
@@ -1490,9 +1494,14 @@ class TangtangService:
                 continue
             title = str(row.get("title") or "未命名话题").strip()
             lines.append(f"· {title}：{summary}")
+            provenance.setdefault("summary_topics", []).append(
+                {"topic_id": int(row.get("topic_id") or 0), "version": int(row.get("version") or 0)}
+            )
             unresolved = str(row.get("unresolved") or "").strip()
             if unresolved:
                 lines.append(f"  未决：{'；'.join(unresolved.splitlines()[:4])}")
+        if provenance.get("summary_topics"):
+            self._provenance[(int(context.group_id), int(context.user_id))] = provenance
         return lines
 
     @staticmethod
@@ -1735,6 +1744,7 @@ class TangtangService:
         message_id: str | int,
         call_text: str,
         reply_text: str,
+        provenance: Mapping[str, Any] | None = None,
     ) -> None:
         try:
             self.db.insert_call(
@@ -1745,6 +1755,7 @@ class TangtangService:
                 reply_text=reply_text,
                 reply_kind="feature",
                 mode="feature",
+                provenance=provenance,
                 created_at=self._now(),
             )
         except Exception as exc:
@@ -2732,6 +2743,7 @@ class TangtangService:
                 reply_text=delivered_text,
                 reply_kind=reply_kind,
                 mode=mode,
+                provenance=self._provenance.pop((group_id, user_id), {}),
                 created_at=created_at,
             )
             self.db.insert_reply_parts(call_id, delivery_rows, created_at=created_at)

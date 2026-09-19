@@ -721,6 +721,52 @@ def test_feature_history_uses_feature_reply_kind(tmp_path, monkeypatch):
     assert rows[0]["mode"] == "feature"
 
 
+def test_call_provenance_round_trip(tmp_path):
+    from bot.services.tangtang_db import TangtangDb
+
+    db = TangtangDb(tmp_path / "tangtang.db")
+    db.insert_call(
+        group_id=1001,
+        user_id=2,
+        message_id="9",
+        call_text="看一下排行",
+        reply_text="好呀",
+        reply_kind="feature",
+        mode="feature",
+        created_at="2026-09-19T12:00:00+08:00",
+        provenance={"skill_id": "commands", "action": "ranking", "args": "日"},
+    )
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT provenance FROM tangtang_calls ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert json.loads(row["provenance"]) == {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "日",
+    }
+
+
+def test_legacy_call_table_gains_provenance_column(tmp_path):
+    import sqlite3
+
+    from bot.services.tangtang_db import TangtangDb
+
+    path = tmp_path / "legacy.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE tangtang_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, "
+            "message_id TEXT NOT NULL DEFAULT '', call_text TEXT NOT NULL, "
+            "reply_text TEXT NOT NULL, reply_kind TEXT NOT NULL, mode TEXT NOT NULL, "
+            "created_at TEXT NOT NULL)"
+        )
+    db = TangtangDb(path)
+    with db._connect() as conn:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(tangtang_calls)")}
+    assert "provenance" in columns
+
+
 def test_feature_router_sends_generated_line_before_executing(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
     from bot.services.tangtang_features import FeatureDecision

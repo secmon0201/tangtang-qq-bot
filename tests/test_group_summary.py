@@ -172,6 +172,24 @@ def test_seed_all_covers_every_group_without_replay(tmp_path):
     assert db.group_summary_seed_all((1001, 1002), now="2026-09-19T10:01:00+08:00") == 0
 
 
+def test_switching_summary_source_reseeds_at_tail(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="甲", text="旧的人格库交互",
+        message_id="old", created_at="2026-09-19T09:00:00+08:00",
+    )
+    assert db.group_summary_seed(1001, now="2026-09-19T10:00:00+08:00") == 1
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="乙", text="切换来源后的完整群消息",
+        message_id="raw", created_at="2026-09-19T10:05:00+08:00",
+    )
+    assert db.group_summary_seed(
+        1001, now="2026-09-19T10:10:00+08:00", source="raw"
+    ) == 2
+    # 切换来源只把游标放到新来源尾部，不追旧积压、不删除已有话题。
+    assert db.group_summary_pending(1001) == []
+
+
 def test_stale_messages_are_skipped_without_model_calls(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.insert_group_message(

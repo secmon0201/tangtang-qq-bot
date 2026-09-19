@@ -19,6 +19,8 @@ async def run_group_summaries() -> None:
 
     engine = persona_engine()
     provider = TangtangProvider()
+    # Group topics read the shared raw group-message corpus, not the sparse
+    # persona interaction log.
     history = TangtangDb()
     prepared: dict[int, GroupSummaryWorker] = {}
     seeded: set[int] = set()
@@ -40,20 +42,19 @@ async def run_group_summaries() -> None:
                 pending_seed = tuple(group_id for group_id in eligible if group_id not in seeded)
                 if pending_seed:
                     for group_id in pending_seed:
-                        persona = engine.store.selection(group_id)[0]
-                        group_db = engine.history(persona, history)
                         await asyncio.to_thread(
-                            group_db.group_summary_seed, group_id, now=_timestamp()
+                            history.group_summary_seed,
+                            group_id,
+                            now=_timestamp(),
+                            source="raw",
                         )
                         seeded.add(group_id)
                 if set(prepared) != set(eligible):
                     prepared.clear()
                     for group_id in eligible:
-                        persona = engine.store.selection(group_id)[0]
-                        group_db = engine.history(persona, history)
                         prepared[group_id] = GroupSummaryWorker(
                             GroupSummaryService(
-                                group_db,
+                                history,
                                 provider,
                                 config_loader,
                                 chat_id=lambda: _timestamp(),

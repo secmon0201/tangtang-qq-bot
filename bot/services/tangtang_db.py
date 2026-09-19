@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS group_summary_topic_sources (
 CREATE TABLE IF NOT EXISTS group_summary_cursors (
     group_id INTEGER PRIMARY KEY,
     applied_message_id INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'persona',
     updated_at TEXT NOT NULL
 );
 """
@@ -179,6 +180,15 @@ class TangtangDb:
 
     @staticmethod
     def _migrate_schema(conn: sqlite3.Connection) -> None:
+        cursor_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(group_summary_cursors)")
+        }
+        if cursor_columns and "source" not in cursor_columns:
+            conn.execute(
+                "ALTER TABLE group_summary_cursors "
+                "ADD COLUMN source TEXT NOT NULL DEFAULT 'persona'"
+            )
         columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(tangtang_group_messages)")
@@ -593,17 +603,28 @@ class TangtangDb:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def group_summary_seed(self, group_id: int, *, now: str) -> int:
+    def group_summary_seed(
+        self,
+        group_id: int,
+        *,
+        now: str,
+        source: str = "persona",
+        reset: bool = False,
+    ) -> int:
         """First run starts at the current tail; history is not replayed."""
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 existing = conn.execute(
-                    "SELECT 1 FROM group_summary_cursors WHERE group_id = ?",
+                    "SELECT source FROM group_summary_cursors WHERE group_id = ?",
                     (int(group_id),),
                 ).fetchone()
-                if existing is not None:
+                if (
+                    existing is not None
+                    and not reset
+                    and str(existing["source"] or "") == str(source)
+                ):
                     conn.execute("COMMIT")
                     return 0
                 row = conn.execute(
@@ -613,8 +634,12 @@ class TangtangDb:
                 newest = int(row[0] or 0)
                 conn.execute(
                     "INSERT INTO group_summary_cursors "
-                    "(group_id, applied_message_id, updated_at) VALUES (?, ?, ?)",
-                    (int(group_id), newest, str(now)),
+                    "(group_id, applied_message_id, source, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(group_id) DO UPDATE SET "
+                    "applied_message_id = excluded.applied_message_id, "
+                    "source = excluded.source, "
+                    "updated_at = excluded.updated_at",
+                    (int(group_id), newest, str(source), str(now)),
                 )
                 conn.execute("COMMIT")
                 return newest
@@ -685,11 +710,11 @@ class TangtangDb:
     def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO group_summary_cursors "
-                "(group_id, applied_message_id, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(group_id) DO UPDATE SET "
-                "applied_message_id = MAX(applied_message_id, excluded.applied_message_id), "
-                "updated_at = excluded.updated_at",
+                    "INSERT INTO group_summary_cursors "
+                    "(group_id, applied_message_id, source, updated_at) VALUES (?, ?, 'raw', ?) "
+                    "ON CONFLICT(group_id) DO UPDATE SET "
+                    "applied_message_id = MAX(applied_message_id, excluded.applied_message_id), "
+                    "updated_at = excluded.updated_at",
                 (int(group_id), int(message_id), str(now)),
             )
 

@@ -39,6 +39,7 @@ from bot.services.tangtang_features import (
 )
 from bot.services.skills import local_action_skill
 from bot.services.skill_audit import ledger as skill_ledger
+from bot.services.skill_metrics import metrics as skill_metrics
 from bot.services.agent_plan import build_plan, needs_plan
 from bot.services.tangtang_media import extract_image_references
 
@@ -62,15 +63,36 @@ async def _feature_router(
         ]
         if len(allowed_steps) >= 2 and len(allowed_steps) == len(plan.steps):
             for step in allowed_steps:
+                started_at = time.monotonic()
                 request = FeatureRequest(
                     action=step.action,
                     args=step.args,
                     cluster=step.cluster,
                 )
+                ok = True
                 try:
                     await run_feature_call(tangtang_call, bot, event, request)
                 except FinishedException:
                     continue
+                except Exception as exc:
+                    ok = False
+                    skill_ledger.record_failure(
+                        skill_id=step.skill_id,
+                        error=f"{type(exc).__name__}: {exc}",
+                        group_id=int(event.group_id),
+                        user_id=int(event.user_id),
+                        source="agent_plan",
+                    )
+                finally:
+                    skill_metrics.record(
+                        skill_id=step.skill_id,
+                        group_id=int(event.group_id),
+                        user_id=int(event.user_id),
+                        action=step.action,
+                        ok=ok,
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        source="agent_plan",
+                    )
             return True, {}
     current_domain = group_domains().domain_for_group(int(event.group_id))
     cluster_labels = (
@@ -107,7 +129,36 @@ async def _feature_router(
         return True, usage
     if decision.line:
         await tangtang_call.send(decision.line)
-    handled = await run_feature_call(tangtang_call, bot, event, request)
+    started_at = time.monotonic()
+    ok = True
+    try:
+        handled = await run_feature_call(tangtang_call, bot, event, request)
+    except FinishedException:
+        handled = True
+    except Exception as exc:
+        handled = True
+        ok = False
+        skill_ledger.record_failure(
+            skill_id=skill.skill_id,
+            error=f"{type(exc).__name__}: {exc}",
+            group_id=int(event.group_id),
+            user_id=int(event.user_id),
+            source="feature_router",
+        )
+    finally:
+        skill_metrics.record(
+            skill_id=skill.skill_id,
+            group_id=int(event.group_id),
+            user_id=int(event.user_id),
+            action=request.action,
+            ok=ok,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            prompt_tokens=int(usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("completion_tokens") or 0),
+            reasoning_tokens=int(usage.get("reasoning_tokens") or 0),
+            cost=float(usage.get("cost") or 0.0),
+            source="feature_router",
+        )
     if not handled:
         return False, usage
     service.record_feature(

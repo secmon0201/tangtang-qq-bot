@@ -635,6 +635,30 @@ class TangtangDb:
             seeded += int(self.group_summary_seed(int(group_id), now=now) > 0)
         return seeded
 
+    def group_summary_skip_older_than(self, group_id: int, cutoff: str) -> int:
+        """Advance the cursor over stale rows without generating summaries."""
+
+        with self._connect() as conn:
+            cursor_row = conn.execute(
+                "SELECT applied_message_id FROM group_summary_cursors WHERE group_id = ?",
+                (int(group_id),),
+            ).fetchone()
+            cursor = int(cursor_row["applied_message_id"]) if cursor_row else 0
+            row = conn.execute(
+                "SELECT MAX(id) FROM tangtang_group_messages "
+                "WHERE group_id = ? AND id > ? AND created_at < ?",
+                (int(group_id), cursor, str(cutoff)),
+            ).fetchone()
+            newest_stale = int(row[0] or 0)
+        if newest_stale <= 0:
+            return 0
+        self.group_summary_advance(
+            group_id,
+            newest_stale,
+            now=datetime.now().astimezone().isoformat(),
+        )
+        return newest_stale
+
     def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
         with self._connect() as conn:
             conn.execute(

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta
 
 from nonebot import logger
 
@@ -25,6 +26,10 @@ async def run_group_summaries() -> None:
         try:
             config = config_loader.load()
             if config.enabled and config.group_summary_enabled:
+                cutoff = (
+                    datetime.now().astimezone()
+                    - timedelta(hours=config.group_summary_max_age_hours)
+                ).isoformat()
                 eligible = tuple(
                     group_id
                     for group_id in group_domains().all_group_ids()
@@ -34,11 +39,10 @@ async def run_group_summaries() -> None:
                 # later groups cannot be blocked behind an active one.
                 pending_seed = tuple(group_id for group_id in eligible if group_id not in seeded)
                 if pending_seed:
-                    tails: dict[int, int] = {}
                     for group_id in pending_seed:
                         persona = engine.store.selection(group_id)[0]
                         group_db = engine.history(persona, history)
-                        tails[group_id] = await asyncio.to_thread(
+                        await asyncio.to_thread(
                             group_db.group_summary_seed, group_id, now=_timestamp()
                         )
                         seeded.add(group_id)
@@ -59,6 +63,11 @@ async def run_group_summaries() -> None:
                 # Round-robin one bounded batch per group so a busy group cannot
                 # starve the first summary of every other group.
                 for group_id in eligible:
+                    await asyncio.to_thread(
+                        prepared[group_id].service.db.group_summary_skip_older_than,
+                        group_id,
+                        cutoff,
+                    )
                     await prepared[group_id].tick((group_id,))
                     await asyncio.sleep(0)
         except asyncio.CancelledError:

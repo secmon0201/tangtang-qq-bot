@@ -158,6 +158,39 @@ def test_seed_all_covers_every_group_without_replay(tmp_path):
     assert db.group_summary_seed_all((1001, 1002), now="2026-09-19T10:01:00+08:00") == 0
 
 
+def test_stale_messages_are_skipped_without_model_calls(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="甲", text="很久以前的旧消息",
+        message_id="old", created_at="2026-09-10T09:00:00+08:00",
+    )
+    db.group_summary_seed(1001, now="2026-09-10T10:00:00+08:00")
+    # A later row (another group) shifts the next group row past the cursor.
+    db.insert_group_message(
+        group_id=1002, user_id=1, nickname="乙", text="别群消息",
+        message_id="other", created_at="2026-09-10T09:30:00+08:00",
+    )
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="甲", text="窗口外的第二条旧消息",
+        message_id="stale", created_at="2026-09-10T09:40:00+08:00",
+    )
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="甲", text="窗口内的新消息",
+        message_id="fresh", created_at="2026-09-19T09:00:00+08:00",
+    )
+    skipped = db.group_summary_skip_older_than(1001, "2026-09-18T09:00:00+08:00")
+    assert skipped > 0
+    provider = SummaryProvider()
+    service = GroupSummaryService(
+        db, provider, Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
+        chat_id=lambda: "2026-09-19T10:00:00+08:00",
+    )
+    assert asyncio.run(GroupSummaryWorker(service).tick((1001,))) == 1
+    assert provider.calls == 1
+    topics = db.group_summary_sources(1001)
+    assert topics and "聚会" in topics[0]["summary"]
+
+
 def test_topic_routing_reuses_existing_topic(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.group_summary_merge(

@@ -7,6 +7,7 @@ from typing import Any
 
 from nonebot import on_message, get_driver, get_bots, logger
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
+from nonebot.exception import FinishedException
 from nonebot.message import event_preprocessor
 
 from bot.config import settings
@@ -14,6 +15,7 @@ from bot.application.personas import persona_engine
 from bot.application.proactive_chat import ProactiveCoordinator, proactive_store
 from bot.application.chat_continuation import ContinuationCoordinator, continuation_config
 from bot.application.local_features import (
+    FeatureRequest,
     feature_label,
     request_from_decision,
     run_feature_call,
@@ -37,6 +39,7 @@ from bot.services.tangtang_features import (
 )
 from bot.services.skills import local_action_skill
 from bot.services.skill_audit import ledger as skill_ledger
+from bot.services.agent_plan import build_plan, needs_plan
 from bot.services.tangtang_media import extract_image_references
 
 
@@ -50,6 +53,25 @@ async def _feature_router(
 ) -> tuple[bool, dict[str, Any]]:
     if not has_feature_hint(text):
         return False, {}
+    if needs_plan(text):
+        plan = build_plan(text)
+        allowed_steps = [
+            step
+            for step in plan.steps
+            if skill_ledger.enabled_for_group(step.skill_id, int(event.group_id))
+        ]
+        if len(allowed_steps) >= 2 and len(allowed_steps) == len(plan.steps):
+            for step in allowed_steps:
+                request = FeatureRequest(
+                    action=step.action,
+                    args=step.args,
+                    cluster=step.cluster,
+                )
+                try:
+                    await run_feature_call(tangtang_call, bot, event, request)
+                except FinishedException:
+                    continue
+            return True, {}
     current_domain = group_domains().domain_for_group(int(event.group_id))
     cluster_labels = (
         (current_domain.name, current_domain.alias)

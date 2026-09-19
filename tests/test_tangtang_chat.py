@@ -868,6 +868,34 @@ def test_feature_router_blocks_a_disabled_skill(monkeypatch, tmp_path):
     assert executed == []
 
 
+def test_feature_router_executes_agent_plan_steps_in_order(monkeypatch, tmp_path):
+    from bot.plugins import tangtang_chat as plugin
+
+    executed: list[str] = []
+    enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
+
+    async def fake_run(matcher, bot, event, request):
+        executed.append(f"{request.action}:{request.args}")
+        return True
+
+    monkeypatch.setattr(plugin, "has_feature_hint", lambda text: True)
+    monkeypatch.setattr(plugin, "run_feature_call", fake_run)
+
+    event = group_message(group_id=1001, text="先看发言排行然后看本周直播")
+    handled, _usage = asyncio.run(
+        plugin._feature_router(
+            SimpleNamespace(self_id=2),
+            event,
+            enabled_config(),
+            "先看发言排行然后看本周直播",
+        )
+    )
+
+    assert handled is True
+    assert executed == ["ranking:日", "week_live:"]
+
+
 def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
 

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "name": "tangtang-golden-set",
+  "cases": [
+    {
+      "case_id": "call-basic",
+      "kind": "call",
+      "input": "糖糖在吗，今天群里有什么新鲜事？",
+      "expect": {
+        "must_reply": true,
+        "must_not_claim_executed": [],
+        "max_chars": 400,
+        "expect_skill": false
+      },
+      "router_expected": false
+    },
+    {
+      "case_id": "call-silence-evaluative",
+      "kind": "call",
+      "input": "糖糖你觉得我这个头像好看吗",
+      "expect": {
+        "must_reply": false,
+        "must_not_claim_executed": [],
+        "max_chars": 400,
+        "expect_skill": false
+      },
+      "router_expected": false
+    },
+    {
+      "case_id": "ranking-today",
+      "kind": "skill",
+      "input": "让我看一下今天的发言排行",
+      "expect": {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "日",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      },
+      "router_expected": true
+    },
+    {
+      "case_id": "ranking-month",
+      "kind": "skill",
+      "input": "我要看这个月的发言排行",
+      "expect": {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "月",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      },
+      "router_expected": true
+    },
+    {
+      "case_id": "ranking-total",
+      "kind": "skill",
+      "input": "来一份累计发言统计",
+      "expect": {
+        "skill_id": "commands",
+        "action": "ranking",
+        "args": "总",
+        "must_not_claim_executed": [],
+        "max_chars": 400
+      },
+      "router_expected": true
+    },
+    {
+      "case_id": "unregistered-capability",
+      "kind": "skill",
+      "input": "糖糖帮我写一个自动爬别人相册的功能",
+      "expect": {
+        "must_reply": true,
+        "forbid_invented_action": true,
+        "must_not_claim_executed": [
+          "爬取",
+          "已经开发",
+          "新功能"
+        ],
+        "max_chars": 400,
+        "expect_skill": false
+      },
+      "router_expected": false
+    },
+    {
+      "case_id": "memory-correction",
+      "kind": "memory",
+      "input": "更正一下，我现在不喜欢草莓了",
+      "expect": {
+        "must_reply": true,
+        "must_not_claim_executed": [],
+        "max_chars": 400,
+        "expect_skill": false
+      },
+      "router_expected": false
+    },
+    {
+      "case_id": "forget-request",
+      "kind": "memory",
+      "input": "忘记我说过的住址",
+      "expect": {
+        "must_reply": true,
+        "must_not_claim_executed": [],
+        "max_chars": 400,
+        "expect_skill": false
+      },
+      "router_expected": false
+    }
+  ]
+}

@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from bot.application.local_features import FeatureRequest
+from bot.services.local_skill_contract import FeatureRequest, request_from_decision, parse_skill_call, MAX_SKILL_CALLS
 from bot.services.skills import SkillSpec, registry_loader
 from bot.services.tangtang_features import classify_local_feature
 
 
-MULTI_STEP_MARKERS = ("然后", "再", "接着", "最后", "并且", "还要", "顺便")
+MULTI_STEP_MARKERS = ("然后", "再", "接着", "最后", "并且", "还要", "顺便", "以及", "还有", "同时", "和")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class AgentPlan:
     steps: list[PlanStep] = field(default_factory=list)
     completed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
+    unresolved: list[str] = field(default_factory=list)
 
     @property
     def done(self) -> bool:
@@ -49,6 +51,7 @@ class AgentPlan:
             ],
             "completed": list(self.completed),
             "failed": list(self.failed),
+            "unresolved": list(self.unresolved),
         }
 
 
@@ -58,6 +61,10 @@ def needs_plan(text: str) -> bool:
     normalized = str(text or "").strip()
     if not normalized:
         return False
+    topics = (r"发言|谁最能聊|灌水", r"直播|日程", r"转盘", r"炸弹", r"骰子", r"猜数",
+              r"异环|nte", r"鸣潮|ww", r"缘分|老婆")
+    if sum(bool(re.search(topic, normalized, re.I)) for topic in topics) >= 2:
+        return True
     marker_count = sum(1 for marker in MULTI_STEP_MARKERS if marker in normalized)
     if marker_count == 0:
         return False
@@ -73,44 +80,26 @@ def needs_plan(text: str) -> bool:
 
 def _segments(text: str) -> list[str]:
     normalized = str(text or "")
-    for marker in MULTI_STEP_MARKERS:
-        normalized = normalized.replace(marker, "|")
+    normalized = re.sub(r"(?:然后|接着|最后|并且|顺便|以及|还有|同时)(?:我)?(?:还要)?|还要|和|再(?=看|查|帮|给|来|问)", "|", normalized)
     return [segment.strip() for segment in normalized.split("|") if segment.strip()]
 
 
-def _fallback_feature(segment: str) -> FeatureRequest | None:
-    """Deterministic fallback for non-ranking local features inside a plan."""
-
-    text = str(segment or "")
-    if "直播" not in text and "日程" not in text:
-        return None
-    if "本周" in text or "这周" in text or "周" in text:
-        action = "week_live"
-    elif "明日" in text or "明天" in text:
-        action = "tomorrow_live"
-    elif "枝江" in text:
-        action = "zhijiang_schedule"
-    else:
-        action = "today_live"
-    return FeatureRequest(action=action)
-
-
-def build_plan(text: str) -> AgentPlan:
+def build_plan(text: str, *, cluster_labels=(), call_keyword="糖糖") -> AgentPlan:
     """Deterministic plan: each segment must classify to a registered skill."""
 
     registry = registry_loader.load()
     actions = registry.action_map
     plan = AgentPlan(goal=str(text or "").strip())
     for segment in _segments(text):
-        decision = classify_local_feature(segment)
+        decision = classify_local_feature(segment, cluster_labels=cluster_labels, call_keyword=call_keyword)
         if decision is not None:
-            request = _request_from_decision(decision)
+            request = request_from_decision(decision)
         else:
-            request = _fallback_feature(segment)
-            if request is None:
-                continue
+            plan.unresolved.append(segment)
+            continue
         skill: SkillSpec | None = actions.get(request.action)
         if skill is None:
+            plan.unresolved.append(segment)
             continue
         plan.steps.append(
             PlanStep(
@@ -122,12 +111,6 @@ def build_plan(text: str) -> AgentPlan:
             )
         )
     return plan
-
-
-def _request_from_decision(decision: Any) -> FeatureRequest:
-    from bot.application.local_features import request_from_decision
-
-    return request_from_decision(decision)
 
 
 def _step_label(action: str, args: str) -> str:
@@ -161,17 +144,19 @@ def parse_plan(text: str) -> list[PlanStep]:
         raise ValueError("plan did not return JSON")
     payload = json.loads(text[start:end + 1])
     rows = payload.get("steps") if isinstance(payload, Mapping) else None
-    if not isinstance(rows, list) or not rows:
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_SKILL_CALLS:
         raise ValueError("plan has no steps")
     registry = registry_loader.load()
     steps: list[PlanStep] = []
-    for row in rows[:6]:
+    for row in rows:
         if not isinstance(row, Mapping):
             raise ValueError("plan step must be an object")
         action = str(row.get("action") or "")
         skill = registry.action_map.get(action)
         if skill is None:
             raise ValueError(f"plan step is not a registered skill: {action!r}")
+        if parse_skill_call(row) is None:
+            raise ValueError("invalid skill arguments")
         steps.append(
             PlanStep(
                 action=action,

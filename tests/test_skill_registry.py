@@ -17,7 +17,7 @@ def test_skill_registry_covers_the_full_command_surface():
     registry = load_registry(REGISTRY_PATH)
     assert validate(registry) == []
     assert counts(registry) == {
-        "plugins": 28,
+        "plugins": 29,
         "commands": 63,
         "aliases": 29,
         "rules": 14,

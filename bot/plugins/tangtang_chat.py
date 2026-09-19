@@ -7,7 +7,6 @@ from typing import Any
 
 from nonebot import on_message, get_driver, get_bots, logger
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
-from nonebot.exception import FinishedException
 from nonebot.message import event_preprocessor
 
 from bot.config import settings
@@ -16,9 +15,10 @@ from bot.application.proactive_chat import ProactiveCoordinator, proactive_store
 from bot.application.chat_continuation import ContinuationCoordinator, continuation_config
 from bot.application.local_features import (
     FeatureRequest,
-    feature_label,
+    FeatureDelivery,
     request_from_decision,
     run_feature_call,
+    registered_local_features,
 )
 from bot.services.runtime import database, group_domains, passive_settings
 from bot.services.chat_dispatch import dispatcher
@@ -33,7 +33,6 @@ from bot.services.tangtang_chat import (
 )
 from bot.services.tangtang_runtime import config_loader as loader
 from bot.services.tangtang_features import (
-    TangtangFeatureClassifier,
     classify_local_feature,
     has_feature_hint,
     persona_rejection,
@@ -45,6 +44,7 @@ from bot.services.skill_capability import capabilities
 from bot.services.skill_security import role_allows
 from bot.services.roles import is_super_admin
 from bot.services.agent_plan import build_plan, needs_plan
+from bot.services.local_skill_contract import ACTION_CONTRACTS, MAX_SKILL_CALLS, valid_request
 from bot.services.tangtang_media import extract_image_references
 
 
@@ -53,148 +53,134 @@ _GAME_CODE_RE = re.compile(r"^(?:gs|ys|ww|nte|yh)(?=$|\s|[\u4e00-\u9fff])", re.I
 _CODEX_COMMAND_RE = re.compile(r"^#\s*codex(?:\s|$)", re.IGNORECASE)
 
 
+def _feature_denial(event, request: FeatureRequest) -> str:
+    if request.action not in ACTION_CONTRACTS:
+        return "unknown_skill"
+    if not valid_request(request):
+        return "invalid_args"
+    if getattr(event, "message_type", "") != "group" or not getattr(event, "group_id", None):
+        return "group_required"
+    skill = local_action_skill(request.action)
+    if skill is None or skill.deprecated or request.action not in registered_local_features():
+        return "unknown_skill"
+    group_id = int(event.group_id)
+    if not skill_ledger.enabled_for_group(skill.skill_id, group_id):
+        return "group_disabled"
+    if skill.feature_key and not group_domains().effective_feature_enabled(group_id, skill.feature_key):
+        return "group_disabled"
+    if request.action in {"nte_rank", "wuwa_rank"} and (
+        not settings.game_api_enabled or not passive_settings().is_game_api_enabled()
+    ):
+        return "group_disabled"
+    if not role_allows(skill.required_role,
+        is_admin=getattr(getattr(event, "sender", None), "role", "") in {"owner", "admin"},
+        is_super_admin=is_super_admin(int(event.user_id))):
+        return "permission"
+    if request.cluster:
+        domain = group_domains().domain_for_group(group_id)
+        if domain is None or domain.mode != "cluster":
+            return "cluster_required"
+    if not capabilities.skill_available(skill.skill_id):
+        return "upstream_unavailable"
+    return ""
+
+
+def _available_model_skills(event) -> tuple[str, ...]:
+    return tuple(action for action, contract in ACTION_CONTRACTS.items()
+                 if not _feature_denial(event, FeatureRequest(action, contract.args[0])))
+
+
+async def _run_skill_requests(bot, event, config, requests, *, text="", opening="",
+                              usage=None, source="feature_router", current=None) -> bool:
+    """One authorization and delivery path for local, planned and model calls."""
+    current = current or service._turn_current
+    delivery = FeatureDelivery(bot, event, current=current)
+    usage = usage or {}
+    if not current():
+        return True
+    # Validate the whole batch before emitting an opener or executing any step.
+    if not 1 <= len(requests) <= MAX_SKILL_CALLS:
+        await delivery.send(persona_rejection("invalid_args", call_keyword=config.call_keyword))
+        return True
+    for request in requests:
+        reason = _feature_denial(event, request)
+        if not reason and request.args == "总" and not re.search(r"总|累计|历史|机器人|所有群|bot", text, re.I):
+            reason = "invalid_args"
+        if not reason and request.cluster:
+            domain = group_domains().domain_for_group(int(event.group_id))
+            labels = (domain.name, domain.alias) if domain else ()
+            if "集群" not in text and not any(label and label in text for label in labels):
+                reason = "invalid_args"
+        if reason:
+            logger.info("Local skill rejected source={} action={} reason={}", source, request.action, reason)
+            await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
+            return True
+    if opening:
+        await delivery.send(opening)
+    for index, request in enumerate(requests):
+        if not current():
+            break
+        # Switches/permissions may change while a previous image is rendering.
+        reason = _feature_denial(event, request)
+        if reason:
+            await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
+            break
+        skill = local_action_skill(request.action)
+        started_at, before, ok = time.monotonic(), len(delivery.receipts), False
+        try:
+            handled = await run_feature_call(delivery, bot, event, request)
+            ok = handled and len(delivery.receipts) > before
+            if not ok and current():
+                await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
+        except Exception as exc:
+            skill_ledger.record_failure(skill_id=skill.skill_id,
+                error=f"{type(exc).__name__}: {exc}", group_id=int(event.group_id),
+                user_id=int(event.user_id), source=source)
+            if current():
+                await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
+        finally:
+            logger.info("Local skill finished source={} action={} group={} message={} delivered={}",
+                source, request.action, event.group_id, getattr(event, "message_id", ""), ok)
+            skill_metrics.record(skill_id=skill.skill_id, group_id=int(event.group_id),
+                user_id=int(event.user_id), action=request.action, ok=ok,
+                latency_ms=int((time.monotonic() - started_at) * 1000),
+                prompt_tokens=int(usage.get("prompt_tokens") or 0) if index == 0 else 0,
+                completion_tokens=int(usage.get("completion_tokens") or 0) if index == 0 else 0,
+                reasoning_tokens=int(usage.get("reasoning_tokens") or 0) if index == 0 else 0,
+                cost=float(usage.get("cost") or 0) if index == 0 else 0, source=source)
+        if len(delivery.receipts) > before:
+            service.record_feature(group_id=int(event.group_id), user_id=int(event.user_id),
+                message_id=getattr(event, "message_id", "") or "", call_text=text,
+                reply_text="\n".join(delivery.receipts[before:]),
+                provenance={"skill_id": skill.skill_id, "action": request.action,
+                            "args": request.args, "source": source})
+    return True
+
+
 async def _feature_router(
     bot: Bot, event: MessageEvent, config: TangtangConfig, text: str
 ) -> tuple[bool, dict[str, Any]]:
     if not has_feature_hint(text):
         return False, {}
+    domain = group_domains().domain_for_group(int(event.group_id))
+    labels = (domain.name, domain.alias) if domain and domain.mode == "cluster" else ()
     if needs_plan(text):
-        plan = build_plan(text)
-        allowed_steps = [
-            step
-            for step in plan.steps
-            if skill_ledger.enabled_for_group(step.skill_id, int(event.group_id))
-        ]
-        if len(allowed_steps) >= 2 and len(allowed_steps) == len(plan.steps):
-            for step in allowed_steps:
-                started_at = time.monotonic()
-                request = FeatureRequest(
-                    action=step.action,
-                    args=step.args,
-                    cluster=step.cluster,
-                )
-                ok = True
-                try:
-                    await run_feature_call(tangtang_call, bot, event, request)
-                except FinishedException:
-                    continue
-                except Exception as exc:
-                    ok = False
-                    skill_ledger.record_failure(
-                        skill_id=step.skill_id,
-                        error=f"{type(exc).__name__}: {exc}",
-                        group_id=int(event.group_id),
-                        user_id=int(event.user_id),
-                        source="agent_plan",
-                    )
-                finally:
-                    skill_metrics.record(
-                        skill_id=step.skill_id,
-                        group_id=int(event.group_id),
-                        user_id=int(event.user_id),
-                        action=step.action,
-                        ok=ok,
-                        latency_ms=int((time.monotonic() - started_at) * 1000),
-                        source="agent_plan",
-                    )
-            return True, {}
-    current_domain = group_domains().domain_for_group(int(event.group_id))
-    cluster_labels = (
-        (current_domain.name, current_domain.alias)
-        if current_domain is not None and current_domain.mode == "cluster"
-        else ()
-    )
-    decision = classify_local_feature(text, cluster_labels=cluster_labels, call_keyword=config.call_keyword)
-    if decision is None:
-        # Continuation's model attempt is charged by the shared chat path.
-        # Keep deterministic tool requests working without starting a second,
-        # unmetered classifier model before that admission point.
-        if continuation_turn() is not None:
+        plan = build_plan(text, cluster_labels=labels, call_keyword=config.call_keyword)
+        # A partial deterministic plan must reach the full model, so unknown
+        # segments are explained rather than silently dropped.
+        if plan.unresolved or len(plan.steps) < 2:
             return False, {}
-        profile = next(p for p in persona_engine().profiles.values() if p.call_keyword == config.call_keyword)
-        decision, usage = await feature_classifier.classify(config, text, persona_name=profile.name)
-    else:
-        usage = {}
+        requests = tuple(FeatureRequest(s.action, s.args, s.cluster) for s in plan.steps)
+        return await _run_skill_requests(bot, event, config, requests, text=text,
+            opening="唔，我按顺序看看。" if config.call_keyword != "糖糖" else "好呀，一个个来看。",
+            source="agent_plan"), {}
+    decision = classify_local_feature(text, cluster_labels=labels, call_keyword=config.call_keyword)
     if decision is None:
-        return False, usage
-    request = request_from_decision(decision)
-    skill = local_action_skill(request.action)
-    if skill is None:
-        # The proposer returned an action outside the closed skill registry.
-        await tangtang_call.send(
-            persona_rejection("unknown_skill", call_keyword=config.call_keyword)
-        )
-        return True, usage
-    if not skill_ledger.enabled_for_group(skill.skill_id, int(event.group_id)):
-        await tangtang_call.send(
-            persona_rejection("group_disabled", call_keyword=config.call_keyword)
-        )
-        return True, usage
-    if not capabilities.skill_available(skill.skill_id):
-        await tangtang_call.send(
-            persona_rejection("upstream_unavailable", call_keyword=config.call_keyword)
-        )
-        return True, usage
-    if not role_allows(
-        skill.required_role,
-        is_admin=is_super_admin(int(event.user_id)),
-        is_super_admin=is_super_admin(int(event.user_id)),
-    ):
-        await tangtang_call.send("这个技能需要管理权限，当前账号不能执行。")
-        return True, usage
-    feature_key = skill.feature_key or None
-    if feature_key and not group_domains().effective_feature_enabled(
-        int(event.group_id), feature_key
-    ):
-        return True, usage
-    if decision.line:
-        await tangtang_call.send(decision.line)
-    started_at = time.monotonic()
-    ok = True
-    try:
-        handled = await run_feature_call(tangtang_call, bot, event, request)
-    except FinishedException:
-        handled = True
-    except Exception as exc:
-        handled = True
-        ok = False
-        skill_ledger.record_failure(
-            skill_id=skill.skill_id,
-            error=f"{type(exc).__name__}: {exc}",
-            group_id=int(event.group_id),
-            user_id=int(event.user_id),
-            source="feature_router",
-        )
-    finally:
-        skill_metrics.record(
-            skill_id=skill.skill_id,
-            group_id=int(event.group_id),
-            user_id=int(event.user_id),
-            action=request.action,
-            ok=ok,
-            latency_ms=int((time.monotonic() - started_at) * 1000),
-            prompt_tokens=int(usage.get("prompt_tokens") or 0),
-            completion_tokens=int(usage.get("completion_tokens") or 0),
-            reasoning_tokens=int(usage.get("reasoning_tokens") or 0),
-            cost=float(usage.get("cost") or 0.0),
-            source="feature_router",
-        )
-    if not handled:
-        return False, usage
-    service.record_feature(
-        group_id=int(event.group_id),
-        user_id=int(event.user_id),
-        message_id=getattr(event, "message_id", "") or "",
-        call_text=text,
-        reply_text=decision.line or f"已执行本地功能：{feature_label(request)}",
-        provenance={
-            "skill_id": skill.skill_id,
-            "action": request.action,
-            "args": request.args,
-            "source": "feature_router",
-        },
-    )
-    return True, usage
+        # The main chat model sees the executable contracts too. Avoid a second
+        # inference request whose failure previously lost all skill awareness.
+        return False, {}
+    return await _run_skill_requests(bot, event, config, (request_from_decision(decision),),
+                                     text=text, opening=decision.line), {}
 
 
 db = database()
@@ -221,12 +207,13 @@ def _group_identity(group_id: int) -> TangtangGroupIdentity | None:
     )
 
 
-feature_classifier = TangtangFeatureClassifier()
 service = TangtangService(
     loader=loader,
     feature_router=_feature_router,
     group_identity_provider=_group_identity,
     persona_engine=persona_engine(),
+    feature_runner=_run_skill_requests,
+    feature_catalog=_available_model_skills,
 )
 
 

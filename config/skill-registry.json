@@ -394,6 +394,7 @@
         "mini_game_dice",
         "mini_game_guess"
       ],
+      "feature_key": "mini_games",
       "required_role": "member"
     },
     {
@@ -412,6 +413,7 @@
       "local_actions": [
         "nte_rank"
       ],
+      "feature_key": "nte",
       "required_role": "member"
     },
     {
@@ -673,7 +675,25 @@
         "today_wife_activity",
         "today_wife"
       ],
-      "local_actions": [],
+      "local_actions": ["wife_personal", "wife_group"],
+      "feature_key": "today_wife",
+      "required_role": "member"
+    },
+    {
+      "skill_id": "denia_gallery",
+      "version": "1.0.0",
+      "name": "达妮娅美图",
+      "kind": "skill",
+      "plugin": "bot/plugins/denia_gallery.py",
+      "commands": [],
+      "rules": [],
+      "owner": "project",
+      "deprecated": false,
+      "plugin_rules": [],
+      "local_actions": [
+        "denia_gallery"
+      ],
+      "feature_key": "",
       "required_role": "member"
     },
     {
@@ -692,6 +712,7 @@
       "local_actions": [
         "wuwa_rank"
       ],
+      "feature_key": "ww",
       "required_role": "member"
     },
     {
@@ -719,7 +740,7 @@
       "local_actions": [
         "zhijiang_schedule"
       ],
-      "feature_key": "",
+      "feature_key": "zhijiang_calendar",
       "required_role": "member"
     },
     {

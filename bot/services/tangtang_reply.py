@@ -4,6 +4,7 @@ import json
 import random
 import re
 from dataclasses import dataclass
+from bot.services.local_skill_contract import FeatureRequest as SkillCall, parse_skill_call, MAX_SKILL_CALLS
 
 
 MESSAGE_MARKER = "[消息]"
@@ -26,6 +27,12 @@ class ReplyPlan:
     memory_updates: tuple[dict, ...] = ()
     impression_updates: tuple[dict, ...] = ()
     growth_updates: tuple[dict, ...] = ()
+    skill_calls: tuple[SkillCall, ...] = ()
+    invalid_skill_request: bool = False
+
+    @property
+    def skill_call(self) -> SkillCall | None:
+        return self.skill_calls[0] if self.skill_calls else None
 
     @property
     def text(self) -> str:
@@ -86,9 +93,22 @@ def parse_reply_plan(
     if not body:
         return ReplyPlan(False, ())
 
+    payload = _reply_object(body)
+    calls = ()
+    if 'feature_call' in payload or 'feature_calls' in payload:
+        if payload.get('decision') != 'reply' or ('feature_call' in payload and 'feature_calls' in payload):
+            return ReplyPlan(False, (), invalid_skill_request=payload.get('decision') == 'reply')
+        values = payload.get('feature_calls', [payload.get('feature_call')])
+        if not isinstance(values, list) or len(values) > MAX_SKILL_CALLS:
+            return ReplyPlan(False, (), invalid_skill_request=True)
+        calls = tuple(parse_skill_call(value) for value in values)
+        if any(call is None for call in calls) or len(set(calls)) != len(calls):
+            return ReplyPlan(False, (), invalid_skill_request=True)
+        if not isinstance(payload.get('messages'), list) or any(not isinstance(m, str) for m in payload['messages']):
+            return ReplyPlan(False, (), invalid_skill_request=True)
     json_messages = _json_messages(body)
     if json_messages is not None:
-        if not json_messages:
+        if not json_messages and not calls:
             return ReplyPlan(False, ())
         messages = json_messages
     else:
@@ -134,9 +154,12 @@ def parse_reply_plan(
     impressions = tuple(v for v in impressions[:2] if isinstance(v, dict)) if isinstance(impressions, list) else ()
     growth = payload.get('growth_updates', []) if payload else []
     growth = tuple(v for v in growth[:1] if isinstance(v, dict)) if isinstance(growth, list) else ()
-    return ReplyPlan(bool(cleaned), tuple(cleaned), voice if valid else "text",
+    if calls and not valid:
+        return ReplyPlan(False, (), invalid_skill_request=True)
+    return ReplyPlan(bool(cleaned) or bool(calls), tuple(cleaned), voice if valid else "text",
                      tuple(v.strip() for v in fallback if v.strip())[:max_bubbles],
-                     str(payload.get("expression", "")) if payload else "", valid, candidates, updates, impressions, growth)
+                     str(payload.get("expression", "")) if payload else "", valid, candidates, updates, impressions, growth,
+                     calls)
 
 
 def _reply_object(text: str) -> dict:
@@ -192,7 +215,9 @@ def _marked_messages(body: str) -> tuple[str, ...]:
 __all__ = [
     "MESSAGE_MARKER",
     "ReplyPlan",
+    "SkillCall",
     "parse_reply_plan",
+    "parse_skill_call",
     "reply_bubble_limit",
     "reply_style_instruction",
 ]

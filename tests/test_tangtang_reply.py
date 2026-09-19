@@ -23,6 +23,34 @@ def test_parse_json_reply_and_silence():
     assert not parse_reply_plan('{"decision":"silent","messages":[]}').decided
 
 
+def test_parse_reply_plan_reads_feature_call():
+    from bot.services.tangtang_reply import parse_skill_call
+
+    plan = parse_reply_plan(
+        '{"decision":"reply","messages":["唔，我去看看。"],"voice":"text",'
+        '"feature_call":{"action":"ranking","args":"周","cluster":false}}'
+    )
+    assert plan.decided
+    assert plan.messages == ("唔，我去看看。",)
+    assert plan.skill_call is not None
+    assert plan.skill_call.action == "ranking"
+    assert plan.skill_call.args == "周"
+    feature_only = parse_reply_plan(
+        '{"decision":"reply","messages":[],"feature_call":{"action":"today_live"}}'
+    )
+    assert feature_only.decided and feature_only.skill_call is not None
+    assert parse_skill_call("ranking") is None
+    assert parse_skill_call({"action": "UPPER"}) is None
+    assert parse_skill_call({"action": "x" * 80}) is None
+
+
+def test_empty_feature_calls_is_normal_chat_not_an_invalid_request():
+    plan = parse_reply_plan('{"decision":"reply","messages":["好久不见"],"feature_calls":[]}')
+    assert plan.decided and plan.structured
+    assert not plan.skill_calls and not plan.invalid_skill_request
+    assert plan.messages == ("好久不见",)
+
+
 def test_reply_plan_is_bounded_without_punctuation_splitting():
     plan = parse_reply_plan(
         "[接话]\n[消息]第一条\n[消息]第二条\n[消息]第三条",

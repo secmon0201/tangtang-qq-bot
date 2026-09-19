@@ -472,7 +472,8 @@ def test_ambiguous_continuation_does_not_make_an_unmetered_classifier_call(monke
     async def unexpected_classifier(*args, **kwargs):
         raise AssertionError("ambiguous continuation must use the charged chat model")
 
-    monkeypatch.setattr(plugin, "feature_classifier", SimpleNamespace(classify=unexpected_classifier))
+    from bot.services.tangtang_features import TangtangFeatureClassifier
+    monkeypatch.setattr(TangtangFeatureClassifier, "classify", unexpected_classifier)
     monkeypatch.setattr(plugin, "group_domains", lambda: SimpleNamespace(domain_for_group=lambda _: None))
     turn = ContinuationTurn(lambda: True, lambda: True, lambda *_: None)
 

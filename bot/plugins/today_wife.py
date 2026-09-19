@@ -13,6 +13,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, Me
 from nonebot.rule import Rule
 
 from bot.config import settings
+from bot.application.local_features import FeatureRequest, register_local_feature
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
 from bot.services.mini_game_reports import MiniGameReportRenderer
@@ -239,6 +240,37 @@ async def _(bot: Bot, event: GroupMessageEvent):
 today_wife = on_message(rule=Rule(_is_today_wife_message), priority=2, block=True)
 
 
+async def _send_personal_archive(matcher, event) -> None:
+    archive = game_service.personal_archive(int(event.group_id), int(event.user_id))
+    avatar_rows = [{"user_id": int(row["target_id"])} for row in archive["own"]] + [
+        {"user_id": int(row["actor_id"])} for row in archive["incoming"]]
+    avatars = await _avatars(avatar_rows)
+    path = renderer.render_today_wife_archive(archive, avatars)
+    await matcher.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+
+
+async def _send_group_story(matcher, event, story) -> None:
+    rows = story["records"]
+    avatars = await _avatars([
+        {"user_id": int(member_id)} for row in rows
+        for member_id in (row["actor_id"], row["target_id"])])
+    path = renderer.render_group_today_wife(rows, avatars, str(story["day"]),
+        {"title": story["day_state"]["script_title"]}, str(story["spotlight"]))
+    await matcher.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+
+
+@register_local_feature("wife_personal", "wife_group")
+async def _chat_wife_query(matcher, bot, event, request: FeatureRequest) -> None:
+    if not feature_scopes.is_feature_group_enabled("today_wife", int(event.group_id)):
+        await matcher.finish()
+        return
+    async with group_locks[int(event.group_id)]:
+        if request.action == "wife_personal":
+            await _send_personal_archive(matcher, event)
+        else:
+            await _send_group_story(matcher, event, game_service.group_story(int(event.group_id)))
+
+
 @today_wife.handle()
 async def _(bot: Bot, event: GroupMessageEvent):
     command = _command(event)
@@ -461,16 +493,7 @@ async def _(bot: Bot, event: GroupMessageEvent):
                 await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
                 return
             game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
-            archive = game_service.personal_archive(group_id, actor_id)
-            avatar_rows = [
-                {"user_id": int(row["target_id"])} for row in archive["own"]
-            ] + [{"user_id": int(row["actor_id"])} for row in archive["incoming"]]
-            avatars = await _avatars(avatar_rows)
-            path = renderer.render_today_wife_archive(
-                archive,
-                avatars,
-            )
-            await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+            await _send_personal_archive(today_wife, event)
             return
 
         raw_day = _command_argument(event, command)
@@ -498,20 +521,4 @@ async def _(bot: Bot, event: GroupMessageEvent):
             path = renderer.render_today_wife_group_archive({"summaries": [summary], "detail_retention_days": 7})
             await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
             return
-        rows = story["records"]
-        avatars = await _avatars(
-            [
-                {"user_id": int(user_id)}
-                for row in rows
-                for user_id in (int(row["actor_id"]), int(row["target_id"]))
-            ]
-        )
-        day = str(story["day"])
-        path = renderer.render_group_today_wife(
-            rows,
-            avatars,
-            day,
-            {"title": story["day_state"]["script_title"]},
-            str(story["spotlight"]),
-        )
-        await today_wife.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+        await _send_group_story(today_wife, event, story)

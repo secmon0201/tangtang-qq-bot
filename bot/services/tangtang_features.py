@@ -25,6 +25,9 @@ SUPPORTED_ACTIONS = frozenset(
         "mini_game_guess",
         "nte_rank",
         "wuwa_rank",
+        "wife_personal",
+        "wife_group",
+        "denia_gallery",
     }
 )
 RANKING_ACTIONS = frozenset({"group_ranking", "cluster_ranking"})
@@ -36,14 +39,15 @@ GAME_RANK_ACTIONS = frozenset({"nte_rank", "wuwa_rank"})
 
 _FEATURE_HINT_RE = re.compile(
     r"直播|在播|有谁在播|谁在播|发言|排行|榜|统计|灌水|集群|日程|枝江|"
-    r"A-SOUL|A手|有直播|直播安排|转盘|炸弹|骰子|猜数|猜数字|异环|鸣潮",
+    r"A-SOUL|A手|有直播|直播安排|转盘|炸弹|骰子|猜数|猜数字|异环|鸣潮|谁最能聊|谁.*话最多|缘分|老婆|"
+    r"美图|自拍|照片|写真|美照",
     re.IGNORECASE,
 )
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
-_RANKING_SUBJECT_RE = re.compile(r"(?:发言|灌水)(?:排行(?:榜)?|榜)|发言统计")
-_EVALUATIVE_RE = re.compile(r"好看吗|好不好看|有意思吗|厉害吗")
+_RANKING_SUBJECT_RE = re.compile(r"(?:发言|灌水)(?:排行(?:榜)?|榜)|发言统计|谁最能聊|谁(?:说的?|说)?话最多")
+_EVALUATIVE_RE = re.compile(r"好看|好不好看|有意思|厉害吗|公平|看完|看了|觉得")
 _RANKING_REQUEST_RE = re.compile(
-    r"(?:给我|帮我)?(?:看|看看|看下|看一下|查|查下|查一下|显示|发|来)(?:一?下)?|"
+    r"告诉我|(?:给我|帮我)?(?:看|看看|看下|看一下|查|查下|查一下|显示|发|来)(?:一?下)?|"
     r"(?:我)?要看|想看"
 )
 
@@ -88,6 +92,11 @@ _MINI_GAME_RANK_RE = re.compile(
 )
 _NTE_RANK_RE = re.compile(r"(异环|nte)", re.IGNORECASE)
 _WUWA_RANK_RE = re.compile(r"(鸣潮|ww)", re.IGNORECASE)
+_GALLERY_REQUEST_RE = re.compile(
+    r"想看|要看|看看|看一下|看一张|来一张|来点|发一张|发个|发点|"
+    r"给我|要一个|要一张|求一张"
+)
+_GALLERY_MEDIA_RE = re.compile(r"美图|自拍|照片|写真|美照|好看的图(?:片)?")
 
 
 def classify_extra_feature(text: str) -> FeatureDecision | None:
@@ -115,7 +124,7 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
         return FeatureDecision(
             tier="clear", action=action, scope=scope, cluster=False, line=line
         )
-    if _NTE_RANK_RE.search(normalized) and "排行" in normalized:
+    if re.search(r"(?:异环|nte)(?:本群|当前群|群|bot|总)?(?:最强)?排行", normalized, re.I):
         scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
         return FeatureDecision(
             tier="clear",
@@ -124,7 +133,7 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
             cluster=False,
             line="",
         )
-    if _WUWA_RANK_RE.search(normalized) and "排行" in normalized:
+    if re.search(r"(?:鸣潮|ww)(?:本群|当前群|群|bot|总)?(?:最强)?排行", normalized, re.I):
         scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
         return FeatureDecision(
             tier="clear",
@@ -198,8 +207,13 @@ _REJECTION_TEXTS = {
             "糖糖这边连着的服务现在有点不听话，暂时查不了。"
             "等一下再试试。"
         ),
-        "denia": "唔，连着这块的服务现在没回应呢，稍后我再试一次。",
+        "denia": "唔，这次没查到，服务暂时没回应。现在还给不了你结果。",
     },
+    "invalid_args": {"糖糖": "这个范围糖糖还查不了，换成今天、本周、本月或累计试试吧。", "denia": "唔，这个查询范围还不支持，不能拿别的结果来凑。"},
+    "permission": {"糖糖": "这个要有管理权限才能看呢。", "denia": "这项需要管理权限，你现在还不能用呢。"},
+    "failed": {"糖糖": "这次没查成功，糖糖还没拿到结果。", "denia": "唔，这次没查成功，还给不了你结果。"},
+    "group_required": {"糖糖": "要在对应群里问糖糖，才能查这个哦。", "denia": "这个要在对应的群里问我，才能查呢。"},
+    "cluster_required": {"糖糖": "这个群没有加入集群，糖糖只能查本群。", "denia": "这个群没有加入集群，能查的是本群哦。"},
 }
 
 
@@ -237,6 +251,29 @@ def classify_local_feature(
         for label in cluster_labels
         if str(label).strip()
     }
+    if _EVALUATIVE_RE.search(normalized) or re.search(r"(?:不要|别|不用|不想|不需要).*(?:查|看|发|排行|榜|直播|缘分|老婆)", normalized):
+        return None
+    if re.search(r"昨天|昨日|前天|上周|上个月|上月|去年", normalized):
+        return None
+    if (
+        call_keyword != "糖糖"
+        and _GALLERY_MEDIA_RE.search(normalized)
+        and _GALLERY_REQUEST_RE.search(normalized)
+    ):
+        return FeatureDecision("clear", "denia_gallery", "", False, "唔，给你挑一张。")
+    wife_query = re.search(r"看|查|谁|什么|(?:我的|今日)(?:老婆|缘分)$", normalized)
+    if wife_query and not re.search(r"抽|强取|离婚|解缘|清空", normalized):
+        if re.search(r"(?:群里|本群|群)(?:的|今天的|今日)?(?:缘分|老婆)", normalized):
+            return FeatureDecision("clear", "wife_group", "", False, "唔，看看群里的缘分。")
+        if re.search(r"(?:我的|我今天的|我今日的|今日|今天的)(?:缘分|老婆)", normalized):
+            return FeatureDecision("clear", "wife_personal", "", False, "唔，看看你今天的缘分。")
+    if re.search(r"直播|日程|在播", normalized) and re.search(r"看|查|日程|安排|谁|什么|有.*播", normalized):
+        if re.search(r"下周|本月|这个月", normalized):
+            return None
+        action = ("week_live" if re.search(r"本周|这周", normalized) else
+                  "tomorrow_live" if re.search(r"明天|明日", normalized) else
+                  "zhijiang_schedule" if "枝江" in normalized else "today_live")
+        return FeatureDecision("clear", action, "", False, "唔，我看看直播安排。" if call_keyword != "糖糖" else "好呀，这就看看直播安排。")
     extra = classify_extra_feature(normalized)
     if extra is not None:
         return replace(
@@ -249,7 +286,7 @@ def classify_local_feature(
         return None
     before_subject = normalized[: subject.start()]
     after_subject = normalized[subject.end() :]
-    requested = bool(_RANKING_REQUEST_RE.search(before_subject)) or bool(
+    requested = subject.group(0).startswith("谁") or bool(_RANKING_REQUEST_RE.search(before_subject)) or bool(
         re.match(r"^(?:给我看|查一下|查下|来一份|来一个|发一下)", after_subject)
     )
     if not requested:

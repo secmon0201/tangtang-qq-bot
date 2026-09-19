@@ -55,6 +55,7 @@ from bot.services.tangtang_reply import (
     reply_bubble_limit,
     reply_style_instruction,
 )
+from bot.services.local_skill_contract import skill_prompt
 from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
@@ -1264,11 +1265,15 @@ class TangtangService:
         group_identity_provider: GroupIdentityProvider | None = None,
         persona_engine: PersonaEngine | None = None,
         turn_observer: Callable[[ChatContext, str, str], None] | None = None,
+        feature_runner: Callable[..., Awaitable[bool]] | None = None,
+        feature_catalog: Callable[[Any], tuple[str, ...]] | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self._base_db = db or TangtangDb()
         self.personas = persona_engine
         self.turn_observer = turn_observer
+        self.feature_runner = feature_runner
+        self.feature_catalog = feature_catalog
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
         self._cognition_turn: ContextVar[PersonaTurn | None] = ContextVar('cognition_turn', default=None)
@@ -1761,6 +1766,11 @@ class TangtangService:
         except Exception as exc:
             logger.warning("Tangtang feature history record failed: {}", exc)
 
+    def _local_skill_contract(self, event) -> str:
+        if self.feature_runner is None or self.feature_catalog is None:
+            return ""
+        return skill_prompt(self.feature_catalog(event))
+
     def _build_prompt(
         self,
         event: Any,
@@ -1864,6 +1874,10 @@ class TangtangService:
                 "如果回答需要查枝江或鸣潮的本地资料，可以调用查询工具获取，不要编造；"
                 "资料没覆盖就明说不知道。"
             )
+            fixed_parts.append("")
+        skill_contract = self._local_skill_contract(event) if not proactive else ""
+        if skill_contract:
+            fixed_parts.append(skill_contract)
             fixed_parts.append("")
         if black_meme_instruction:
             fixed_parts.append(black_meme_instruction)
@@ -2437,10 +2451,23 @@ class TangtangService:
             )
             self._write_usage(config, group_id, user_id, "model_result", mode=mode, tokens={},
                 detail=f"structured={plan.structured}; decision={'reply' if plan.decided else 'silent'}; tool_rounds={loops}")
+            if plan.invalid_skill_request:
+                if not proactive and not (context and context.proactive) and self._turn_current():
+                    await self._send_and_record(bot, event, config,
+                        "唔，这次没把查询条件对上，还没查到结果。",
+                        reply_kind="canned", mode=mode, tokens=usage, call_text=current_text)
+                return
             if context and not plan.structured and plan.decided:
                 if self.personas:
                     self.personas.choose_expression(context, call_text, plan, 0, blocked="invalid_structure")
                 self._write_usage(config, group_id, user_id, "invalid_reply_structure", mode=mode, tokens=usage)
+                return
+            if plan.skill_calls:
+                if (plan.structured and plan.decided and not proactive and not (context and context.proactive)
+                        and (not cognition or cognition.proposal.get('decision') == 'reply')):
+                    await self._run_skill_call(
+                        bot, event, config, plan, call_text=current_text, mode=mode, usage=usage,
+                    )
                 return
             messages = (
                 humanize_messages(plan.messages)
@@ -2530,6 +2557,16 @@ class TangtangService:
         for key in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens", "latency_ms"):
             merged[key] = int(merged.get(key) or 0) + int(current.get(key) or 0)
         return merged
+
+    async def _run_skill_call(self, bot, event, config, plan, *, call_text, mode, usage):
+        if self.feature_runner is None or not self._turn_current():
+            return
+        await self.feature_runner(bot, event, config, plan.skill_calls,
+            text=call_text or event.get_plaintext(), opening="\n".join(plan.messages),
+            usage=usage, source="model_feature_call", current=self._turn_current)
+        self._write_usage(config, int(event.group_id), int(event.user_id),
+            "feature", mode=mode, tokens=usage,
+            detail="model_feature_call:" + ",".join(call.action for call in plan.skill_calls))
 
     async def _send_and_record(
         self,

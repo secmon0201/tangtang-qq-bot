@@ -45,6 +45,8 @@ FEATURE_ACTIONS = {
     ),
     "nte_game_ui.py": ("nte_rank",),
     "wuwa_game_ui.py": ("wuwa_rank",),
+    "today_wife.py": ("wife_personal", "wife_group"),
+    "denia_gallery.py": ("denia_gallery",),
 }
 
 def discover_plugins(plugin_dir: Path = PLUGIN_DIR) -> dict[str, dict]:

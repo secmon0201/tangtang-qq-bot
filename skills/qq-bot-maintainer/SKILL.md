@@ -1,6 +1,6 @@
 ---
 name: qq-bot-maintainer
-description: Maintain the 通讯程序集成管理机器人 workspace by adding, editing, or removing QQ bot features through the plugin registry while preserving plugin/application/services boundaries, NTE and Wuthering Waves compatibility, clean upstream GsUID.Core, startup tools, validators, and focused local Git commits. Use automatically for feature changes, game compatibility work, architecture protection, restart verification, or repository maintenance in that workspace.
+description: Understand and maintain the 通讯程序集成管理机器人 workspace, including plugin registration, conversational local skills, persona memory, background lifecycles, and feature removal. Use for onboarding, feature changes, architecture and dependency checks, game compatibility, or operations in this repository while preserving source boundaries and clean upstreams.
 ---
 
 # QQ Bot Maintainer
@@ -31,11 +31,18 @@ Maintenance contract for the current repository root. Resolve it from the active
 
 ## Workflow
 
-1. Identify the change: read [references/feature-lifecycle.md](references/feature-lifecycle.md) for feature add/edit/remove; [references/architecture.md](references/architecture.md) for boundaries, ownership, and shared contracts; [references/nte-upstream.md](references/nte-upstream.md) for game interfaces or upstream work; [references/operations.md](references/operations.md) for validation, restart, and Git.
+1. Identify the change: for onboarding, chat, local skills, memory, or dependency questions, read the repository's [Agent engineering guide](../../docs/开发-Agent工程导航.md). Read [references/feature-lifecycle.md](references/feature-lifecycle.md) for feature add/edit/remove; [references/architecture.md](references/architecture.md) for boundaries, ownership, and shared contracts; [references/nte-upstream.md](references/nte-upstream.md) for game interfaces or upstream work; [references/operations.md](references/operations.md) for validation, restart, and Git.
 2. Change code, registry, tests, and user docs in one pass.
 3. Run the repository gates from `operations.md`. Do not bypass them.
 4. Restart NoneBot only when the live bot must pick up the change. Verify postconditions, never script exit codes alone.
 5. Commit the complete project-owned change in one focused commit.
+
+## Chat and lifecycle distinctions
+
+- Plugin loading, the skill inventory, registered callable actions, and this coding-agent skill are separate mechanisms. Check the action contract, registered handler, and execution gates before claiming that the chat model can use a capability.
+- Denia is a persona in the shared chat runtime, not an independently registered plugin. Map chat, persona management, model/proactive configuration, group settings, and background owners before removing code. Closing chat gates preserves saved data/settings but does not prove all background work has stopped.
+- The current registry loads at startup; shutdown hooks clean up on process exit. Do not claim arbitrary hot unloading, zero remaining model calls, or lossless completion of in-flight replies without implementation and behavior tests for those exact properties.
+- Use the engineering guide's source map and known gaps instead of reconstructing architecture from older conversation claims. Update it when action contracts, lifecycle ownership, or removal capabilities change; keep live IDs, queue counts, model configuration and test totals out of the maintained guide.
 
 ## Common failure modes
 

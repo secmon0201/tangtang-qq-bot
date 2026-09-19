@@ -3,25 +3,46 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import Any
 
-from nonebot.adapters.onebot.v11 import Bot
+from nonebot.adapters.onebot.v11 import Bot, Message
 from nonebot.exception import FinishedException
 
-from bot.services.tangtang_features import FeatureDecision
-
-
-@dataclass(frozen=True, slots=True)
-class FeatureRequest:
-    action: str
-    args: str = ""
-    cluster: bool = False
+from bot.application.chat_continuation import MergedEvent
+from bot.services.local_skill_contract import FeatureRequest, request_from_decision, SCOPE_LABELS
 
 
 FeatureHandler = Callable[[Any, Bot, Any, FeatureRequest], Awaitable[None]]
 _handlers: dict[str, FeatureHandler] = {}
-_SCOPE_LABELS = {"day": "日", "week": "周", "month": "月", "total": "总"}
+_SCOPE_LABELS = SCOPE_LABELS
+
+
+class FeatureDelivery:
+    """Keep sends bound to the requesting QQ event and stop stale turns."""
+
+    def __init__(self, bot, event, *, current=lambda: True):
+        while isinstance(event, MergedEvent):
+            event = event.first
+        self.bot, self.event, self.current = bot, event, current
+        self.receipts: list[str] = []
+
+    async def send(self, message, **kwargs):
+        if not self.current():
+            raise FinishedException
+        result = await self.bot.send(self.event, message, **kwargs)
+        if not isinstance(result, dict) or not result.get("message_id"):
+            raise RuntimeError("local feature delivery has no platform receipt")
+        content = Message(message)
+        summary = content.extract_plain_text()
+        if any(segment.type == "image" for segment in content):
+            summary += "[功能图片]"
+        self.receipts.append(summary or "[功能消息]")
+        return result
+
+    async def finish(self, message=None, **kwargs):
+        if message is not None:
+            await self.send(message, **kwargs)
+        raise FinishedException
 
 
 def register_local_feature(*actions: str) -> Callable[[FeatureHandler], FeatureHandler]:
@@ -45,28 +66,13 @@ def register_local_feature(*actions: str) -> Callable[[FeatureHandler], FeatureH
     return decorator
 
 
-def request_from_decision(decision: FeatureDecision) -> FeatureRequest:
-    if decision.action in {"group_ranking", "cluster_ranking"}:
-        return FeatureRequest(
-            action="ranking",
-            args=_SCOPE_LABELS.get(decision.scope, decision.scope),
-            cluster=decision.cluster or decision.action == "cluster_ranking",
-        )
-    if (
-        decision.action.startswith("mini_game_")
-        or decision.action in {"nte_rank", "wuwa_rank"}
-    ):
-        scope = "总" if str(decision.scope).strip().lower() in {"总", "bot"} else "群"
-        return FeatureRequest(action=decision.action, args=scope, cluster=False)
-    return FeatureRequest(action=decision.action, args="", cluster=False)
-
-
 def feature_label(request: FeatureRequest) -> str:
     labels = {
         "zhijiang_schedule": "枝江直播日程",
         "today_live": "今日直播",
         "tomorrow_live": "明日直播",
         "week_live": "本周直播",
+        "denia_gallery": "达妮娅美图",
     }
     if request.action == "ranking":
         name = "集群发言排行" if request.cluster else "发言排行"
@@ -83,6 +89,10 @@ async def run_feature_call(
     handler = _handlers.get(request.action)
     if handler is None:
         return False
+    # The merger is not a OneBot event subclass. Feature implementations and
+    # their group/permission checks need the original transport identity.
+    while isinstance(event, MergedEvent):
+        event = event.first
     try:
         await handler(matcher, bot, event, request)
     except FinishedException:

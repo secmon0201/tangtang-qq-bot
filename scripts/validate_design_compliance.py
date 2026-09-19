@@ -64,7 +64,7 @@ def build_checks() -> list[Check]:
     # A. 技能注册表与调用
     add(
         "A1",
-        "27 个插件都有技能归属且命令零冲突",
+        "所有插件都有技能归属且命令零冲突",
         _exists("config/skill-registry.json")
         and _has("scripts/audit_command_surface.py", "collisions")
         and _has("scripts/validate_skill_registry.py", "registered in both"),
@@ -82,7 +82,8 @@ def build_checks() -> list[Check]:
         "未注册能力明确拒绝而不是编造",
         _has("bot/plugins/tangtang_chat.py", "persona_rejection")
         and _has("bot/services/tangtang_features.py", "def persona_rejection")
-        and _has("tests/test_tangtang_chat.py", "unregistered"),
+        and _has("tests/test_conversational_skills.py", "invalid_or_inapplicable_model_requests_never_execute")
+        and _has("tests/test_conversational_skills.py", "every_execution_path_enforces_gates_before_opener"),
         "router rejection branch + test",
     )
     add(

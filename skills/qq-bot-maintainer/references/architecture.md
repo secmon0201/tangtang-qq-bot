@@ -17,7 +17,7 @@ Feature flags such as `stats_realtime_enabled` are resolved in the registry with
 
 ## What feature independence means here
 
-Guaranteed by tests and validators: no plugin-to-plugin imports, one-way layer dependencies, no cycles, no substantial duplicated function bodies, unique registry entries, separable per-feature files, and fail-fast event paths when an external dependency is unavailable.
+Required architecture: no plugin-to-plugin imports, one-way layer dependencies, no cycles, no substantial duplicated function bodies, unique registry entries, separable per-feature files, and fail-fast event paths when an external dependency is unavailable. Tests and validators cover parts of this contract, not arbitrary runtime removal. The current architecture validator does not detect every `services -> application` import; see the [engineering guide](../../../docs/开发-Agent工程导航.md) for the current group-summary composition gap and lifecycle ownership.
 
 Intentional sharing: settings, SQLite, permission/role checks, QQ platform calls, avatar/media helpers, and report renderers are shared contracts with tests. Changing them is a deliberate cross-cutting change, not accidental coupling.
 

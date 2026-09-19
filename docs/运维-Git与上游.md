@@ -44,7 +44,34 @@ QQ/SnowLuma -> NoneBot 主仓库 -> 官方 Core 连接器 -> GsUID Core -> NTEUI
 - 鸣潮总榜只覆盖本机器人本地绑定；没有私有集群鸣潮榜。既有数据仅通过 dry-run 优先、固定集群范围受限的导入工具迁移。
 - Core 通过 `scripts/run_gsuid_core.py` 启动，Windows 写入兼容和禁用插件过滤在内存中安装，不修改上游文件。
 
-接管发生在 NoneBot 消息入口：只有项目明确支持的帮助、排行和管理命令会被截断并由本地实现回复，未命中的消息继续交给官方连接器和 Core。下游可以读取、校验和加工上游数据/资源，但不能改写 UID 插件的函数、配置实现或源码。`bot/integrations` 中的适配只修改当前进程里的 Python 对象；若上游 API 发生变化会直接启动失败，不会向上游目录落补丁。
+接管发生在 NoneBot 消息入口：只有项目明确支持的帮助、排行和管理命令会被截断并由本地实现回复，未命中的消息继续交给官方连接器和 Core。下游可以读取、校验和加工上游数据/资源，但不能改写 UID 插件的函数、配置实现或源码。`bot/integrations` 中的适配只修改当前进程里的 Python 对象；若上游 API 发生变化会抛出 `GsuidCompatibilityError`，不会向上游目录落补丁。技能平台的目标是把这种失败从“整条链路报错”收敛为“受影响技能降级，其他技能继续可用”，并保留可验证的兼容矩阵。
+
+## 上游兼容诊断
+
+只读诊断：
+
+```powershell
+.\scripts\diagnose_upstream_compat.ps1
+```
+
+输出：
+
+- `reports/upstream-compat-<时间戳>.json`：每个上游仓库的锁定提交、实际提交、分支、跟踪关系、脏状态与问题列表。
+- 能力矩阵：`gsuid_core`、`genshinuid`、`nteuid`、`wuwa_uid` 的 `supported`、`tolerant`、`unsupported` 或 `missing`。
+- 最近一次 `data/backups/denia-v2-*` 快照名，便于回滚前定位恢复点。
+
+判定规则：
+
+- 提交一致、工作树干净：`supported`。
+- 提交一致但有未跟踪文件或脏改动：`tolerant`，需要人工复核。
+- 提交不一致、分支错误或缺少 `.git` 元数据：`unsupported`；缺少元数据时不信任任何 Git 输出，防止 Git 向上回溯到主仓库后误报提交和分支。
+
+更新上游后的流程：
+
+1. 先运行诊断脚本，保存更新前的兼容矩阵。
+2. 用 `scripts/install_gsuid.ps1` 快进并刷新 `config/upstream-lock.json`。
+3. 再次运行诊断脚本，对比两份报告。
+4. 只有目标能力为 `supported` 或 `tolerant` 时才继续运行；`unsupported` 时按技能级降级处理，不回滚整个机器人的其他能力。
 
 功能在安装、卸载、调用和执行阶段都必须保持独立。消息处理器只读取已经建立的依赖状态；外部服务离线、变慢或异常时立即返回，不得在公共消息链路里连接、重连、睡眠或无限探活。连接恢复由带超时、固定重试间隔和 single-flight 锁的后台任务负责。`genshinuid_connector_compat.py` 因此让 Core 离线时的消息转发和 NoneBot 启动立即继续，同时保留连接器的 10 秒定时重连，避免优先级较低的本地命令被拖住。这里保证的是同一 NoneBot 进程内的事件路径故障隔离，不等同于为每项功能创建独立操作系统进程。
 

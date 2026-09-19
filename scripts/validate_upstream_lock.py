@@ -55,7 +55,10 @@ def repository_path(root: Path, value: str) -> Path:
 def inspect_repository(root: Path, entry: dict[str, Any]) -> dict[str, str]:
     path = repository_path(root, str(entry["path"]))
     if not (path / ".git").exists():
-        raise FileNotFoundError(path)
+        raise FileNotFoundError(
+            f"{path}（缺少 Git 元数据；运行 scripts/diagnose_upstream_compat.ps1 查看兼容矩阵，"
+            "再用 scripts/install_gsuid.ps1 修复上游检出）"
+        )
     dirty = git(path, "status", "--porcelain", "--untracked-files=all")
     if dirty:
         raise ValueError(f"upstream repository is dirty: {entry['path']}")

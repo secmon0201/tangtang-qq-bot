@@ -1457,6 +1457,10 @@ class TangtangService:
 
         if not config.group_summary_enabled or config.group_summary_inject_topics <= 0:
             return []
+        # 群摘要只服务达妮娅；糖糖仍使用自己的近期上下文和互动历史。
+        context = self._turn.get()
+        if context is None or context.persona.key != "denia":
+            return []
         try:
             rows = self._base_db.group_summary_sources(int(group_id))
         except Exception as exc:

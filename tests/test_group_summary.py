@@ -15,6 +15,7 @@ from bot.services.group_summary import (  # noqa: E402
     SummaryTopic,
     parse_summary_json,
 )
+from bot.services.persona_profiles import ChatContext, load_personas  # noqa: E402
 from bot.services.tangtang_chat import TangtangConfig, TangtangService  # noqa: E402
 from bot.services.tangtang_db import TangtangDb  # noqa: E402
 from tests.test_tangtang_chat import enabled_config, group_message, make_service  # noqa: E402
@@ -315,10 +316,38 @@ def test_prompt_includes_summary_and_unlimited_history(tmp_path, monkeypatch):
         TANGTANG_HISTORY_CHARS="0",
     )
     event = group_message(group_id=1001, text="聚会地点定了吗？")
+    context = service._turn.set(
+        ChatContext(load_personas()["denia"], 1001, 3, "1001:4", 0, 0, config.model)
+    )
     prompt = service._build_prompt(event, config)
+    service._turn.reset(context)
     assert "[当前群聊话题摘要" in prompt
     assert "地点未定" in prompt
     assert len(prompt) > 0
+
+
+def test_group_summary_is_not_injected_for_tangtang(tmp_path, monkeypatch):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.db.group_summary_merge(
+        1001, topic_id=None, title="聚会安排", summary="周六下午三点聚会。",
+        keywords=("聚会",), participants=("甲",), unresolved=(),
+        state="active", message_ids=(1,), now="2026-09-19T10:00:00+08:00",
+    )
+    config = enabled_config(
+        TANGTANG_GROUP_SUMMARY_ENABLED="true",
+        TANGTANG_GROUP_SUMMARY_INJECT_TOPICS="3",
+    )
+    from bot.services.tangtang_chat import TangtangService
+    event = group_message(group_id=1001, text="聚会地点定了吗？")
+    # No persona context: the summary must stay out.
+    prompt = service._build_prompt(event, config)
+    assert "[当前群聊话题摘要" not in prompt
+    context = service._turn.set(
+        ChatContext(load_personas()["tangtang"], 1001, 3, "1001:4", 0, 0, config.model)
+    )
+    prompt = service._build_prompt(event, config)
+    service._turn.reset(context)
+    assert "[当前群聊话题摘要" not in prompt
 
 
 def test_unlimited_history_keeps_the_entire_oldest_message(tmp_path, monkeypatch):

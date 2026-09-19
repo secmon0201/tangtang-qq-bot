@@ -34,6 +34,13 @@ CREATE INDEX IF NOT EXISTS idx_skill_audit_status
     ON skill_audit_entries(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_skill_audit_skill
     ON skill_audit_entries(skill_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS skill_controls(
+    skill_id TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    groups TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    updated_at REAL NOT NULL DEFAULT 0
+);
 """
 
 CATEGORIES = frozenset(
@@ -247,6 +254,61 @@ class SkillAuditLedger:
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         return len(payload)
+
+    # --- Skill release controls -------------------------------------------------
+
+    def set_control(
+        self,
+        skill_id: str,
+        *,
+        enabled: bool,
+        groups: tuple[int, ...] = (),
+        note: str = "",
+    ) -> None:
+        """Persist a skill switch; empty groups means every group."""
+
+        now = float(self._now())
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO skill_controls (skill_id, enabled, groups, note, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(skill_id) DO UPDATE SET "
+                "enabled=excluded.enabled, groups=excluded.groups, note=excluded.note, "
+                "updated_at=excluded.updated_at",
+                (
+                    str(skill_id),
+                    1 if enabled else 0,
+                    ",".join(str(int(item)) for item in sorted(set(groups))),
+                    str(note)[:200],
+                    now,
+                ),
+            )
+
+    def control(self, skill_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM skill_controls WHERE skill_id = ?", (str(skill_id),)
+            ).fetchone()
+        if row is None:
+            return {"skill_id": str(skill_id), "enabled": True, "groups": (), "note": ""}
+        groups = tuple(
+            int(item)
+            for item in str(row["groups"]).split(",")
+            if item.strip().lstrip("-").isdigit()
+        )
+        return {
+            "skill_id": str(row["skill_id"]),
+            "enabled": bool(row["enabled"]),
+            "groups": groups,
+            "note": str(row["note"]),
+        }
+
+    def enabled_for_group(self, skill_id: str, group_id: int) -> bool:
+        control = self.control(skill_id)
+        if not control["enabled"]:
+            return False
+        if not control["groups"]:
+            return True
+        return int(group_id) in control["groups"]
 
 
 def _to_entry(row: sqlite3.Row) -> AuditEntry:

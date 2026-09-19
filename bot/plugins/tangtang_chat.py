@@ -36,6 +36,7 @@ from bot.services.tangtang_features import (
     has_feature_hint,
 )
 from bot.services.skills import local_action_skill
+from bot.services.skill_audit import ledger as skill_ledger
 from bot.services.tangtang_media import extract_image_references
 
 
@@ -73,6 +74,9 @@ async def _feature_router(
     if skill is None:
         # The proposer returned an action outside the closed skill registry.
         await tangtang_call.send("这个功能目前没有对应的本地技能，不能凭空执行。")
+        return True, usage
+    if not skill_ledger.enabled_for_group(skill.skill_id, int(event.group_id)):
+        await tangtang_call.send("这个技能当前没有对本群启用，暂时不能执行。")
         return True, usage
     feature_key = skill.feature_key or None
     if feature_key and not group_domains().effective_feature_enabled(

@@ -19,7 +19,7 @@ def test_skill_registry_covers_the_full_command_surface():
     assert counts(registry) == {
         "plugins": 28,
         "commands": 63,
-        "aliases": 26,
+        "aliases": 29,
         "rules": 14,
     }
 

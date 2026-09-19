@@ -198,6 +198,15 @@ def enable_plugin_group_features(monkeypatch, *group_ids: int) -> None:
     )
 
 
+def isolate_plugin_skill_controls(monkeypatch, tmp_path) -> None:
+    from bot.services.skill_audit import SkillAuditLedger
+
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.skill_ledger",
+        SkillAuditLedger(tmp_path / "skill-audit.db"),
+    )
+
+
 def test_config_validation():
     config = enabled_config()
     assert config.enabled and config.mode == "d"
@@ -712,7 +721,7 @@ def test_feature_history_uses_feature_reply_kind(tmp_path, monkeypatch):
     assert rows[0]["mode"] == "feature"
 
 
-def test_feature_router_sends_generated_line_before_executing(monkeypatch):
+def test_feature_router_sends_generated_line_before_executing(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
     from bot.services.tangtang_features import FeatureDecision
 
@@ -720,6 +729,7 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     executed: list[object] = []
     recorded: list[dict] = []
     enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -765,13 +775,14 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     assert recorded[0]["reply_text"] == "今天的直播给你找出来啦。"
 
 
-def test_feature_router_rejects_an_unregistered_action(monkeypatch):
+def test_feature_router_rejects_an_unregistered_action(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
     from bot.services.tangtang_features import FeatureDecision
 
     sent: list[str] = []
     executed: list[object] = []
     enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -810,11 +821,59 @@ def test_feature_router_rejects_an_unregistered_action(monkeypatch):
     assert executed == []
 
 
-def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch):
+def test_feature_router_blocks_a_disabled_skill(monkeypatch, tmp_path):
+    from bot.plugins import tangtang_chat as plugin
+    from bot.services.tangtang_features import FeatureDecision
+
+    sent: list[str] = []
+    executed: list[object] = []
+    enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
+    plugin.skill_ledger.set_control("commands", enabled=False, note="test disable")
+
+    class FakeMatcher:
+        async def send(self, message: str) -> None:
+            sent.append(message)
+
+    async def fake_classify(config, text, *, persona_name="糖糖"):
+        return (
+            FeatureDecision(
+                tier="clear",
+                action="ranking",
+                scope="day",
+                cluster=False,
+                line="好呀。",
+            ),
+            {},
+        )
+
+    async def fake_run(matcher, bot, event, request):
+        executed.append(request)
+        return True
+
+    monkeypatch.setattr(plugin, "has_feature_hint", lambda text: True)
+    monkeypatch.setattr(
+        plugin, "feature_classifier", SimpleNamespace(classify=fake_classify)
+    )
+    monkeypatch.setattr(plugin, "tangtang_call", FakeMatcher())
+    monkeypatch.setattr(plugin, "run_feature_call", fake_run)
+
+    event = group_message(group_id=1001, text="糖糖看看昨天的发言排行")
+    handled, _usage = asyncio.run(
+        plugin._feature_router(None, event, enabled_config(), "糖糖看看昨天的发言排行")
+    )
+
+    assert handled is True
+    assert sent == ["这个技能当前没有对本群启用，暂时不能执行。"]
+    assert executed == []
+
+
+def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
     enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:
@@ -847,11 +906,12 @@ def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch):
     ]
 
 
-def test_mentioned_member_does_not_switch_ranking_away_from_the_group(monkeypatch):
+def test_mentioned_member_does_not_switch_ranking_away_from_the_group(monkeypatch, tmp_path):
     from bot.plugins import tangtang_chat as plugin
 
     sequence: list[str] = []
     enable_plugin_group_features(monkeypatch, 1001)
+    isolate_plugin_skill_controls(monkeypatch, tmp_path)
 
     class FakeMatcher:
         async def send(self, message: str) -> None:

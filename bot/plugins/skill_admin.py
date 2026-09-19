@@ -10,7 +10,12 @@ from bot.services.skill_audit import CATEGORIES, ledger
 from bot.services.skills import SkillRegistryError, registry_loader
 
 
-skill_admin = on_command("技能", priority=3, block=True)
+skill_admin = on_command(
+    "技能",
+    aliases={"技能列表", "技能开关", "技能纠错"},
+    priority=3,
+    block=True,
+)
 
 
 def _require_super_admin(event: MessageEvent) -> str | None:
@@ -59,7 +64,30 @@ async def handle_skill_admin(event: MessageEvent, args: Message = CommandArg()) 
         await skill_admin.finish("已标记解决。" if changed else "该记录已经解决。")
     if tokens == ["纠错", "类别"]:
         await skill_admin.finish("可用类别：" + "、".join(sorted(CATEGORIES)))
+    if tokens == ["列表"]:
+        registry = registry_loader.load()
+        lines = [
+            f"{skill.skill_id}（v{skill.version}，{skill.kind}）："
+            f"{'启用' if ledger.control(skill.skill_id)['enabled'] else '停用'}"
+            for skill in registry.skills
+        ]
+        await skill_admin.finish("技能清单：\n" + "\n".join(lines))
+    if tokens[:2] == ["开关", "开"] and len(tokens) >= 3:
+        groups = tuple(int(item) for item in tokens[3:] if item.isdigit())
+        ledger.set_control(tokens[2], enabled=True, groups=groups, note="admin enable")
+        scope = "、".join(str(item) for item in groups) if groups else "全部群"
+        await skill_admin.finish(f"已启用技能 {tokens[2]}（{scope}）。")
+    if tokens[:2] == ["开关", "关"] and len(tokens) >= 3:
+        ledger.set_control(tokens[2], enabled=False, note="admin disable")
+        await skill_admin.finish(f"已停用技能 {tokens[2]}。")
+    if tokens[:2] == ["开关", "状态"] and len(tokens) >= 3:
+        control = ledger.control(tokens[2])
+        groups = "、".join(str(item) for item in control["groups"]) or "全部群"
+        await skill_admin.finish(
+            f"技能 {tokens[2]}：{'启用' if control['enabled'] else '停用'}；范围：{groups}"
+        )
     await skill_admin.finish(
-        "用法：#技能 状态 / #技能 纠错 列表 [状态] / "
+        "用法：#技能 状态 / #技能 列表 / #技能 开关 开|关 <技能ID> [群号...] / "
+        "#技能 开关 状态 <技能ID> / #技能 纠错 列表 [状态] / "
         "#技能 纠错 解决 <编号> [说明] / #技能 纠错 类别"
     )

@@ -695,7 +695,11 @@
       "commands": [
         {
           "command": "技能",
-          "aliases": []
+          "aliases": [
+            "技能列表",
+            "技能开关",
+            "技能纠错"
+          ]
         }
       ],
       "rules": [],

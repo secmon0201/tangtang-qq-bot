@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -620,6 +621,19 @@ class TangtangDb:
             except Exception:
                 conn.execute("ROLLBACK")
                 raise
+
+    def group_summary_seed_all(
+        self,
+        group_ids: Iterable[int],
+        *,
+        now: str,
+    ) -> int:
+        """Seed every eligible group in one read of the current tails."""
+
+        seeded = 0
+        for group_id in group_ids:
+            seeded += int(self.group_summary_seed(int(group_id), now=now) > 0)
+        return seeded
 
     def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
         with self._connect() as conn:

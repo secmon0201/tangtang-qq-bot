@@ -143,6 +143,21 @@ def test_first_run_seeds_cursor_at_tail_without_replaying_history(tmp_path):
     assert db.group_summary_seed(1001, now="2026-09-19T10:02:00+08:00") == 0
 
 
+def test_seed_all_covers_every_group_without_replay(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    for group_id in (1001, 1002):
+        for index in range(2):
+            db.insert_group_message(
+                group_id=group_id, user_id=1, nickname="甲", text=f"旧{group_id}-{index}",
+                message_id=f"{group_id}-{index}", created_at="2026-09-19T09:00:00+08:00",
+            )
+    assert db.group_summary_seed_all((1001, 1002), now="2026-09-19T10:00:00+08:00") == 2
+    assert db.group_summary_pending(1001) == []
+    assert db.group_summary_pending(1002) == []
+    # A second pass changes nothing.
+    assert db.group_summary_seed_all((1001, 1002), now="2026-09-19T10:01:00+08:00") == 0
+
+
 def test_topic_routing_reuses_existing_topic(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.group_summary_merge(

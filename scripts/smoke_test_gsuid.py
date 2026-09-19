@@ -192,6 +192,7 @@ async def run(
     async with websockets.connect(
         "ws://127.0.0.1:8080/onebot/v11/ws",
         additional_headers=headers,
+        subprotocols=["aiocqhttp"],
         max_size=None,
     ) as websocket:
         await websocket.send(

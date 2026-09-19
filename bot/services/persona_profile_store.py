@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS persona_profile_jobs(
  generation INTEGER NOT NULL DEFAULT 0, owner TEXT NOT NULL DEFAULT '',
  lease_until REAL NOT NULL DEFAULT 0, next_attempt REAL NOT NULL DEFAULT 0,
  attempts INTEGER NOT NULL DEFAULT 0, last_served REAL NOT NULL DEFAULT 0,
- updated_at REAL NOT NULL, error TEXT NOT NULL DEFAULT '', priority INTEGER NOT NULL DEFAULT 0);
+ updated_at REAL NOT NULL, error TEXT NOT NULL DEFAULT '', priority INTEGER NOT NULL DEFAULT 0,
+ stage TEXT NOT NULL DEFAULT 'draft', draft TEXT NOT NULL DEFAULT '',
+ draft_versions TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS persona_profile_scheduler(id INTEGER PRIMARY KEY CHECK(id=1), turn INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS persona_profile_seen(
  event_key TEXT PRIMARY KEY, revision INTEGER NOT NULL, generation INTEGER NOT NULL, covered_chars INTEGER NOT NULL);
@@ -31,12 +33,25 @@ CREATE TABLE IF NOT EXISTS persona_profile_migrations(version TEXT PRIMARY KEY, 
 '''
 
 
+MAX_VALIDATION_ATTEMPTS = 3
+_COLUMN_MIGRATIONS = {
+    'priority': "ALTER TABLE persona_profile_jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    'stage': "ALTER TABLE persona_profile_jobs ADD COLUMN stage TEXT NOT NULL DEFAULT 'draft'",
+    'draft': "ALTER TABLE persona_profile_jobs ADD COLUMN draft TEXT NOT NULL DEFAULT ''",
+    'draft_versions': "ALTER TABLE persona_profile_jobs ADD COLUMN draft_versions TEXT NOT NULL DEFAULT ''",
+}
+
+
 def ensure_profile_schema(conn):
     conn.executescript(SCHEMA)
-    if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}:
+    columns = {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}
+    missing = [(name, statement) for name, statement in _COLUMN_MIGRATIONS.items() if name not in columns]
+    if missing:
         conn.execute('BEGIN IMMEDIATE')
-        if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}:
-            conn.execute('ALTER TABLE persona_profile_jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}
+        for name, statement in missing:
+            if name not in columns:
+                conn.execute(statement)
         conn.commit()
 
 
@@ -45,7 +60,13 @@ def enqueue(conn, user_id, now, priority=0):
         conn.execute('''INSERT INTO persona_profile_jobs(user_id,updated_at,priority) VALUES(?,?,?)
             ON CONFLICT(user_id) DO UPDATE SET updated_at=excluded.updated_at,
             priority=max(priority,excluded.priority),
-            state=CASE WHEN state='complete' THEN 'pending' ELSE state END''', (user_id, now, priority))
+            attempts=CASE WHEN state IN ('complete','failed') THEN 0 ELSE attempts END,
+            next_attempt=CASE WHEN state IN ('complete','failed') THEN 0 ELSE next_attempt END,
+            error=CASE WHEN state IN ('complete','failed') THEN '' ELSE error END,
+            stage=CASE WHEN state IN ('complete','failed') THEN 'draft' ELSE stage END,
+            draft=CASE WHEN state IN ('complete','failed') THEN '' ELSE draft END,
+            draft_versions=CASE WHEN state IN ('complete','failed') THEN '' ELSE draft_versions END,
+            state=CASE WHEN state IN ('complete','failed') THEN 'pending' ELSE state END''', (user_id, now, priority))
 
 
 class ProfileStore:
@@ -75,42 +96,130 @@ class ProfileStore:
             previous_row = conn.execute('SELECT content FROM persona_profile_versions WHERE user_id=? AND generation=?',
                                         (job['user_id'], job['generation'])).fetchone()
             previous = json.loads(previous_row['content']) if previous_row else {'observations': [], 'portrait': []}
-            # Newest evidence establishes/corrects a first impression quickly;
-            # oldest uncovered evidence guarantees eventual historical coverage.
-            unseen = '''SELECT s.*,CASE WHEN p.revision=s.revision THEN p.covered_chars ELSE 0 END AS covered_chars
-                FROM persona_sources s LEFT JOIN persona_profile_seen p ON p.event_key=s.event_key
-                WHERE s.user_id=? AND (p.event_key IS NULL OR p.revision<>s.revision OR p.covered_chars<length(s.text))'''
-            rows = [dict(r) for r in conn.execute(unseen + ' ORDER BY s.occurred_at DESC LIMIT 16', (job['user_id'],))]
-            rows += [dict(r) for r in conn.execute(unseen + ' ORDER BY s.occurred_at,s.event_key LIMIT 32', (job['user_id'],))]
-            previous_keys = {e['event_key'] for i in previous['observations'] for e in i['evidence']}
-            present = {r['event_key'] for r in rows}
-            for key in previous_keys:
-                if key in present:
-                    continue
-                row = conn.execute('SELECT * FROM persona_sources WHERE event_key=? AND user_id=?', (key, job['user_id'])).fetchone()
-                if row:
-                    rows.append({**dict(row), 'covered_chars': len(row['text'])})
-            sources = list({r['event_key']: r for r in rows}.values())
-            # Raw text is bounded; quoted prior evidence remains represented.
-            for row in sources:
-                offset = row.pop('covered_chars', 0)
-                row['reviewed_chars'] = min(len(row['text']), offset + 1500)
-                if len(row['text']) > 1500:
-                    quotes = [e['quote'] for i in previous['observations'] for e in i['evidence'] if e['event_key'] == row['event_key']]
-                    row['text'] = row['text'][max(0, offset-200):row['reviewed_chars']] + ('\n[同条发言的历史引用]\n' + '\n'.join(quotes) if quotes else '')
-            total = conn.execute('SELECT count(*) FROM persona_sources WHERE user_id=?', (job['user_id'],)).fetchone()[0]
-        return ProfileBatch(job['user_id'], owner, job['generation'], sources, previous, total, job['error'])
+            stage = job['stage'] if job['stage'] in {'draft', 'review'} else 'draft'
+            attempts = job['attempts']
+            error = job['error']
+            draft = self._stored_draft(job) if stage == 'review' else None
+            sources = (self._stored_sources(conn, job['user_id'], previous, job['draft_versions'])
+                       if draft is not None else None)
+            if stage == 'review' and sources is None:
+                conn.execute("""UPDATE persona_profile_jobs SET stage='draft',draft='',draft_versions='',
+                    attempts=0,error='' WHERE user_id=?""", (job['user_id'],))
+                stage, draft, attempts, error = 'draft', None, 0, ''
+            if stage == 'review':
+                candidate = ProfileBatch(job['user_id'], owner, job['generation'], sources, previous,
+                                         self._source_count(conn, job['user_id']), '', attempts, stage, draft)
+                try:
+                    validate_draft(draft, candidate)
+                except (ValueError, TypeError, KeyError):
+                    conn.execute("""UPDATE persona_profile_jobs SET stage='draft',draft='',draft_versions='',
+                        attempts=0,error='' WHERE user_id=?""", (job['user_id'],))
+                    stage, draft, sources, attempts, error = 'draft', None, None, 0, ''
+            if stage == 'draft':
+                sources = self._draft_sources(conn, job['user_id'], previous)
+            total = self._source_count(conn, job['user_id'])
+        return ProfileBatch(job['user_id'], owner, job['generation'], sources, previous, total,
+                            error, attempts, stage, draft)
 
-    def fail(self, batch, error, now=None):
+    @staticmethod
+    def _source_count(conn, user_id):
+        return conn.execute('SELECT count(*) FROM persona_sources WHERE user_id=?', (user_id,)).fetchone()[0]
+
+    @staticmethod
+    def _stored_draft(job):
+        try:
+            draft = json.loads(job['draft'] or '{}')
+        except (TypeError, ValueError):
+            return None
+        return draft if isinstance(draft, dict) else None
+
+    @staticmethod
+    def _bounded_source(row, previous, offset):
+        row['reviewed_chars'] = min(len(row['text']), offset + 1500)
+        if len(row['text']) > 1500:
+            quotes = [e['quote'] for i in previous['observations'] for e in i['evidence']
+                      if e['event_key'] == row['event_key']]
+            row['text'] = row['text'][max(0, offset - 200):row['reviewed_chars']] + (
+                '\n[同条发言的历史引用]\n' + '\n'.join(quotes) if quotes else '')
+        return row
+
+    def _draft_sources(self, conn, user_id, previous):
+        # Newest evidence establishes/corrects a first impression quickly;
+        # oldest uncovered evidence guarantees eventual historical coverage.
+        unseen = '''SELECT s.*,CASE WHEN p.revision=s.revision THEN p.covered_chars ELSE 0 END AS covered_chars
+            FROM persona_sources s LEFT JOIN persona_profile_seen p ON p.event_key=s.event_key
+            WHERE s.user_id=? AND (p.event_key IS NULL OR p.revision<>s.revision OR p.covered_chars<length(s.text))'''
+        rows = [dict(r) for r in conn.execute(unseen + ' ORDER BY s.occurred_at DESC LIMIT 16', (user_id,))]
+        rows += [dict(r) for r in conn.execute(unseen + ' ORDER BY s.occurred_at,s.event_key LIMIT 32', (user_id,))]
+        previous_keys = {e['event_key'] for i in previous['observations'] for e in i['evidence']}
+        present = {r['event_key'] for r in rows}
+        for key in previous_keys:
+            if key in present:
+                continue
+            row = conn.execute('SELECT * FROM persona_sources WHERE event_key=? AND user_id=?', (key, user_id)).fetchone()
+            if row:
+                rows.append({**dict(row), 'covered_chars': len(row['text'])})
+        sources = list({r['event_key']: r for r in rows}.values())
+        # Raw text is bounded; quoted prior evidence remains represented.
+        for row in sources:
+            offset = row.pop('covered_chars', 0)
+            self._bounded_source(row, previous, offset)
+        return sources
+
+    def _stored_sources(self, conn, user_id, previous, encoded):
+        try:
+            versions = json.loads(encoded or '{}')
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(versions, dict):
+            return None
+        sources = []
+        for event_key, value in versions.items():
+            if (not isinstance(value, list) or len(value) != 2
+                    or any(type(item) is not int for item in value)):
+                return None
+            revision, reviewed_chars = value
+            row = conn.execute('SELECT * FROM persona_sources WHERE event_key=? AND user_id=?',
+                               (event_key, user_id)).fetchone()
+            if not row or row['revision'] != revision:
+                return None
+            source = dict(row)
+            self._bounded_source(source, previous, reviewed_chars)
+            sources.append(source)
+        return sources
+
+    def save_draft(self, batch, draft, now=None):
+        now = time.time() if now is None else now
+        validate_draft(draft, batch)
+        versions = {s['event_key']: [s['revision'], s['reviewed_chars']] for s in batch.sources}
+        with self.cognition.connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            job = conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=?', (batch.user_id,)).fetchone()
+            if (not job or job['owner'] != batch.owner or job['generation'] != batch.generation
+                    or job['state'] != 'processing' or job['stage'] != 'draft'):
+                raise ValueError('profile_lease_changed')
+            conn.execute("""UPDATE persona_profile_jobs SET stage='review',draft=?,draft_versions=?,
+                attempts=0,next_attempt=0,error='',updated_at=? WHERE user_id=? AND owner=?""",
+                (json.dumps(draft, ensure_ascii=False), json.dumps(versions, ensure_ascii=False),
+                 now, batch.user_id, batch.owner))
+
+    def fail(self, batch, error, now=None, *, terminal=False):
         now = time.time() if now is None else now
         with self.cognition.connect() as conn:
             row = conn.execute('SELECT attempts FROM persona_profile_jobs WHERE user_id=? AND owner=?', (batch.user_id, batch.owner)).fetchone()
             if row:
                 attempts = row['attempts'] + 1
-                delay = min(300, 10 * 2 ** min(attempts - 1, 5))
-                conn.execute("""UPDATE persona_profile_jobs SET state='retry',attempts=?,next_attempt=?,error=?,
-                    owner='',lease_until=0 WHERE user_id=? AND owner=?""",
-                    (attempts, now + delay, error[:80], batch.user_id, batch.owner))
+                if error in {'profile_draft_missing', 'profile_source_changed', 'profile_quote_not_in_original'}:
+                    conn.execute("""UPDATE persona_profile_jobs SET state='pending',stage='draft',draft='',
+                        draft_versions='',attempts=0,next_attempt=0,error='',owner='',lease_until=0,
+                        updated_at=? WHERE user_id=? AND owner=?""",
+                        (now, batch.user_id, batch.owner))
+                    return
+                state = 'failed' if terminal and attempts >= MAX_VALIDATION_ATTEMPTS else 'retry'
+                delay = min(300, 10 * 2 ** min(attempts - 1, 5)) if state == 'retry' else 0
+                conn.execute("""UPDATE persona_profile_jobs SET state=?,attempts=?,next_attempt=?,error=?,
+                    owner='',lease_until=0,updated_at=? WHERE user_id=? AND owner=?""",
+                    (state, attempts, now + delay, error[:80], now, batch.user_id, batch.owner))
 
     def publish(self, batch, draft, review, now=None):
         now = time.time() if now is None else now
@@ -143,7 +252,8 @@ class ProfileStore:
             pending = conn.execute('''SELECT 1 FROM persona_sources s LEFT JOIN persona_profile_seen p ON p.event_key=s.event_key
                 WHERE s.user_id=? AND (p.event_key IS NULL OR p.revision<>s.revision OR p.covered_chars<length(s.text)) LIMIT 1''', (batch.user_id,)).fetchone()
             conn.execute("""UPDATE persona_profile_jobs SET state=?,generation=?,owner='',lease_until=0,
-                attempts=0,next_attempt=0,error='',priority=CASE WHEN ? THEN priority ELSE 0 END WHERE user_id=?""",
+                attempts=0,next_attempt=0,error='',stage='draft',draft='',draft_versions='',
+                priority=CASE WHEN ? THEN priority ELSE 0 END WHERE user_id=?""",
                 ('pending' if pending else 'complete', generation, bool(pending), batch.user_id))
             portrait = '\n'.join(s['text'] for s in content['portrait']) or '\n'.join(i['statement'] for i in content['observations'])
             conn.execute('INSERT OR REPLACE INTO persona_portraits VALUES(?,?,?,?)',
@@ -184,7 +294,15 @@ class ProfileStore:
             job = conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=?', (user_id,)).fetchone()
             row = conn.execute('SELECT content FROM persona_profile_versions WHERE user_id=? ORDER BY generation DESC LIMIT 1', (user_id,)).fetchone()
             if not row:
-                return '正在根据你本人的发言整理初步认识。' if job else '目前还没有足够的本人发言来形成具体认识。'
+                if not job:
+                    return '目前还没有足够的本人发言来形成具体认识。'
+                if job['state'] in {'pending', 'processing', 'reviewing'}:
+                    return '正在根据你本人的发言整理初步认识。'
+                if job['state'] == 'failed':
+                    return '已经保留你的发言，但目前还没能形成可靠的具体认识。之后的交流会重新尝试。'
+                if job['state'] == 'complete':
+                    return '目前还没有足够的本人发言来形成具体认识。'
+                return '整理服务暂时不可用，你的发言已保留，服务恢复后会自动继续。'
             content = json.loads(row['content'])
             restrictions = [r[0] for r in conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND active=1', (user_id,))]
         allowed = {i for i, o in enumerate(content['observations']) if not any(n in normalize(o['statement']) or
@@ -198,6 +316,10 @@ class ProfileStore:
         lines = ['目前对你的认识（会随新交流修订）：', *sentences]
         quotes = list(dict.fromkeys(e['quote'] for i, o in enumerate(content['observations']) if i in allowed for e in o['evidence']))
         lines += ['依据：' + q[:160] for q in quotes[:3]]
-        if job and job['state'] != 'complete':
+        if job and job['state'] in {'pending', 'processing', 'reviewing'}:
             lines.append('新的发言或更早的记录还在整理中。')
+        elif job and job['state'] == 'failed':
+            lines.append('有一批新内容没能形成可靠更新，现有认识保持为上一次通过复核的版本。')
+        elif job and job['state'] != 'complete':
+            lines.append('新的内容暂时没有整理成功，已有认识不受影响；服务恢复后会自动继续更新。')
         return '\n'.join(lines)

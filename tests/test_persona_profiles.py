@@ -1,6 +1,7 @@
 """Independent evidence review, automatic rebuild and competing updates."""
 import json
 
+import httpx
 import pytest
 
 from bot.services.persona_cognition import CognitionStore
@@ -166,10 +167,12 @@ def test_live_messages_take_priority_without_starving_historical_rebuild(cogniti
 def test_existing_profile_queue_gains_priority_without_losing_work(cognition):
     cognition.import_sources([source()])
     with cognition.connect() as conn:
-        conn.execute('ALTER TABLE persona_profile_jobs DROP COLUMN priority')
+        for column in ('priority', 'stage', 'draft', 'draft_versions'):
+            conn.execute(f'ALTER TABLE persona_profile_jobs DROP COLUMN {column}')
     with cognition.connect() as conn:
         row = conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=201').fetchone()
-        assert row['state'] == 'pending' and row['priority'] == 0
+        assert row['state'] == 'pending'
+        assert (row['priority'], row['stage'], row['draft'], row['draft_versions']) == (0, 'draft', '', '')
 
 
 def test_long_message_tail_is_processed_not_silently_marked_complete(cognition):
@@ -200,6 +203,93 @@ def test_viewing_own_profile_does_not_enqueue_new_personality_evidence(cognition
     assert ProfileStore(cognition).claim() is None
     with cognition.connect() as conn:
         assert conn.execute('SELECT count(*) FROM persona_sources').fetchone()[0] == 0
+
+
+def test_retry_state_is_not_reported_as_initial_processing(cognition):
+    cognition.import_sources([source()])
+    profiles = ProfileStore(cognition)
+    batch = profiles.claim(now=100)
+    profiles.fail(batch, 'HTTPStatusError', now=101)
+
+    text = cognition.own_impression(201)
+
+    assert '暂时不可用' in text
+    assert '发言已保留' in text
+    assert '正在根据' not in text
+
+
+def test_validation_failure_stops_after_three_attempts_and_new_evidence_resumes(cognition):
+    cognition.import_sources([source()])
+    profiles = ProfileStore(cognition)
+    for attempt, now in enumerate((100, 200, 300), start=1):
+        batch = profiles.claim(now=now)
+        assert batch.stage == 'draft'
+        profiles.fail(batch, 'invalid_profile_evidence', now=now + 1, terminal=True)
+        with cognition.connect() as conn:
+            job = conn.execute('SELECT state,attempts FROM persona_profile_jobs WHERE user_id=201').fetchone()
+        assert job['state'] == ('retry' if attempt < 3 else 'failed')
+
+    failed = cognition.own_impression(201)
+    assert '没能形成可靠' in failed
+    assert '正在根据' not in failed
+
+    cognition.import_sources([source('101:2', text='我改用电脑画图了', occurred=400)])
+    with cognition.connect() as conn:
+        job = conn.execute('SELECT state,attempts,error,stage FROM persona_profile_jobs WHERE user_id=201').fetchone()
+    assert dict(job) == {'state': 'pending', 'attempts': 0, 'error': '', 'stage': 'draft'}
+
+
+def test_review_retry_reuses_validated_draft(cognition):
+    s = source()
+    cognition.import_sources([s])
+    profiles = ProfileStore(cognition)
+    draft_batch = profiles.claim(now=100)
+    assert draft_batch.stage == 'draft'
+
+    draft = draft_for(s)
+    profiles.save_draft(draft_batch, draft, now=101)
+    profiles.fail(draft_batch, 'ReadTimeout', now=102)
+
+    review_batch = profiles.claim(now=200)
+    assert review_batch.stage == 'review'
+    assert review_batch.draft == draft
+    assert review_batch.sources[0]['event_key'] == s['event_key']
+
+    profiles.publish(review_batch, review_batch.draft, review_for(review_batch.draft))
+    assert '认真修改画稿' in cognition.own_impression(201)
+    with cognition.connect() as conn:
+        job = conn.execute('SELECT stage,draft,draft_versions FROM persona_profile_jobs WHERE user_id=201').fetchone()
+    assert dict(job) == {'stage': 'draft', 'draft': '', 'draft_versions': ''}
+
+
+def test_changed_review_source_invalidates_saved_draft(cognition):
+    s = source()
+    cognition.import_sources([s])
+    profiles = ProfileStore(cognition)
+    draft_batch = profiles.claim(now=100)
+    profiles.save_draft(draft_batch, draft_for(s), now=101)
+    profiles.fail(draft_batch, 'ReadTimeout', now=102)
+
+    cognition.import_sources([{**s, 'revision': 2, 'attribution': 'ambient'}])
+    resumed = profiles.claim(now=200)
+
+    assert resumed.stage == 'draft'
+    assert resumed.draft is None
+    assert resumed.sources[0]['revision'] == 2
+
+
+def test_empty_valid_draft_survives_review_retry(cognition):
+    cognition.import_sources([source()])
+    profiles = ProfileStore(cognition)
+    draft_batch = profiles.claim(now=100)
+    empty = {'observations': [], 'portrait': []}
+    profiles.save_draft(draft_batch, empty, now=101)
+    profiles.fail(draft_batch, 'ReadTimeout', now=102)
+
+    review_batch = profiles.claim(now=200)
+
+    assert review_batch.stage == 'review'
+    assert review_batch.draft == empty
 
 
 def test_real_model_evaluation_resolves_active_profile_before_sanitizing_groups(tmp_path):
@@ -243,3 +333,145 @@ async def test_worker_publishes_only_after_separate_review_and_tracks_usage(tmp_
     assert '认真修改画稿' in cognition.own_impression(201)
     with central.connect() as conn:
         assert conn.execute("SELECT count(*) FROM jobs WHERE kind IN ('profile_draft','profile_review')").fetchone()[0] == 2
+
+
+@async_test
+async def test_worker_resumes_review_with_stage_specific_budgets(tmp_path, cognition, monkeypatch):
+    from types import SimpleNamespace
+    from bot.services.persona_profile_worker import ProfileWorker
+    from bot.services.tangtang_chat import TangtangConfig
+    s = source()
+    cognition.import_sources([s])
+    central = PersonaStore(tmp_path / 'central.db')
+    central.set_option('denia_v2_enabled', True)
+    config = TangtangConfig.from_values({'TANGTANG_ENABLED': '1', 'TANGTANG_API_KEY': 'synthetic',
+        'TANGTANG_API_URL': 'https://example.invalid', 'TANGTANG_GROUP_IDS': '101'}, (101,))
+    clock = [100.0]
+    monkeypatch.setattr('bot.services.persona_profile_worker.time.time', lambda: clock[0])
+    draft = draft_for(s)
+
+    class Provider:
+        def __init__(self):
+            self.calls = []
+            self.review_failed = False
+
+        async def generate(self, config, instruction, prompt):
+            stage = 'draft' if instruction.startswith('为达妮娅独立整理') else 'review'
+            self.calls.append((stage, config.max_output_tokens, config.max_response_chars))
+            if stage == 'draft':
+                return json.dumps(draft), {'total_tokens': 10}
+            if not self.review_failed:
+                self.review_failed = True
+                raise TimeoutError
+            return json.dumps(review_for(draft)), {'total_tokens': 10}
+
+    provider = Provider()
+    worker = ProfileWorker(cognition, central, provider, SimpleNamespace(load=lambda: config))
+    await worker.tick()
+    assert worker.retry.max_delay == 21600
+
+    clock[0] += 11
+    await worker.tick()
+
+    assert provider.calls == [('draft', 8000, 32000), ('review', 6000, 24000),
+                              ('review', 6000, 24000)]
+    assert '认真修改画稿' in cognition.own_impression(201)
+
+
+@async_test
+async def test_truncated_draft_retry_escalates_output_budget(tmp_path, cognition, monkeypatch):
+    from types import SimpleNamespace
+    from bot.services.persona_profile_worker import ProfileWorker
+    from bot.services.tangtang_chat import TangtangConfig
+    s = source()
+    cognition.import_sources([s])
+    central = PersonaStore(tmp_path / 'central.db')
+    central.set_option('denia_v2_enabled', True)
+    config = TangtangConfig.from_values({'TANGTANG_ENABLED': '1', 'TANGTANG_API_KEY': 'synthetic',
+        'TANGTANG_API_URL': 'https://example.invalid', 'TANGTANG_GROUP_IDS': '101'}, (101,))
+    clock = [100.0]
+    monkeypatch.setattr('bot.services.persona_profile_worker.time.time', lambda: clock[0])
+    draft = draft_for(s)
+
+    class Provider:
+        def __init__(self):
+            self.budgets = []
+
+        async def generate(self, config, instruction, prompt):
+            self.budgets.append((config.max_output_tokens, config.max_response_chars))
+            if instruction.startswith('为达妮娅独立整理') and len(self.budgets) == 1:
+                return '{"observations":', {'total_tokens': 10}
+            if instruction.startswith('为达妮娅独立整理'):
+                return json.dumps(draft), {'total_tokens': 10}
+            return json.dumps(review_for(draft)), {'total_tokens': 10}
+
+    provider = Provider()
+    worker = ProfileWorker(cognition, central, provider, SimpleNamespace(load=lambda: config))
+    await worker.tick()
+    clock[0] += 11
+    await worker.tick()
+
+    assert provider.budgets == [(8000, 32000), (16000, 48000), (6000, 24000)]
+    assert '认真修改画稿' in cognition.own_impression(201)
+
+
+@async_test
+async def test_worker_honors_retry_after_from_429(tmp_path, cognition, monkeypatch):
+    from types import SimpleNamespace
+    from bot.services.persona_profile_worker import ProfileWorker
+    from bot.services.tangtang_chat import TangtangConfig
+    cognition.import_sources([source()])
+    central = PersonaStore(tmp_path / 'central.db')
+    central.set_option('denia_v2_enabled', True)
+    config = TangtangConfig.from_values({'TANGTANG_ENABLED': '1', 'TANGTANG_API_KEY': 'synthetic',
+        'TANGTANG_API_URL': 'https://example.invalid', 'TANGTANG_GROUP_IDS': '101'}, (101,))
+    clock = [100.0]
+    monkeypatch.setattr('bot.services.persona_profile_worker.time.time', lambda: clock[0])
+    empty = {'observations': [], 'portrait': []}
+
+    class Provider:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate(self, config, instruction, prompt):
+            self.calls += 1
+            if self.calls == 1:
+                response = httpx.Response(
+                    429, request=httpx.Request('POST', 'https://example.invalid'),
+                    headers={'Retry-After': '7200'},
+                    json={'error': {'code': 'rate_limit_exceeded'}},
+                )
+                response.raise_for_status()
+            if instruction.startswith('为达妮娅独立整理'):
+                return json.dumps(empty), {'total_tokens': 10}
+            return json.dumps(review_for(empty)), {'total_tokens': 10}
+
+    provider = Provider()
+    worker = ProfileWorker(cognition, central, provider, SimpleNamespace(load=lambda: config))
+    await worker.tick()
+
+    clock[0] += 7199
+    await worker.tick()
+    assert provider.calls == 1
+
+    clock[0] += 1
+    await worker.tick()
+    assert provider.calls > 1
+
+
+def test_profile_report_includes_sanitized_provider_failure(tmp_path):
+    from scripts.report_persona_memory import report
+    central = PersonaStore(tmp_path / 'data/personas/state.db')
+    central.set_option('profile_provider_retry', {
+        'reason': 'provider_http', 'http_status': 429, 'error_code': 'rate_limit_exceeded',
+        'retryable': True, 'next_attempt_at': 500, 'failures': 2,
+        'blocked_until_config_change': False, 'private': 'DO NOT REPORT',
+    })
+
+    result = report(tmp_path)
+
+    assert result['profile_provider'] == {
+        'reason': 'provider_http', 'http_status': 429, 'error_code': 'rate_limit_exceeded',
+        'retryable': True, 'next_attempt_at': 500, 'failures': 2,
+        'blocked_until_config_change': False,
+    }

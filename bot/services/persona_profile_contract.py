@@ -17,6 +17,9 @@ class ProfileBatch:
     previous: dict
     total_sources: int
     previous_error: str = ''
+    attempts: int = 0
+    stage: str = 'draft'
+    draft: dict | None = None
 
     def prompt(self):
         return json.dumps({'person': self.user_id, 'sources': self.sources,

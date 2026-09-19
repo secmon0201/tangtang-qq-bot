@@ -49,6 +49,17 @@ def report(root: Path) -> dict:
             profile_jobs = conn.execute("SELECT usage FROM jobs WHERE kind IN ('profile_draft','profile_review') AND created_at>?", (now-86400,)).fetchall()
             result['profile_calls_24h'] = len(profile_jobs)
             result['profile_tokens_24h'] = sum(int(json.loads(r[0]).get('total_tokens', 0)) for r in profile_jobs)
+            row = conn.execute("SELECT value FROM options WHERE key='profile_provider_retry'").fetchone()
+            try:
+                retry = json.loads(row[0]) if row else {}
+            except (TypeError, ValueError):
+                retry = {}
+            if isinstance(retry, dict) and retry:
+                result['profile_provider'] = {
+                    key: retry.get(key) for key in
+                    ('reason', 'http_status', 'error_code', 'retryable', 'next_attempt_at',
+                     'failures', 'blocked_until_config_change')
+                }
     return result
 
 

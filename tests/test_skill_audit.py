@@ -69,3 +69,22 @@ def test_invalid_category_is_rejected(tmp_path: Path):
     ledger = SkillAuditLedger(tmp_path / "audit.db")
     with pytest.raises(ValueError):
         ledger.record(skill_id="x", category="not_real", severity="warning")
+
+
+def test_purge_user_removes_only_that_user(tmp_path: Path):
+    ledger = SkillAuditLedger(tmp_path / "audit.db", now=lambda: 100.0)
+    ledger.record(
+        skill_id="commands",
+        category="parameter_error",
+        severity="warning",
+        user_id=2001,
+    )
+    ledger.record(
+        skill_id="commands",
+        category="parameter_error",
+        severity="warning",
+        user_id=2002,
+    )
+    removed = ledger.purge_user(2001)
+    assert removed == {"skill_audit_entries": 1}
+    assert [entry.user_id for entry in ledger.list_entries()] == [2002]

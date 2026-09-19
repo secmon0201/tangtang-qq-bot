@@ -47,3 +47,11 @@ def test_summary_respects_since_filter(tmp_path: Path):
     store.record(skill_id="asoul")
     assert store.summary(since=150.0)["calls"] == 1
     assert store.summary()["calls"] == 2
+
+
+def test_purge_user_removes_only_that_user(tmp_path: Path):
+    store = SkillMetricsStore(tmp_path / "metrics.db", now=lambda: 100.0)
+    store.record(skill_id="commands", user_id=2001)
+    store.record(skill_id="commands", user_id=2002)
+    assert store.purge_user(2001) == {"skill_usage": 1}
+    assert store.summary()["calls"] == 1

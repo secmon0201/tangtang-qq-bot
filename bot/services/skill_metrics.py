@@ -126,5 +126,12 @@ class SkillMetricsStore:
             "by_group": by_group,
         }
 
+    def purge_user(self, user_id: int) -> dict[str, int]:
+        with self._connect() as conn:
+            deleted = conn.execute(
+                "DELETE FROM skill_usage WHERE user_id = ?", (int(user_id),)
+            ).rowcount
+        return {"skill_usage": deleted}
+
 
 metrics = SkillMetricsStore()

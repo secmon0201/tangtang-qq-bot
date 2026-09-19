@@ -36,6 +36,12 @@ def validate(root: Path = ROOT) -> list[str]:
             errors.append(f"invalid skill id: {skill_id!r}")
         if str(entry.get("owner") or "") != "project":
             errors.append(f"{skill_id}: owner must be project")
+        if str(entry.get("required_role") or "member") not in {
+            "member",
+            "admin",
+            "super_admin",
+        }:
+            errors.append(f"{skill_id}: invalid required_role")
         if not str(entry.get("plugin") or "").startswith("bot/plugins/"):
             errors.append(f"{skill_id}: plugin must live under bot/plugins")
         for command in entry.get("commands") or []:

@@ -26,6 +26,7 @@ class SkillSpec:
     feature_key: str
     local_actions: tuple[str, ...]
     deprecated: bool
+    required_role: str = "member"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +93,11 @@ def parse_registry(text: str) -> SkillRegistry:
         kind = str(entry.get("kind") or "")
         if kind not in SUPPORTED_KINDS:
             raise SkillRegistryError(f"{skill_id}: unsupported kind {kind!r}")
+        required_role = str(entry.get("required_role") or "member")
+        if required_role not in {"member", "admin", "super_admin"}:
+            raise SkillRegistryError(
+                f"{skill_id}: unsupported required_role {required_role!r}"
+            )
         actions = entry.get("local_actions") or []
         if not isinstance(actions, list) or any(not str(item) for item in actions):
             raise SkillRegistryError(f"{skill_id}: local_actions must be a string list")
@@ -105,6 +111,7 @@ def parse_registry(text: str) -> SkillRegistry:
                 feature_key=str(entry.get("feature_key") or ""),
                 local_actions=tuple(str(item) for item in actions),
                 deprecated=bool(entry.get("deprecated", False)),
+                required_role=required_role,
             )
         )
     registry = SkillRegistry(tuple(skills))

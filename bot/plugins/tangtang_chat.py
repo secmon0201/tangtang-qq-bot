@@ -40,6 +40,9 @@ from bot.services.tangtang_features import (
 from bot.services.skills import local_action_skill
 from bot.services.skill_audit import ledger as skill_ledger
 from bot.services.skill_metrics import metrics as skill_metrics
+from bot.services.skill_capability import capabilities
+from bot.services.skill_security import role_allows
+from bot.services.roles import is_super_admin
 from bot.services.agent_plan import build_plan, needs_plan
 from bot.services.tangtang_media import extract_image_references
 
@@ -121,6 +124,16 @@ async def _feature_router(
         return True, usage
     if not skill_ledger.enabled_for_group(skill.skill_id, int(event.group_id)):
         await tangtang_call.send("这个技能当前没有对本群启用，暂时不能执行。")
+        return True, usage
+    if not capabilities.skill_available(skill.skill_id):
+        await tangtang_call.send("这个技能依赖的上游服务当前不可用，暂时不能执行。")
+        return True, usage
+    if not role_allows(
+        skill.required_role,
+        is_admin=is_super_admin(int(event.user_id)),
+        is_super_admin=is_super_admin(int(event.user_id)),
+    ):
+        await tangtang_call.send("这个技能需要管理权限，当前账号不能执行。")
         return True, usage
     feature_key = skill.feature_key or None
     if feature_key and not group_domains().effective_feature_enabled(

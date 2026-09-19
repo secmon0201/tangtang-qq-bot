@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from bot.config import ROOT
+from bot.services.skill_security import redact
 
 
 DEFAULT_DB_PATH = ROOT / "data" / "skills" / "audit.db"
@@ -142,7 +143,7 @@ class SkillAuditLedger:
                     category,
                     severity,
                     str(source)[:200],
-                    str(detail)[:1000],
+                    redact(detail),
                 ),
             )
         return self.get(entry_id)  # type: ignore[return-value]
@@ -254,6 +255,15 @@ class SkillAuditLedger:
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         return len(payload)
+
+    def purge_user(self, user_id: int) -> dict[str, int]:
+        """Delete audit rows for one user; used by explicit privacy requests."""
+
+        with self._connect() as conn:
+            audit = conn.execute(
+                "DELETE FROM skill_audit_entries WHERE user_id = ?", (int(user_id),)
+            ).rowcount
+        return {"skill_audit_entries": audit}
 
     # --- Skill release controls -------------------------------------------------
 

@@ -7,6 +7,8 @@ from nonebot.params import CommandArg
 
 from bot.services.roles import is_super_admin
 from bot.services.skill_audit import CATEGORIES, ledger
+from bot.services.skill_capability import capabilities
+from bot.services.skill_metrics import metrics
 from bot.services.skills import SkillRegistryError, registry_loader
 
 
@@ -36,10 +38,16 @@ async def handle_skill_admin(event: MessageEvent, args: Message = CommandArg()) 
         except SkillRegistryError as exc:
             await skill_admin.finish(f"技能注册表不可用：{type(exc).__name__}")
         summary = ledger.summary()
+        upstream = capabilities.snapshot()
+        upstream_text = "、".join(
+            f"{item['name']}:{'可用' if item['usable'] else '不可用'}"
+            for item in upstream
+        )
         await skill_admin.finish(
             "技能平台状态：\n"
             f"注册技能：{len(registry.skills)}\n"
             f"本地动作：{len(registry.action_map)}\n"
+            f"上游能力：{upstream_text or '无'}\n"
             f"纠错账本：{summary['by_status'] or '空'}\n"
             f"未解决最久：{int(summary['oldest_open_seconds'])} 秒"
         )
@@ -86,8 +94,16 @@ async def handle_skill_admin(event: MessageEvent, args: Message = CommandArg()) 
         await skill_admin.finish(
             f"技能 {tokens[2]}：{'启用' if control['enabled'] else '停用'}；范围：{groups}"
         )
+    if tokens[:2] == ["数据", "清理"] and len(tokens) >= 3 and tokens[2].isdigit():
+        user_id = int(tokens[2])
+        removed = ledger.purge_user(user_id)
+        removed.update(metrics.purge_user(user_id))
+        await skill_admin.finish(
+            f"已清理该用户的技能审计与用量记录：审计 {removed['skill_audit_entries']} 条，"
+            f"用量 {removed['skill_usage']} 条。"
+        )
     await skill_admin.finish(
         "用法：#技能 状态 / #技能 列表 / #技能 开关 开|关 <技能ID> [群号...] / "
         "#技能 开关 状态 <技能ID> / #技能 纠错 列表 [状态] / "
-        "#技能 纠错 解决 <编号> [说明] / #技能 纠错 类别"
+        "#技能 纠错 解决 <编号> [说明] / #技能 纠错 类别 / #技能 数据 清理 <QQ号>"
     )

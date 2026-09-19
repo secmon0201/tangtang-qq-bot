@@ -659,6 +659,29 @@ class TangtangDb:
         )
         return newest_stale
 
+    def group_summary_archive_excess(self, group_id: int, *, limit: int = 200) -> int:
+        """Keep the most active/recent topics; archive the rest for lookup only."""
+
+        maximum = max(1, int(limit))
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT topic_id FROM group_summary_topics "
+                "WHERE group_id = ? AND state != 'archived' "
+                "ORDER BY CASE state WHEN 'active' THEN 0 ELSE 1 END, "
+                "version DESC, updated_at DESC LIMIT -1 OFFSET ?",
+                (int(group_id), maximum),
+            ).fetchall()
+            topic_ids = [int(row["topic_id"]) for row in rows]
+            if not topic_ids:
+                return 0
+            placeholders = ",".join("?" for _ in topic_ids)
+            conn.execute(
+                f"UPDATE group_summary_topics SET state = 'archived' "
+                f"WHERE topic_id IN ({placeholders})",
+                tuple(topic_ids),
+            )
+        return len(topic_ids)
+
     def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
         with self._connect() as conn:
             conn.execute(

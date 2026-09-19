@@ -51,6 +51,19 @@ class Loader:
         return self.config
 
 
+class RoutingProvider(SummaryProvider):
+    def __init__(self, route: dict, payload: dict | None = None) -> None:
+        super().__init__(payload)
+        self.route = route
+        self.route_prompts: list[str] = []
+
+    async def generate(self, config, persona, prompt, images=()):
+        if "群聊话题路由" in persona:
+            self.route_prompts.append(prompt)
+            return json.dumps(self.route, ensure_ascii=False), {"total_tokens": 20}
+        return await super().generate(config, persona, prompt, images)
+
+
 def test_summary_merge_is_incremental_and_advances_cursor(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.insert_group_message(
@@ -224,6 +237,52 @@ def test_unrelated_new_messages_do_not_share_a_topic(tmp_path):
     ]
     plan = service.merge_plan(1001, rows)
     assert [item.topic.topic_id for item in plan] == [None, None]
+
+
+def test_loose_reuse_routes_semantically_related_message_to_old_topic(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    db.group_summary_merge(
+        1001, topic_id=None, title="聚会安排", summary="周末聚餐的时间与地点讨论。",
+        keywords=("聚餐",), participants=("甲",), unresolved=("地点未定",),
+        state="active", message_ids=(1,), now="2026-09-19T10:00:00+08:00",
+    )
+    topic_id = db.group_summary_sources(1001)[0]["topic_id"]
+    provider = RoutingProvider({"topic_id": topic_id})
+    service = GroupSummaryService(
+        db, provider, Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
+        chat_id=lambda: "2026-09-19T10:05:00+08:00",
+    )
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="乙", text="那我们假期去哪里碰头？",
+        message_id="2", created_at="2026-09-19T10:04:00+08:00",
+    )
+    assert asyncio.run(GroupSummaryWorker(service).tick((1001,))) == 1
+    topics = db.group_summary_sources(1001)
+    assert len(topics) == 1
+    assert topics[0]["topic_id"] == topic_id
+    assert topics[0]["version"] == 2
+    assert provider.route_prompts
+
+
+def test_route_parser_accepts_new_topic_and_rejects_unknown_ids():
+    assert GroupSummaryService.parse_route('{"topic_id": 0}', [1, 2]) is None
+    assert GroupSummaryService.parse_route('{"topic_id": 2}', [1, 2]) == 2
+    assert GroupSummaryService.parse_route('{"topic_id": 9}', [1, 2]) is None
+
+
+def test_topic_cap_archives_oldest_beyond_limit(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    for index in range(6):
+        db.group_summary_merge(
+            1001, topic_id=None, title=f"话题{index}", summary=f"摘要{index}",
+            keywords=(), participants=(), unresolved=(), state="active",
+            message_ids=(index + 1,), now=f"2026-09-19T10:{index:02d}:00+08:00",
+        )
+    archived = db.group_summary_archive_excess(1001, limit=4)
+    assert archived == 2
+    active = db.group_summary_sources(1001)
+    assert len(active) == 4
+    assert [row["title"] for row in active] == ["话题5", "话题4", "话题3", "话题2"]
 
 
 def test_summary_parse_rejects_invalid_json():

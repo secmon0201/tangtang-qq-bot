@@ -382,6 +382,7 @@ class TangtangConfig:
     group_summary_inject_topics: int
     group_summary_batch_messages: int
     group_summary_max_age_hours: int
+    group_summary_topic_limit: int
     disabled_reason: str = ""
     tools_enabled: bool = True
     tool_loop_max: int = 3
@@ -438,6 +439,7 @@ class TangtangConfig:
             group_summary_inject_topics=0,
             group_summary_batch_messages=0,
             group_summary_max_age_hours=0,
+            group_summary_topic_limit=0,
             disabled_reason=reason,
         )
 
@@ -590,6 +592,9 @@ class TangtangConfig:
             ),
             "group_summary_max_age_hours": _int(
                 values, "TANGTANG_GROUP_SUMMARY_MAX_AGE_HOURS", 72, 1, 720
+            ),
+            "group_summary_topic_limit": _int(
+                values, "TANGTANG_GROUP_SUMMARY_TOPIC_LIMIT", 200, 20, 1000
             ),
         }
         if not enabled:

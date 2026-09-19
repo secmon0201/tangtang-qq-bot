@@ -150,6 +150,28 @@ def test_history_coverage_is_paged_and_quiet_users_not_starved(cognition):
     assert profiles.claim(now=1003).user_id == 201
 
 
+def test_live_messages_take_priority_without_starving_historical_rebuild(cognition):
+    from bot.services.persona_profile_store import enqueue
+    cognition.import_sources([source(user=201), source('102:2', user=202), source('103:3', user=203)])
+    with cognition.connect() as conn:
+        enqueue(conn, 203, 100, priority=2)
+        enqueue(conn, 202, 100, priority=2)
+    profiles = ProfileStore(cognition)
+    assert profiles.claim(now=1000).user_id == 202
+    assert profiles.claim(now=1001).user_id == 203
+    # The third dispatch deliberately services the oldest waiting person.
+    assert profiles.claim(now=1002).user_id == 201
+
+
+def test_existing_profile_queue_gains_priority_without_losing_work(cognition):
+    cognition.import_sources([source()])
+    with cognition.connect() as conn:
+        conn.execute('ALTER TABLE persona_profile_jobs DROP COLUMN priority')
+    with cognition.connect() as conn:
+        row = conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=201').fetchone()
+        assert row['state'] == 'pending' and row['priority'] == 0
+
+
 def test_long_message_tail_is_processed_not_silently_marked_complete(cognition):
     s = source(text='开头' + '谈论画稿。' * 350 + '最后我想改用水彩')
     cognition.import_sources([s])
@@ -178,6 +200,23 @@ def test_viewing_own_profile_does_not_enqueue_new_personality_evidence(cognition
     assert ProfileStore(cognition).claim() is None
     with cognition.connect() as conn:
         assert conn.execute('SELECT count(*) FROM persona_sources').fetchone()[0] == 0
+
+
+def test_real_model_evaluation_resolves_active_profile_before_sanitizing_groups(tmp_path):
+    from scripts.evaluate_persona_profiles import evaluation_config
+    path = tmp_path / '.env'
+    path.write_text('\n'.join(['TANGTANG_ENABLED=1', 'TANGTANG_MODEL=baseline',
+        'TANGTANG_API_KEY=synthetic', 'TANGTANG_API_URL=https://example.invalid/base',
+        'TANGTANG_MODEL_ACTIVE_PROFILE=selected', 'TANGTANG_MODEL_PROFILE_1_NAME=selected',
+        'TANGTANG_MODEL_PROFILE_1_PROVIDER=synthetic', 'TANGTANG_MODEL_PROFILE_1_MODEL=selected-model',
+        'TANGTANG_MODEL_PROFILE_1_API_STYLE=chat_completions',
+        'TANGTANG_MODEL_PROFILE_1_API_URL=https://example.invalid/selected',
+        'TANGTANG_MODEL_PROFILE_1_API_KEY=synthetic', 'TANGTANG_GROUP_IDS=9001']), encoding='utf-8')
+    config = evaluation_config(path)
+    assert config.model == 'selected-model'
+    assert config.api_style == 'chat_completions'
+    assert config.api_url == 'https://example.invalid/selected'
+    assert config.group_ids == frozenset({101})
 
 
 @async_test

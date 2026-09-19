@@ -23,6 +23,7 @@ from bot.services.persona_inbox import ObservationInbox
 from bot.services.speech import SpeechService
 from bot.services.tangtang_chat import TangtangConfig, TangtangProvider, TangtangService
 from bot.services.tangtang_db import TangtangDb
+from bot.services.tangtang_models import resolve_model_profile
 import bot.services.tangtang_chat as chat_module
 from scripts.evaluate_persona_memory import SCENARIOS
 
@@ -44,7 +45,7 @@ class RecordingProvider:
 
 
 async def run(args):
-    values = dotenv_values(args.env)
+    values = resolve_model_profile(dotenv_values(args.env))
     access = {key: values[key] for key in ('TANGTANG_API_URL', 'TANGTANG_API_KEY', 'TANGTANG_API_STYLE',
               'TANGTANG_MODEL', 'TANGTANG_ENABLED', 'TANGTANG_REASONING_EFFORT') if key in values}
     config = TangtangConfig.from_values({**access, 'TANGTANG_MODE': 'd', 'TANGTANG_GROUP_IDS': '101,102',

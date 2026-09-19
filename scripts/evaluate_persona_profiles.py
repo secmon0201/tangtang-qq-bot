@@ -18,6 +18,7 @@ from bot.services.persona_profile_contract import REVIEW_INSTRUCTION, decode
 from bot.services.persona_store import PersonaStore
 from bot.services.tangtang_chat import TangtangConfig, TangtangProvider
 from bot.services.tangtang_db import TangtangDb
+from bot.services.tangtang_models import resolve_model_profile
 
 
 CASES = [(201, '娅娅用语音跟大家说会晚安吧'), (202, '回什么家'),
@@ -26,13 +27,17 @@ CASES = [(201, '娅娅用语音跟大家说会晚安吧'), (202, '回什么家')
          (205, '我做计算题时希望先给推导过程，结果对不对我想自己检查')]
 
 
-async def run(args):
-    values = dotenv_values(args.env)
+def evaluation_config(path):
+    values = resolve_model_profile(dotenv_values(path))
     access = {k: values[k] for k in ('TANGTANG_API_URL', 'TANGTANG_API_KEY', 'TANGTANG_API_STYLE',
               'TANGTANG_MODEL', 'TANGTANG_ENABLED', 'TANGTANG_REASONING_EFFORT') if k in values}
     config = TangtangConfig.from_values({**access, 'TANGTANG_GROUP_IDS': '101',
         'TANGTANG_REQUIRED_CALL_REPLY_GROUP_IDS': ''}, (101,))
-    config = replace(config, memory_enabled=True)
+    return replace(config, memory_enabled=True)
+
+
+async def run(args):
+    config = evaluation_config(args.env)
     records = []
     with tempfile.TemporaryDirectory(prefix='profile-evaluation-') as temp:
         root = Path(temp)
@@ -45,15 +50,30 @@ async def run(args):
                      occurred_at=time.time(), received_at=time.time(), attribution='direct', revision=1, route_version='synthetic')
             cognition.import_sources([s])
             start = time.monotonic()
-            await worker.tick()
+            failures = []
+            for attempt in range(3):
+                await worker.tick()
+                with cognition.connect() as conn:
+                    pending = dict(conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=?', (user,)).fetchone())
+                if pending['state'] == 'complete':
+                    break
+                failures.append(pending['error'] or pending['state'])
+                deadline = max(pending['next_attempt'], central.option('profile_provider_retry', {}).get('next_attempt_at', 0))
+                if attempt < 2:
+                    delay = max(0, deadline - time.time()) + .1
+                    while delay > 0:
+                        interval = min(30, delay)
+                        await asyncio.sleep(interval)
+                        delay -= interval
             with cognition.connect() as conn:
                 job = dict(conn.execute('SELECT * FROM persona_profile_jobs WHERE user_id=?', (user,)).fetchone())
                 profile = conn.execute('SELECT content,review FROM persona_profile_versions WHERE user_id=? ORDER BY generation DESC LIMIT 1', (user,)).fetchone()
             records.append({'source': text, 'user': user, 'elapsed': round(time.monotonic()-start, 2),
-                'state': job['state'], 'error': job['error'], 'profile': json.loads(profile['content']) if profile else None,
+                'state': job['state'], 'error': job['error'], 'attempt_failures': failures,
+                'profile': json.loads(profile['content']) if profile else None,
                 'review': json.loads(profile['review']) if profile else None, 'display': cognition.own_impression(user)})
             print(json.dumps(records[-1], ensure_ascii=False), flush=True)
-        report = {'cases': records, 'external_qq_messages': 0,
+        report = {'cases': records, 'external_qq_messages': 0, 'model': config.model, 'api_style': config.api_style,
                   'note': 'Single trials require manual semantic inspection; failed cases are preserved, never counted as passes.'}
         # Deliberately recreate the old error rather than only testing proposals
         # the generator happens to make in a small successful sample.

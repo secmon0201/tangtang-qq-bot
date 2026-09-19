@@ -21,6 +21,7 @@ from bot.services.speech_policy import delivery_instruction
 from bot.services.tangtang_reply import parse_reply_plan
 from bot.services.tangtang_chat import TangtangConfig, TangtangProvider
 from bot.services.tangtang_db import TangtangDb
+from bot.services.tangtang_models import resolve_model_profile
 
 
 SCENARIOS = [
@@ -36,7 +37,7 @@ SCENARIOS = [
 
 
 async def run(args):
-    values = dotenv_values(args.env)
+    values = resolve_model_profile(dotenv_values(args.env))
     # Real configuration supplies only model access; all scenario identities,
     # histories and writes are synthetic and kept outside the runtime store.
     access = {key: values[key] for key in ('TANGTANG_API_URL', 'TANGTANG_API_KEY', 'TANGTANG_API_STYLE',

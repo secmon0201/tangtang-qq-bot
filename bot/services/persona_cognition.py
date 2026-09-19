@@ -14,7 +14,7 @@ from bot.services.persona_contracts import (
 )
 from bot.services.persona_memory_store import PersonMemoryStore, normalize
 from bot.services.persona_memory_contract import semantic_topics
-from bot.services.persona_profile_store import SCHEMA as PROFILE_SCHEMA, ProfileStore, enqueue
+from bot.services.persona_profile_store import ProfileStore, enqueue, ensure_profile_schema
 from bot.services.persona_impressions import impression_requested
 
 
@@ -26,7 +26,7 @@ class CognitionStore:
     def connect(self):
         with self.people.connect() as conn:
             conn.executescript(SCHEMA)
-            conn.executescript(PROFILE_SCHEMA)
+            ensure_profile_schema(conn)
             yield conn
 
     def import_sources(self, sources) -> None:
@@ -40,7 +40,8 @@ class CognitionStore:
                     tuple(row[k] for k in ('event_key', 'user_id', 'group_id', 'message_id', 'text',
                                           'occurred_at', 'received_at', 'attribution', 'revision', 'route_version'))).rowcount
                 if changed:
-                    enqueue(conn, row['user_id'], time.time())
+                    now = time.time()
+                    enqueue(conn, row['user_id'], now, priority=2 if row['received_at'] >= now-120 else 1)
                 if row.get('reply_to'):
                     part = conn.execute("""SELECT p.action_id,p.part FROM persona_action_parts p
                         JOIN persona_actions a ON a.id=p.action_id

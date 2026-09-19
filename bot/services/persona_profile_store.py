@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS persona_profile_jobs(
  generation INTEGER NOT NULL DEFAULT 0, owner TEXT NOT NULL DEFAULT '',
  lease_until REAL NOT NULL DEFAULT 0, next_attempt REAL NOT NULL DEFAULT 0,
  attempts INTEGER NOT NULL DEFAULT 0, last_served REAL NOT NULL DEFAULT 0,
- updated_at REAL NOT NULL, error TEXT NOT NULL DEFAULT '');
+ updated_at REAL NOT NULL, error TEXT NOT NULL DEFAULT '', priority INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS persona_profile_scheduler(id INTEGER PRIMARY KEY CHECK(id=1), turn INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS persona_profile_seen(
  event_key TEXT PRIMARY KEY, revision INTEGER NOT NULL, generation INTEGER NOT NULL, covered_chars INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS persona_profile_versions(
@@ -30,11 +31,21 @@ CREATE TABLE IF NOT EXISTS persona_profile_migrations(version TEXT PRIMARY KEY, 
 '''
 
 
-def enqueue(conn, user_id, now):
+def ensure_profile_schema(conn):
+    conn.executescript(SCHEMA)
+    if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}:
+        conn.execute('BEGIN IMMEDIATE')
+        if 'priority' not in {r[1] for r in conn.execute('PRAGMA table_info(persona_profile_jobs)')}:
+            conn.execute('ALTER TABLE persona_profile_jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
+        conn.commit()
+
+
+def enqueue(conn, user_id, now, priority=0):
     if user_id > 0:
-        conn.execute('''INSERT INTO persona_profile_jobs(user_id,updated_at) VALUES(?,?)
+        conn.execute('''INSERT INTO persona_profile_jobs(user_id,updated_at,priority) VALUES(?,?,?)
             ON CONFLICT(user_id) DO UPDATE SET updated_at=excluded.updated_at,
-            state=CASE WHEN state='complete' THEN 'pending' ELSE state END''', (user_id, now))
+            priority=max(priority,excluded.priority),
+            state=CASE WHEN state='complete' THEN 'pending' ELSE state END''', (user_id, now, priority))
 
 
 class ProfileStore:
@@ -49,11 +60,15 @@ class ProfileStore:
         now = time.time() if now is None else now
         with self.cognition.connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
+            conn.execute('INSERT OR IGNORE INTO persona_profile_scheduler VALUES(1,0)')
+            turn = conn.execute('SELECT turn FROM persona_profile_scheduler WHERE id=1').fetchone()[0]
+            order = 'priority DESC,last_served,user_id' if turn % 3 < 2 else 'last_served,user_id'
             job = conn.execute('''SELECT * FROM persona_profile_jobs WHERE
                 (state IN ('pending','retry') OR (state='processing' AND lease_until<?))
-                AND next_attempt<=? ORDER BY last_served,user_id LIMIT 1''', (now, now)).fetchone()
+                AND next_attempt<=? ORDER BY ''' + order + ' LIMIT 1', (now, now)).fetchone()
             if not job:
                 return None
+            conn.execute('UPDATE persona_profile_scheduler SET turn=turn+1 WHERE id=1')
             owner = uuid.uuid4().hex
             conn.execute("UPDATE persona_profile_jobs SET state='processing',owner=?,lease_until=?,last_served=? WHERE user_id=?",
                          (owner, now + 150, now, job['user_id']))
@@ -128,8 +143,8 @@ class ProfileStore:
             pending = conn.execute('''SELECT 1 FROM persona_sources s LEFT JOIN persona_profile_seen p ON p.event_key=s.event_key
                 WHERE s.user_id=? AND (p.event_key IS NULL OR p.revision<>s.revision OR p.covered_chars<length(s.text)) LIMIT 1''', (batch.user_id,)).fetchone()
             conn.execute("""UPDATE persona_profile_jobs SET state=?,generation=?,owner='',lease_until=0,
-                attempts=0,next_attempt=0,error='' WHERE user_id=?""",
-                ('pending' if pending else 'complete', generation, batch.user_id))
+                attempts=0,next_attempt=0,error='',priority=CASE WHEN ? THEN priority ELSE 0 END WHERE user_id=?""",
+                ('pending' if pending else 'complete', generation, bool(pending), batch.user_id))
             portrait = '\n'.join(s['text'] for s in content['portrait']) or '\n'.join(i['statement'] for i in content['observations'])
             conn.execute('INSERT OR REPLACE INTO persona_portraits VALUES(?,?,?,?)',
                          (batch.user_id, portrait, json.dumps(ids), now))

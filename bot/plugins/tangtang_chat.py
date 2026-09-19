@@ -35,6 +35,7 @@ from bot.services.tangtang_features import (
     classify_local_feature,
     has_feature_hint,
 )
+from bot.services.skills import local_action_skill
 from bot.services.tangtang_media import extract_image_references
 
 
@@ -68,13 +69,12 @@ async def _feature_router(
     if decision is None:
         return False, usage
     request = request_from_decision(decision)
-    feature_key = {
-        "ranking": "speech_ranking",
-        "zhijiang_schedule": "zhijiang_calendar",
-        "today_live": "zhijiang_calendar",
-        "tomorrow_live": "zhijiang_calendar",
-        "week_live": "zhijiang_calendar",
-    }.get(request.action)
+    skill = local_action_skill(request.action)
+    if skill is None:
+        # The proposer returned an action outside the closed skill registry.
+        await tangtang_call.send("这个功能目前没有对应的本地技能，不能凭空执行。")
+        return True, usage
+    feature_key = skill.feature_key or None
     if feature_key and not group_domains().effective_feature_enabled(
         int(event.group_id), feature_key
     ):

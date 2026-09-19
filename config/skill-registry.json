@@ -28,7 +28,8 @@
       "deprecated": false,
       "plugin_rules": [
         "archive_search_router"
-      ]
+      ],
+      "local_actions": []
     },
     {
       "skill_id": "asoul",
@@ -119,7 +120,13 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": [
+        "today_live",
+        "tomorrow_live",
+        "week_live"
+      ],
+      "feature_key": ""
     },
     {
       "skill_id": "codex_completion",
@@ -131,7 +138,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "commands",
@@ -242,7 +250,11 @@
       "plugin_rules": [
         "compact_ranking",
         "named_cluster_ranking"
-      ]
+      ],
+      "local_actions": [
+        "ranking"
+      ],
+      "feature_key": "speech_ranking"
     },
     {
       "skill_id": "game_api",
@@ -254,7 +266,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "global_announcement",
@@ -273,7 +286,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "group_settings",
@@ -304,7 +318,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "hourly_announcements",
@@ -316,7 +331,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "knowledge_review",
@@ -347,7 +363,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "mini_games",
@@ -361,7 +378,8 @@
       "deprecated": false,
       "plugin_rules": [
         "mini_games"
-      ]
+      ],
+      "local_actions": []
     },
     {
       "skill_id": "nte_game_ui",
@@ -375,7 +393,8 @@
       "deprecated": false,
       "plugin_rules": [
         "nte_game_ui"
-      ]
+      ],
+      "local_actions": []
     },
     {
       "skill_id": "official_qq",
@@ -408,7 +427,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "operator_web",
@@ -420,7 +440,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "outbound_pacing",
@@ -432,7 +453,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "persona_management",
@@ -449,7 +471,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "qq_platform_health",
@@ -466,7 +489,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "qq_transport_maintenance",
@@ -487,7 +511,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "random_reactions",
@@ -501,7 +526,8 @@
       ],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "runtime_maintenance",
@@ -513,7 +539,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "scope",
@@ -527,7 +554,8 @@
       ],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "stats",
@@ -541,7 +569,8 @@
       ],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "tangtang_chat",
@@ -557,7 +586,8 @@
       ],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "tangtang_model_switch",
@@ -574,7 +604,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "tangtang_proactive",
@@ -594,7 +625,8 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": []
     },
     {
       "skill_id": "today_wife",
@@ -609,7 +641,8 @@
       "plugin_rules": [
         "today_wife_activity",
         "today_wife"
-      ]
+      ],
+      "local_actions": []
     },
     {
       "skill_id": "wuwa_game_ui",
@@ -623,7 +656,8 @@
       "deprecated": false,
       "plugin_rules": [
         "wuwa_game_ui"
-      ]
+      ],
+      "local_actions": []
     },
     {
       "skill_id": "zhijiang",
@@ -646,7 +680,11 @@
       "rules": [],
       "owner": "project",
       "deprecated": false,
-      "plugin_rules": []
+      "plugin_rules": [],
+      "local_actions": [
+        "zhijiang_schedule"
+      ],
+      "feature_key": ""
     }
   ]
 }

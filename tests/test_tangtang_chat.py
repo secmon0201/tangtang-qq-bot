@@ -765,6 +765,51 @@ def test_feature_router_sends_generated_line_before_executing(monkeypatch):
     assert recorded[0]["reply_text"] == "今天的直播给你找出来啦。"
 
 
+def test_feature_router_rejects_an_unregistered_action(monkeypatch):
+    from bot.plugins import tangtang_chat as plugin
+    from bot.services.tangtang_features import FeatureDecision
+
+    sent: list[str] = []
+    executed: list[object] = []
+    enable_plugin_group_features(monkeypatch, 1001)
+
+    class FakeMatcher:
+        async def send(self, message: str) -> None:
+            sent.append(message)
+
+    async def fake_classify(config, text, *, persona_name="糖糖"):
+        return (
+            FeatureDecision(
+                tier="clear",
+                action="invented_action",
+                scope="",
+                cluster=False,
+                line="正在现场造轮子。",
+            ),
+            {},
+        )
+
+    async def fake_run(matcher, bot, event, request):
+        executed.append(request)
+        return True
+
+    monkeypatch.setattr(plugin, "has_feature_hint", lambda text: True)
+    monkeypatch.setattr(
+        plugin, "feature_classifier", SimpleNamespace(classify=fake_classify)
+    )
+    monkeypatch.setattr(plugin, "tangtang_call", FakeMatcher())
+    monkeypatch.setattr(plugin, "run_feature_call", fake_run)
+
+    event = group_message(group_id=1001, text="糖糖造一个新功能")
+    handled, _usage = asyncio.run(
+        plugin._feature_router(None, event, enabled_config(), "糖糖造一个新功能")
+    )
+
+    assert handled is True
+    assert sent == ["这个功能目前没有对应的本地技能，不能凭空执行。"]
+    assert executed == []
+
+
 def test_first_person_ranking_router_still_runs_group_ranking(monkeypatch):
     from bot.plugins import tangtang_chat as plugin
 

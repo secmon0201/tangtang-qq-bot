@@ -30,6 +30,14 @@ PLUGIN_RULES = {
     "a_coast_archive.py": ("archive_search_router",),
 }
 
+# Deterministic local-feature handlers registered by the plugins. These are
+# the only actions the registry may route without going through the model.
+FEATURE_ACTIONS = {
+    "asoul.py": ("today_live", "tomorrow_live", "week_live"),
+    "commands.py": ("ranking",),
+    "zhijiang.py": ("zhijiang_schedule",),
+}
+
 def discover_plugins(plugin_dir: Path = PLUGIN_DIR) -> dict[str, dict]:
     """Return plugin module name -> commands and aliases found in source."""
 
@@ -68,8 +76,31 @@ def discover_rules(plugin_dir: Path = PLUGIN_DIR) -> tuple[set[tuple[str, str]],
     return found, total
 
 
+def discover_feature_actions(plugin_dir: Path = PLUGIN_DIR) -> dict[str, tuple[str, ...]]:
+    """Return plugin file -> local feature action names from the decorators."""
+
+    result: dict[str, tuple[str, ...]] = {}
+    pattern = re.compile(r"@register_local_feature\(([^)]*)\)")
+    for path in sorted(plugin_dir.glob("*.py")):
+        if path.stem == "__init__":
+            continue
+        names = tuple(
+            match.group(1)
+            for call in pattern.findall(path.read_text(encoding="utf-8"))
+            for match in re.finditer(r"[\"']([^\"']+)[\"']", call)
+        )
+        if names:
+            result[path.name] = names
+    return result
+
+
 def load_registry(path: Path = REGISTRY_PATH) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+FEATURE_ACTIONS_AS_SETS = {
+    name: set(actions) for name, actions in FEATURE_ACTIONS.items()
+}
 
 
 def validate(registry: dict, plugin_dir: Path = PLUGIN_DIR) -> list[str]:
@@ -85,6 +116,8 @@ def validate(registry: dict, plugin_dir: Path = PLUGIN_DIR) -> list[str]:
     registered_plugins: set[str] = set()
     registered_rules: set[tuple[str, str]] = set()
     registered_plugin_rules: set[tuple[str, str]] = set()
+    seen_local_actions: dict[str, str] = {}
+    registered_local_actions: dict[str, set[str]] = {}
 
     for entry in skills:
         if not isinstance(entry, dict):
@@ -139,6 +172,15 @@ def validate(registry: dict, plugin_dir: Path = PLUGIN_DIR) -> list[str]:
             registered_rules.add((plugin, str(rule)))
         for rule in entry.get("plugin_rules") or []:
             registered_plugin_rules.add((plugin, str(rule)))
+        for action in entry.get("local_actions") or []:
+            action = str(action)
+            if action in seen_local_actions:
+                errors.append(
+                    f"local action {action!r} registered in both "
+                    f"{seen_local_actions[action]} and {skill_id}"
+                )
+            seen_local_actions[action] = skill_id
+            registered_local_actions.setdefault(plugin, set()).add(action)
 
     missing_plugins = sorted(set(plugins) - registered_plugins)
     if missing_plugins:
@@ -191,6 +233,27 @@ def validate(registry: dict, plugin_dir: Path = PLUGIN_DIR) -> list[str]:
         errors.append(
             f"on_message matcher coverage mismatch: source={discovered_total} "
             f"registry={covered_matchers}"
+        )
+
+    discovered_actions = discover_feature_actions(plugin_dir)
+    expected_actions = {name: set(actions) for name, actions in discovered_actions.items()}
+    if expected_actions != FEATURE_ACTIONS_AS_SETS:
+        errors.append(
+            "local feature action table is out of sync: "
+            f"source={expected_actions} declared={FEATURE_ACTIONS_AS_SETS}"
+        )
+    for plugin_name, actions in expected_actions.items():
+        if registered_local_actions.get(plugin_name, set()) != actions:
+            errors.append(
+                f"{plugin_name}: local actions missing from registry: "
+                f"expected={sorted(actions)} "
+                f"registered={sorted(registered_local_actions.get(plugin_name, set()))}"
+            )
+    extra_action_plugins = sorted(set(registered_local_actions) - set(expected_actions))
+    if extra_action_plugins:
+        errors.append(
+            "registry declares local actions for plugins without handlers: "
+            + ", ".join(extra_action_plugins)
         )
 
     return errors

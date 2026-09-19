@@ -105,6 +105,7 @@ PLUGIN_SPECS = (
         ("onebot",),
         after=("commands",),
     ),
+    PluginSpec("skill_admin", "bot.plugins.skill_admin", "技能审计", "运行维护", ("onebot",)),
     PluginSpec("hourly_announcements", "bot.plugins.hourly_announcements", "整点报时", "群聊互动", ("onebot",)),
     PluginSpec("official_qq", "bot.plugins.official_qq", "官方 QQ 模式", "备用传输", ("qq_openapi",)),
 )

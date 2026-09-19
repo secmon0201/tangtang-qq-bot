@@ -685,6 +685,25 @@
         "zhijiang_schedule"
       ],
       "feature_key": ""
+    },
+    {
+      "skill_id": "skill_admin",
+      "version": "1.0.0",
+      "name": "技能审计",
+      "kind": "admin",
+      "plugin": "bot/plugins/skill_admin.py",
+      "commands": [
+        {
+          "command": "技能",
+          "aliases": []
+        }
+      ],
+      "rules": [],
+      "plugin_rules": [],
+      "local_actions": [],
+      "feature_key": "",
+      "owner": "project",
+      "deprecated": false
     }
   ]
 }

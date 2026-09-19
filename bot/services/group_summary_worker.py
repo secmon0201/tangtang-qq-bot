@@ -20,6 +20,7 @@ async def run_group_summaries() -> None:
     provider = TangtangProvider()
     history = TangtangDb()
     prepared: dict[int, GroupSummaryWorker] = {}
+    seeded: set[int] = set()
     while True:
         try:
             config = config_loader.load()
@@ -29,14 +30,23 @@ async def run_group_summaries() -> None:
                     for group_id in group_domains().all_group_ids()
                     if engine.chat_enabled(group_id, False) or engine.chat_enabled(group_id, True)
                 )
+                # Seed the tail for every group before the first model call so
+                # later groups cannot be blocked behind an active one.
+                pending_seed = tuple(group_id for group_id in eligible if group_id not in seeded)
+                if pending_seed:
+                    tails: dict[int, int] = {}
+                    for group_id in pending_seed:
+                        persona = engine.store.selection(group_id)[0]
+                        group_db = engine.history(persona, history)
+                        tails[group_id] = await asyncio.to_thread(
+                            group_db.group_summary_seed, group_id, now=_timestamp()
+                        )
+                        seeded.add(group_id)
                 if set(prepared) != set(eligible):
                     prepared.clear()
                     for group_id in eligible:
                         persona = engine.store.selection(group_id)[0]
                         group_db = engine.history(persona, history)
-                        await asyncio.to_thread(
-                            group_db.group_summary_seed, group_id, now=_timestamp()
-                        )
                         prepared[group_id] = GroupSummaryWorker(
                             GroupSummaryService(
                                 group_db,

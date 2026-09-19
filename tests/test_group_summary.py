@@ -124,6 +124,25 @@ def test_summary_failure_does_not_advance_cursor(tmp_path):
     assert db.group_summary_sources(1001) == []
 
 
+def test_first_run_seeds_cursor_at_tail_without_replaying_history(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    for index in range(3):
+        db.insert_group_message(
+            group_id=1001, user_id=1, nickname="甲", text=f"旧消息{index}",
+            message_id=str(index), created_at="2026-09-19T09:00:00+08:00",
+        )
+    seeded = db.group_summary_seed(1001, now="2026-09-19T10:00:00+08:00")
+    assert seeded == 3
+    assert db.group_summary_pending(1001) == []
+    db.insert_group_message(
+        group_id=1001, user_id=1, nickname="甲", text="上线后的新消息",
+        message_id="new", created_at="2026-09-19T10:01:00+08:00",
+    )
+    assert [row["text"] for row in db.group_summary_pending(1001)] == ["上线后的新消息"]
+    # Seeding is idempotent and never rewinds an existing cursor.
+    assert db.group_summary_seed(1001, now="2026-09-19T10:02:00+08:00") == 0
+
+
 def test_topic_routing_reuses_existing_topic(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.group_summary_merge(

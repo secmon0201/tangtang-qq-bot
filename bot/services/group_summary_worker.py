@@ -27,9 +27,11 @@ async def run_group_summaries() -> None:
                     if not (engine.chat_enabled(group_id, False) or engine.chat_enabled(group_id, True)):
                         continue
                     persona = engine.store.selection(group_id)[0]
+                    group_db = engine.history(persona, history)
+                    await asyncio.to_thread(group_db.group_summary_seed, group_id, now=_timestamp())
                     worker = GroupSummaryWorker(
                         GroupSummaryService(
-                            engine.history(persona, history),
+                            group_db,
                             provider,
                             config_loader,
                             chat_id=lambda: _timestamp(),

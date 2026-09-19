@@ -592,6 +592,35 @@ class TangtangDb:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def group_summary_seed(self, group_id: int, *, now: str) -> int:
+        """First run starts at the current tail; history is not replayed."""
+
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                existing = conn.execute(
+                    "SELECT 1 FROM group_summary_cursors WHERE group_id = ?",
+                    (int(group_id),),
+                ).fetchone()
+                if existing is not None:
+                    conn.execute("COMMIT")
+                    return 0
+                row = conn.execute(
+                    "SELECT MAX(id) FROM tangtang_group_messages WHERE group_id = ?",
+                    (int(group_id),),
+                ).fetchone()
+                newest = int(row[0] or 0)
+                conn.execute(
+                    "INSERT INTO group_summary_cursors "
+                    "(group_id, applied_message_id, updated_at) VALUES (?, ?, ?)",
+                    (int(group_id), newest, str(now)),
+                )
+                conn.execute("COMMIT")
+                return newest
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
     def group_summary_advance(self, group_id: int, message_id: int, *, now: str) -> None:
         with self._connect() as conn:
             conn.execute(

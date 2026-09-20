@@ -70,6 +70,9 @@ def rig(monkeypatch, tmp_path):
     ("娅娅，要一个娅娅的美图", [("denia_gallery", "")]),
     ("娅娅，想看你的自拍", [("denia_gallery", "")]),
     ("娅娅，发一张照片", [("denia_gallery", "")]),
+    ("娅娅，来到好看的照片", [("denia_gallery", "")]),
+    ("娅娅，来张好看的照片", [("denia_gallery", "")]),
+    ("娅娅，给我看看你的美照", [("denia_gallery", "")]),
 ])
 def test_natural_requests_preserve_merged_group_identity(rig, text, expected):
     original = group_message(group_id=1001, text=text)

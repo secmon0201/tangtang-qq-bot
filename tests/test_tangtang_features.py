@@ -72,6 +72,22 @@ def test_ranking_mentions_without_a_request_still_use_ai_router():
     assert classify_local_feature("糖糖觉得今天的发言榜好看吗") is None
 
 
+def test_denia_gallery_requests_allow_descriptive_good_looking_phrases():
+    for text in (
+        "娅娅，来到好看的照片",
+        "娅娅，来张好看的照片",
+        "娅娅，给我看看你的美照",
+    ):
+        decision = classify_local_feature(text, call_keyword="娅娅")
+        assert decision is not None, text
+        assert decision.action == "denia_gallery"
+
+
+def test_photo_evaluation_and_negative_requests_do_not_send_gallery_images():
+    assert classify_local_feature("娅娅，看看你的照片好看吗", call_keyword="娅娅") is None
+    assert classify_local_feature("娅娅，不要发照片", call_keyword="娅娅") is None
+
+
 def test_mini_game_rankings_route_deterministically():
     cases = {
         "看看转盘榜": ("mini_game_roulette", "群"),

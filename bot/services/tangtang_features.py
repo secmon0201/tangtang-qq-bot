@@ -93,10 +93,11 @@ _MINI_GAME_RANK_RE = re.compile(
 _NTE_RANK_RE = re.compile(r"(异环|nte)", re.IGNORECASE)
 _WUWA_RANK_RE = re.compile(r"(鸣潮|ww)", re.IGNORECASE)
 _GALLERY_REQUEST_RE = re.compile(
-    r"想看|要看|看看|看一下|看一张|来一张|来点|发一张|发个|发点|"
+    r"想看|要看|看看|看一下|看一张|来一张|来张|来到|来点|发一张|发个|发点|"
     r"给我|要一个|要一张|求一张"
 )
 _GALLERY_MEDIA_RE = re.compile(r"美图|自拍|照片|写真|美照|好看的图(?:片)?")
+_GALLERY_EVALUATION_RE = re.compile(r"(?:好看吗|好不好看|怎么样)$")
 
 
 def classify_extra_feature(text: str) -> FeatureDecision | None:
@@ -251,16 +252,19 @@ def classify_local_feature(
         for label in cluster_labels
         if str(label).strip()
     }
-    if _EVALUATIVE_RE.search(normalized) or re.search(r"(?:不要|别|不用|不想|不需要).*(?:查|看|发|排行|榜|直播|缘分|老婆)", normalized):
-        return None
-    if re.search(r"昨天|昨日|前天|上周|上个月|上月|去年", normalized):
+    if re.search(r"(?:不要|别|不用|不想|不需要).*(?:查|看|发|排行|榜|直播|缘分|老婆|美图|自拍|照片|写真|美照)", normalized):
         return None
     if (
         call_keyword != "糖糖"
         and _GALLERY_MEDIA_RE.search(normalized)
         and _GALLERY_REQUEST_RE.search(normalized)
+        and not _GALLERY_EVALUATION_RE.search(normalized)
     ):
         return FeatureDecision("clear", "denia_gallery", "", False, "唔，给你挑一张。")
+    if _EVALUATIVE_RE.search(normalized):
+        return None
+    if re.search(r"昨天|昨日|前天|上周|上个月|上月|去年", normalized):
+        return None
     wife_query = re.search(r"看|查|谁|什么|(?:我的|今日)(?:老婆|缘分)$", normalized)
     if wife_query and not re.search(r"抽|强取|离婚|解缘|清空", normalized):
         if re.search(r"(?:群里|本群|群)(?:的|今天的|今日)?(?:缘分|老婆)", normalized):

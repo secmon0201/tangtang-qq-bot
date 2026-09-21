@@ -29,6 +29,7 @@ from bot.services.tangtang_chat import (
 )
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_media import ImageReference, MediaResolution, VisionImage
+from bot.services.agent_context import ContextEnvelope
 
 
 def group_message(
@@ -101,6 +102,7 @@ class FakeProvider:
         self.histories: list[list[dict]] = []
         self.prompts: list[str] = []
         self.images: list[tuple[VisionImage, ...]] = []
+        self.envelopes: list[ContextEnvelope | None] = []
 
     async def generate(self, config, persona, prompt, images=()):
         self.calls += 1
@@ -114,12 +116,13 @@ class FakeProvider:
         }
 
     async def generate_agent(
-        self, config, persona, prompt, tools=(), history=(), images=()
+        self, config, persona, prompt, tools=(), history=(), images=(), envelope=None
     ):
         self.calls += 1
         self.prompts.append(prompt)
         self.histories.append(list(history))
         self.images.append(tuple(images))
+        self.envelopes.append(envelope)
         if self.tool_sequence and self.calls <= len(self.tool_sequence):
             text, calls = self.tool_sequence[self.calls - 1]
             return AgentResult(
@@ -213,6 +216,9 @@ def test_config_validation():
     assert config.call_keyword == "糖糖"
     assert config.ignore_probability == 0.10
     assert config.soft_blacklist_ignore_probability == 0.0
+    assert config.context_layout == "v1"
+    assert enabled_config(TANGTANG_CONTEXT_LAYOUT="shadow").context_layout == "shadow"
+    assert enabled_config(TANGTANG_CONTEXT_LAYOUT="v2").context_layout == "v2"
     disabled = TangtangConfig.from_values({"TANGTANG_ENABLED": "false"}, (1001,))
     assert not disabled.enabled
     assert disabled.ignore_probability == 0.05
@@ -224,6 +230,8 @@ def test_config_validation():
         enabled_config(TANGTANG_GROUP_IDS="9999")
     with pytest.raises(ValueError):
         enabled_config(TANGTANG_API_KEY="")
+    with pytest.raises(ValueError):
+        enabled_config(TANGTANG_CONTEXT_LAYOUT="future")
 
 
 def test_config_defaults_to_deepseek_flash_for_dialog():
@@ -401,6 +409,41 @@ def test_chat_payload_respects_reasoning_effort():
     payload = TangtangProvider._chat_payload(config, "persona", "prompt")
     assert payload["thinking"] == {"type": "enabled"}
     assert payload["reasoning_effort"] == "low"
+
+
+def test_context_envelope_payload_order_matches_both_api_styles():
+    envelope = ContextEnvelope.create(
+        persona="persona",
+        conversation_items=(
+            {"type": "message", "role": "user", "content": "old-user"},
+            {"type": "message", "role": "assistant", "content": "old-assistant"},
+        ),
+        compacted_snapshot="facts",
+        dynamic_status="status",
+        current_input="current-user",
+        tools=TOOL_SCHEMAS,
+    )
+    history = ({
+        "tool_calls": ({"call_id": "c1", "name": "search_zhijiang_knowledge",
+                        "arguments": '{"query":"嘉然"}'},),
+        "outputs": ({"call_id": "c1", "output": '{"results":[]}'},),
+    },)
+    responses = TangtangProvider._responses_payload(
+        enabled_config(), "ignored", "ignored", tools=TOOL_SCHEMAS,
+        history=history, envelope=envelope,
+    )
+    chat = TangtangProvider._chat_payload(
+        enabled_config(TANGTANG_API_STYLE="chat_completions"), "ignored", "ignored",
+        tools=TOOL_SCHEMAS, history=history, envelope=envelope,
+    )
+    assert [item.get("role") or item.get("type") for item in responses["input"]] == [
+        "system", "user", "assistant", "user", "function_call", "function_call_output",
+    ]
+    assert [item["role"] for item in chat["messages"]] == [
+        "system", "user", "assistant", "user", "assistant", "tool",
+    ]
+    assert responses["input"][3]["content"][0]["text"] == chat["messages"][3]["content"]
+    assert responses["tools"][0]["name"] == chat["tools"][0]["function"]["name"]
 
 
 def test_reasoning_effort_accepts_official_deepseek_values():
@@ -1156,6 +1199,33 @@ def test_model_reply_records_history_and_usage(tmp_path, monkeypatch):
     assert rows[0]["reply_kind"] == "model"
     assert rows[0]["call_text"] == "糖糖 今天天气怎么样？"
     assert any(event["event"] == "reply" for event in usage_events(usage_dir))
+
+
+@pytest.mark.parametrize(
+    ("layout", "has_envelope", "prompt_contains_current"),
+    (("v1", False, True), ("shadow", False, True), ("v2", True, False)),
+)
+def test_context_layout_switch_controls_provider_payload(
+    tmp_path, monkeypatch, layout, has_envelope, prompt_contains_current
+):
+    service, _sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="糖糖 唯一本轮内容"),
+        enabled_config(TANGTANG_CONTEXT_LAYOUT=layout),
+    ))
+    assert (provider.envelopes[-1] is not None) is has_envelope
+    assert provider.calls == 1
+    assert ("消息：糖糖 唯一本轮内容" in provider.prompts[-1]) is prompt_contains_current
+    if has_envelope:
+        assert provider.envelopes[-1].current_input == "糖糖 唯一本轮内容"
+        assert "消息：见 [当前输入]" in provider.envelopes[-1].dynamic_status
+    events = usage_events(usage_dir)
+    assert events[-1]["layout_version"] == (
+        "agent-context-v2" if layout == "v2" else layout
+    )
+    assert bool(events[-1]["shadow_payload_hash"]) is (layout == "shadow")
+    assert events[-1]["shadow_payload_changed"] is (True if layout == "shadow" else None)
 
 
 def test_model_silent_does_not_send(tmp_path, monkeypatch):

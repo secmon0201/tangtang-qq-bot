@@ -57,6 +57,7 @@ from bot.services.tangtang_reply import (
     reply_style_instruction,
 )
 from bot.services.local_skill_contract import skill_prompt
+from bot.services.agent_context import ContextEnvelope, history_items, stable_hash
 from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
@@ -389,6 +390,7 @@ class TangtangConfig:
     tools_enabled: bool = True
     tool_loop_max: int = 3
     humanize_enabled: bool = True
+    context_layout: str = "v1"
 
     @classmethod
     def disabled(cls, reason: str = "TANGTANG_ENABLED=false") -> "TangtangConfig":
@@ -529,6 +531,9 @@ class TangtangConfig:
         history_chars = _int(values, "TANGTANG_HISTORY_CHARS", 1000, 0, 24000)
         tools_enabled = _bool(values, "TANGTANG_TOOLS_ENABLED", True)
         tool_loop_max = _int(values, "TANGTANG_TOOL_LOOP_MAX", 3, 1, 8)
+        context_layout = _raw(values, "TANGTANG_CONTEXT_LAYOUT", "v1").lower()
+        if context_layout not in {"v1", "shadow", "v2"}:
+            raise ValueError("TANGTANG_CONTEXT_LAYOUT must be v1, shadow or v2")
         vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
         vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "low").lower()
         if vision_detail not in VISION_DETAIL_LEVELS:
@@ -637,6 +642,7 @@ class TangtangConfig:
                 tools_enabled=tools_enabled,
                 tool_loop_max=tool_loop_max,
                 humanize_enabled=humanize_enabled,
+                context_layout=context_layout,
             )
         if not group_ids:
             raise ValueError("TANGTANG_GROUP_IDS is required when TANGTANG_ENABLED=true")
@@ -697,6 +703,7 @@ class TangtangConfig:
             tools_enabled=tools_enabled,
             tool_loop_max=tool_loop_max,
             humanize_enabled=humanize_enabled,
+            context_layout=context_layout,
         )
 
     def proactive_values_for(self, group_id: int) -> tuple[float, int, int]:
@@ -971,6 +978,7 @@ class TangtangProvider:
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
         images: tuple[VisionImage, ...] = (),
+        envelope: ContextEnvelope | None = None,
     ) -> AgentResult:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -979,11 +987,13 @@ class TangtangProvider:
         }
         if config.api_style == "responses":
             payload = self._responses_payload(
-                config, persona, prompt, tools=tools, history=history, images=images
+                config, persona, prompt, tools=tools, history=history, images=images,
+                envelope=envelope,
             )
         else:
             payload = self._chat_payload(
-                config, persona, prompt, tools=tools, history=history, images=images
+                config, persona, prompt, tools=tools, history=history, images=images,
+                envelope=envelope,
             )
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
@@ -1015,7 +1025,12 @@ class TangtangProvider:
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
         images: tuple[VisionImage, ...] = (),
+        envelope: ContextEnvelope | None = None,
     ) -> dict[str, Any]:
+        if envelope is not None:
+            return TangtangProvider._responses_envelope_payload(
+                config, envelope, tools=tools, history=history, images=images
+            )
         user_content: list[dict[str, Any]] = [{"type": "input_text", "text": prompt}]
         for image in images:
             user_content.extend(
@@ -1062,6 +1077,54 @@ class TangtangProvider:
         return payload
 
     @staticmethod
+    def _responses_envelope_payload(
+        config: TangtangConfig,
+        envelope: ContextEnvelope,
+        *,
+        tools: tuple[dict[str, Any], ...] = (),
+        history: tuple[dict[str, Any], ...] = (),
+        images: tuple[VisionImage, ...] = (),
+    ) -> dict[str, Any]:
+        semantic = (*envelope.canonical_semantic_items(), *history_items(history))
+        input_items: list[dict[str, Any]] = []
+        for item in semantic:
+            item_type = item.get("type")
+            if item_type == "message":
+                role = str(item.get("role") or "user")
+                content_type = "output_text" if role == "assistant" else "input_text"
+                content: list[dict[str, Any]] = [
+                    {"type": content_type, "text": str(item.get("content") or "")}
+                ]
+                if role == "user" and item is semantic[len(envelope.conversation_items) + 1]:
+                    for image in images:
+                        content.extend((
+                            {"type": "input_text", "text": f"[{image.label}]"},
+                            {"type": "input_image", "image_url": image.data_url,
+                             "detail": config.vision_detail},
+                        ))
+                input_items.append({"role": role, "content": content})
+            elif item_type == "tool_call":
+                input_items.append({
+                    "type": "function_call", "call_id": item["call_id"],
+                    "name": item["name"], "arguments": item["arguments"],
+                })
+            elif item_type == "tool_result":
+                input_items.append({
+                    "type": "function_call_output", "call_id": item["call_id"],
+                    "output": item["output"],
+                })
+        payload: dict[str, Any] = {
+            "model": config.model,
+            "input": input_items,
+            "max_output_tokens": config.max_output_tokens,
+        }
+        if tools:
+            payload["tools"] = list(tools)
+        if config.reasoning_effort:
+            payload["reasoning"] = {"effort": config.reasoning_effort}
+        return payload
+
+    @staticmethod
     def _chat_payload(
         config: TangtangConfig,
         persona: str,
@@ -1070,7 +1133,12 @@ class TangtangProvider:
         tools: tuple[dict[str, Any], ...] = (),
         history: tuple[dict[str, Any], ...] = (),
         images: tuple[VisionImage, ...] = (),
+        envelope: ContextEnvelope | None = None,
     ) -> dict[str, Any]:
+        if envelope is not None:
+            return TangtangProvider._chat_envelope_payload(
+                config, envelope, tools=tools, history=history, images=images
+            )
         user_content: str | list[dict[str, Any]] = prompt
         if images:
             multimodal: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -1115,6 +1183,71 @@ class TangtangProvider:
                         "content": output["output"],
                     }
                 )
+        payload: dict[str, Any] = {
+            "model": config.model,
+            "messages": messages,
+            "max_completion_tokens": config.max_output_tokens,
+        }
+        if tools:
+            payload["tools"] = [
+                {"type": "function", "function": {k: v for k, v in tool.items() if k != "type"}}
+                for tool in tools
+            ]
+        if config.reasoning_effort == "none":
+            payload["thinking"] = {"type": "disabled"}
+        else:
+            payload["thinking"] = {"type": "enabled"}
+            payload["reasoning_effort"] = config.reasoning_effort
+        return payload
+
+    @staticmethod
+    def _chat_envelope_payload(
+        config: TangtangConfig,
+        envelope: ContextEnvelope,
+        *,
+        tools: tuple[dict[str, Any], ...] = (),
+        history: tuple[dict[str, Any], ...] = (),
+        images: tuple[VisionImage, ...] = (),
+    ) -> dict[str, Any]:
+        semantic = (*envelope.canonical_semantic_items(), *history_items(history))
+        messages: list[dict[str, Any]] = []
+        pending_calls: list[dict[str, Any]] = []
+
+        def flush_calls() -> None:
+            if pending_calls:
+                messages.append({"role": "assistant", "content": None,
+                                 "tool_calls": list(pending_calls)})
+                pending_calls.clear()
+
+        current_index = len(envelope.conversation_items) + 1
+        for index, item in enumerate(semantic):
+            item_type = item.get("type")
+            if item_type == "tool_call":
+                pending_calls.append({
+                    "id": item["call_id"], "type": "function",
+                    "function": {"name": item["name"], "arguments": item["arguments"]},
+                })
+                continue
+            flush_calls()
+            if item_type == "tool_result":
+                messages.append({"role": "tool", "tool_call_id": item["call_id"],
+                                 "content": item["output"]})
+                continue
+            if item_type != "message":
+                continue
+            content: str | list[dict[str, Any]] = str(item.get("content") or "")
+            if index == current_index and images:
+                multimodal: list[dict[str, Any]] = [{"type": "text", "text": content}]
+                for image in images:
+                    multimodal.extend((
+                        {"type": "text", "text": f"[{image.label}]"},
+                        {"type": "image_url", "image_url": {
+                            "url": image.data_url, "detail": config.vision_detail,
+                        }},
+                    ))
+                content = multimodal
+            messages.append({"role": item.get("role"), "content": content})
+        flush_calls()
         payload: dict[str, Any] = {
             "model": config.model,
             "messages": messages,
@@ -1795,6 +1928,9 @@ class TangtangService:
                 "cache_miss_tokens": tokens.get("cache_miss_tokens"),
                 "model_calls": int(tokens.get("model_calls") or 0),
                 "tool_rounds": int(tokens.get("tool_rounds") or 0),
+                "layout_version": str(tokens.get("layout_version") or config.context_layout),
+                "shadow_payload_hash": str(tokens.get("shadow_payload_hash") or ""),
+                "shadow_payload_changed": tokens.get("shadow_payload_changed"),
                 "static_prefix_hash": str(tokens.get("static_prefix_hash") or ""),
                 "tool_schema_hash": str(tokens.get("tool_schema_hash") or ""),
                 "static_prefix_chars": int(tokens.get("static_prefix_chars") or 0),
@@ -1853,6 +1989,7 @@ class TangtangService:
         proactive: bool = False,
         black_meme_instruction: str | None = None,
         media_resolution: MediaResolution | None = None,
+        separate_current_input: bool = False,
     ) -> str:
         group_id = int(event.group_id)
         context_lines = self._group_context_lines(group_id, config.group_context_messages)
@@ -1930,7 +2067,7 @@ class TangtangService:
             f"被@状态：{'否' if proactive else ('是' if mentioned else '否')}",
             f"消息媒体：{media_summary}",
             f"引用消息：{reply_text if reply_text else '无'}",
-            f"消息：{call_text}",
+            f"消息：{'见 [当前输入]' if separate_current_input else call_text}",
             "",
         ]
         if media_resolution is not None and media_resolution.images:
@@ -2440,6 +2577,7 @@ class TangtangService:
                 proactive=proactive,
                 black_meme_instruction=black_meme_instruction,
                 media_resolution=media_resolution,
+                separate_current_input=config.context_layout in {"shadow", "v2"},
             )
             context = self._turn.get()
             voice_candidate = False
@@ -2469,32 +2607,62 @@ class TangtangService:
             if continuation is not None and not continuation.admit():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
-            canonical_tools = json.dumps(tools, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            envelope = ContextEnvelope.create(
+                persona=persona,
+                dynamic_status=prompt,
+                current_input=current_text,
+                images=media_resolution.images,
+                tools=tools,
+            )
+            request_envelope = envelope if config.context_layout == "v2" else None
+            provider_prompt = prompt
+            if config.context_layout == "shadow":
+                provider_prompt = prompt.replace(
+                    "消息：见 [当前输入]", f"消息：{current_text}", 1
+                )
+            shadow_payload_hash = ""
+            shadow_payload_changed: bool | None = None
+            if config.context_layout == "shadow":
+                payload_builder = (
+                    TangtangProvider._responses_payload
+                    if config.api_style == "responses"
+                    else TangtangProvider._chat_payload
+                )
+                legacy_payload = payload_builder(
+                    config, persona, provider_prompt, tools=tools,
+                    images=media_resolution.images,
+                )
+                candidate_payload = payload_builder(
+                    config, persona, provider_prompt, tools=tools,
+                    images=media_resolution.images, envelope=envelope,
+                )
+                legacy_hash = stable_hash(legacy_payload)
+                candidate_hash = stable_hash(candidate_payload)
+                shadow_payload_changed = legacy_hash != candidate_hash
+                shadow_payload_hash = stable_hash((legacy_hash, candidate_hash))
             telemetry = {
-                "static_prefix_hash": hashlib.sha256(
-                    ("q1\0" + persona + "\0" + canonical_tools).encode("utf-8")
-                ).hexdigest(),
-                "tool_schema_hash": hashlib.sha256(canonical_tools.encode("utf-8")).hexdigest(),
-                "static_prefix_chars": len(persona) + len(canonical_tools),
-                "conversation_chars": 0,
-                "snapshot_chars": 0,
-                "dynamic_status_chars": max(0, len(prompt) - len(current_text)),
-                "current_input_chars": len(current_text),
+                "static_prefix_hash": envelope.static_prefix_hash,
+                "tool_schema_hash": envelope.tool_schema_hash,
+                **envelope.layer_sizes(),
+                "layout_version": envelope.layout_version if request_envelope else config.context_layout,
+                "shadow_payload_hash": shadow_payload_hash,
+                "shadow_payload_changed": shadow_payload_changed,
             }
-            self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens={})
+            self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens=telemetry)
             history: list[dict[str, Any]] = []
             if media_resolution.images:
                 result = await self.provider.generate_agent(
                     config,
                     persona,
-                    prompt,
+                    provider_prompt,
                     tools,
                     tuple(history),
                     media_resolution.images,
+                    request_envelope,
                 )
             else:
                 result = await self.provider.generate_agent(
-                    config, persona, prompt, tools, tuple(history)
+                    config, persona, provider_prompt, tools, tuple(history), (), request_envelope
                 )
             usage = dict(result.usage)
             loops = 0
@@ -2505,14 +2673,15 @@ class TangtangService:
                     result = await self.provider.generate_agent(
                         config,
                         persona,
-                        prompt,
+                        provider_prompt,
                         tools,
                         tuple(history),
                         media_resolution.images,
+                        request_envelope,
                     )
                 else:
                     result = await self.provider.generate_agent(
-                        config, persona, prompt, tools, tuple(history)
+                        config, persona, provider_prompt, tools, tuple(history), (), request_envelope
                     )
                 usage = self._merge_usage(usage, result.usage)
                 loops += 1
@@ -2528,7 +2697,7 @@ class TangtangService:
                     if not self._turn_current():
                         return
                     repaired = await self.provider.generate_agent(config, persona,
-                        prompt + '\n[本轮校验修复，以下为最新状态]\n' + repair, (), ())
+                        provider_prompt + '\n[本轮校验修复，以下为最新状态]\n' + repair, (), ())
                     usage = self._merge_usage(usage, repaired.usage)
                     answer_raw = cognition.repaired_reply(repaired.text)
             plan = parse_reply_plan(

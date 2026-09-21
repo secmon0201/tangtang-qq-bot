@@ -22,7 +22,12 @@ from bot.services.mini_game_reports import MiniGameReportRenderer
 from bot.services.mini_games import BOMB, DICE, GUESS, ROULETTE, GameEvent, MiniGameService
 from bot.services.qq_platform import call_qq_action
 from bot.services.media import local_image_segment
-from bot.application.local_features import FeatureRequest, register_local_feature
+from bot.application.local_features import (
+    FeatureRequest,
+    StaleFeatureState,
+    register_local_feature,
+)
+from bot.services.action_state import action_state_versions
 from bot.services.roles import is_super_admin
 from bot.services.runtime import database, group_domains, passive_settings
 
@@ -186,6 +191,22 @@ async def _mentioned_member(bot: Bot, event: GroupMessageEvent) -> tuple[int, st
     member = _unwrap(response)
     name = str(member.get("card") or member.get("nickname") or "这位群友")[:40]
     return target_id, name
+
+
+async def _member_by_id(bot: Bot, group_id: int, user_id: int) -> tuple[int, str] | None:
+    try:
+        response = await call_qq_action(
+            bot,
+            "get_group_member_info",
+            group_id=int(group_id),
+            user_id=int(user_id),
+            no_cache=False,
+        )
+    except Exception:
+        return None
+    member = _unwrap(response)
+    name = str(member.get("card") or member.get("nickname") or "这位群友")[:40]
+    return int(user_id), name
 
 
 async def _reply_failed_throw(
@@ -378,6 +399,84 @@ async def _run_chat_game_help(
 ) -> None:
     del request
     await _send_menu(bot, matcher, int(event.group_id))
+
+
+@register_local_feature(
+    "roulette_load", "roulette_fire", "bomb_load", "bomb_pass",
+    "idiom_bomb_load", "idiom_bomb_pass", "dice_start", "guess_start",
+    "guess_submit",
+)
+async def _run_chat_game_action(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    group_id = int(event.group_id)
+    actor_id = int(event.user_id)
+    async with group_locks[group_id]:
+        current_version = action_state_versions(db, group_id).get(request.action, "")
+        if not request.state_version or current_version != request.state_version:
+            raise StaleFeatureState(request.action)
+        target: tuple[int, str] | None = None
+        if request.action in {"bomb_pass", "idiom_bomb_pass"}:
+            if request.target_user_id is None or request.target_user_id == actor_id:
+                await _reply_failed_throw(matcher, event)
+                return
+            target = await _member_by_id(bot, group_id, request.target_user_id)
+            if target is None:
+                await _reply_failed_throw(matcher, event)
+                return
+        if request.action == "roulette_load":
+            outcome = service.start_roulette(group_id, actor_id, _nickname(event))
+        elif request.action == "roulette_fire":
+            outcome = service.fire(group_id, actor_id, _nickname(event))
+        elif request.action == "bomb_load":
+            outcome = service.start_bomb(group_id, actor_id, _nickname(event))
+        elif request.action == "idiom_bomb_load":
+            outcome = service.start_bomb(
+                group_id,
+                actor_id,
+                _nickname(event),
+                idiom_mode=True,
+                idiom_ruleset=str(request.parameter("mode") or "entertainment"),
+                duration_seconds=int(request.parameter("duration_seconds") or 120),
+            )
+        elif request.action in {"bomb_pass", "idiom_bomb_pass"}:
+            assert target is not None
+            outcome = service.throw_bomb(
+                group_id,
+                actor_id,
+                _nickname(event),
+                target[0],
+                target[1],
+                idiom=(
+                    str(request.parameter("idiom") or "").strip()
+                    if request.action == "idiom_bomb_pass" else None
+                ),
+            )
+        elif request.action == "dice_start":
+            outcome = service.roll_dice(group_id, actor_id, _nickname(event))
+        elif request.action == "guess_start":
+            outcome = service.start_guess(group_id, actor_id, _nickname(event))
+        else:
+            outcome = service.guess_number(
+                group_id,
+                actor_id,
+                _nickname(event),
+                int(request.parameter("value") or 0),
+            )
+        if outcome.kind in {
+            "roulette_started", "bomb_started", "bomb_idiom_started", "dice_roll",
+            "guess_started",
+        }:
+            asyncio.create_task(_remember_group_name(bot, group_id))
+        if outcome.kind == "guess_cursed":
+            try:
+                await call_qq_action(bot, "delete_msg", message_id=int(event.message_id))
+            except Exception:
+                logger.warning("Cursed guess recall failed for Agent action", exc_info=True)
+        await _send_event(matcher, outcome, bot)
 
 
 async def _send_ranking(

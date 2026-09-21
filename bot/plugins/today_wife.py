@@ -13,7 +13,12 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, Me
 from nonebot.rule import Rule
 
 from bot.config import settings
-from bot.application.local_features import FeatureRequest, register_local_feature
+from bot.application.local_features import (
+    FeatureRequest,
+    StaleFeatureState,
+    register_local_feature,
+)
+from bot.services.action_state import action_state_versions
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
 from bot.services.mini_game_reports import MiniGameReportRenderer
@@ -269,6 +274,119 @@ async def _chat_wife_query(matcher, bot, event, request: FeatureRequest) -> None
             await _send_personal_archive(matcher, event)
         else:
             await _send_group_story(matcher, event, game_service.group_story(int(event.group_id)))
+
+
+async def _finish_agent_draw(matcher, event, outcome) -> None:
+    group_id = int(event.group_id)
+    actor_id = int(event.user_id)
+    if outcome.kind == "no_candidates":
+        await matcher.finish(service.state_message("no_candidates", group_id, actor_id))
+    record = outcome.record
+    if record is None:
+        await matcher.finish(service.state_message("not_found", group_id, actor_id))
+    avatars = await _avatars([
+        {"user_id": int(record["actor_id"])},
+        {"user_id": int(record["target_id"])},
+    ])
+    archive = game_service.personal_archive(group_id, actor_id)
+    relation = next(
+        (
+            item.get("relation")
+            for item in archive["own"]
+            if int(item.get("draw_index") or 0) == int(record.get("draw_index") or 0)
+        ),
+        {},
+    )
+    if outcome.kind == "existing_divorced":
+        path = renderer.render_divorce(
+            record, service.divorce_lines(record), avatars, relation or {}
+        )
+        await matcher.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+    state = game_service.day_state(group_id)
+    reveal = game_service.draw_reveal(record, relation or {})
+    path = renderer.render_today_wife_game_draw(
+        record,
+        service.story_lines(record),
+        service.context_lines(record),
+        avatars,
+        state,
+        relation or {},
+        draw_reveal=reveal,
+    )
+    if outcome.kind == "drawn" and int(record.get("draw_index") or 0) == 1:
+        await matcher.finish(first_draw_result_message(
+            event.message_id,
+            int(record["target_id"]),
+            path,
+            str(reveal.get("mention_lead") or "今天的缘分悄悄落在了"),
+        ))
+    await matcher.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+
+
+@register_local_feature("wife_draw", "wife_take", "wife_divorce")
+async def _chat_wife_action(matcher, bot, event, request: FeatureRequest) -> None:
+    group_id = int(event.group_id)
+    actor_id = int(event.user_id)
+    if not feature_scopes.is_feature_group_enabled("today_wife", group_id):
+        await matcher.finish()
+        return
+    async with group_locks[group_id]:
+        current_version = action_state_versions(db, group_id).get(request.action, "")
+        if not request.state_version or current_version != request.state_version:
+            raise StaleFeatureState(request.action)
+        if game_service.is_locked(group_id):
+            await matcher.finish(service.state_message("locked", group_id, actor_id))
+        if request.action == "wife_divorce":
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
+            outcome = service.divorce(group_id, actor_id)
+            if outcome.kind == "not_found":
+                await matcher.finish(service.state_message("not_found", group_id, actor_id))
+            if outcome.kind == "already_divorced":
+                await matcher.finish(service.state_message("already_divorced", group_id, actor_id))
+            record = outcome.record
+            if record is None:
+                await matcher.finish(service.state_message("not_found", group_id, actor_id))
+            avatars = await _avatars([{"user_id": int(record["target_id"])}])
+            archive = game_service.personal_archive(group_id, actor_id)
+            relation = next(
+                (
+                    item.get("relation")
+                    for item in archive["own"]
+                    if int(item.get("draw_index") or 0) == int(record.get("draw_index") or 0)
+                ),
+                {},
+            )
+            path = renderer.render_divorce(
+                record, service.divorce_lines(record), avatars, relation or {}
+            )
+            await matcher.finish(MessageSegment.reply(event.message_id) + local_image_segment(path))
+        members = await _fetch_members(bot, group_id)
+        if members is None:
+            await matcher.finish(service.state_message("member_list_unavailable", group_id, actor_id))
+        if request.action == "wife_take":
+            if request.target_user_id is None:
+                await matcher.finish(_force_message("missing"))
+            outcome = service.force_draw(
+                group_id,
+                actor_id,
+                _nickname(event),
+                members,
+                target_id=int(request.target_user_id),
+            )
+            game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
+            if outcome.kind in {"force_existing", "existing", "existing_divorced"}:
+                await matcher.finish(_force_message("existing", outcome.record))
+            if outcome.kind == "force_invalid_target":
+                await matcher.finish(_force_message("invalid"))
+            if outcome.kind != "drawn":
+                await matcher.finish(
+                    service.state_message("no_candidates", group_id, actor_id)
+                    if outcome.kind == "no_candidates" else _force_message("unknown")
+                )
+            await _finish_agent_draw(matcher, event, outcome)
+        outcome = service.draw(group_id, actor_id, _nickname(event), members)
+        game_service.passive_interaction_after_command(group_id, actor_id, event.message_id)
+        await _finish_agent_draw(matcher, event, outcome)
 
 
 @today_wife.handle()

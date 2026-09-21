@@ -1448,6 +1448,7 @@ class TangtangService:
         turn_observer: Callable[[ChatContext, str, str], None] | None = None,
         feature_runner: Callable[..., Awaitable[bool]] | None = None,
         feature_catalog: Callable[[Any], tuple[str, ...]] | None = None,
+        feature_state_provider: Callable[[Any], dict[str, str]] | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self._base_db = db or TangtangDb()
@@ -1455,6 +1456,7 @@ class TangtangService:
         self.turn_observer = turn_observer
         self.feature_runner = feature_runner
         self.feature_catalog = feature_catalog
+        self.feature_state_provider = feature_state_provider
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
         self._cognition_turn: ContextVar[PersonaTurn | None] = ContextVar('cognition_turn', default=None)
@@ -2614,6 +2616,13 @@ class TangtangService:
                 if config.tools_enabled and config.native_action_tools == "true" and not proactive
                 else TOOL_SCHEMAS if config.tools_enabled else ()
             )
+            action_state_versions = (
+                self.feature_state_provider(event)
+                if self.feature_state_provider is not None
+                and config.native_action_tools == "true"
+                and not proactive
+                else {}
+            )
             draft_envelope = ContextEnvelope.create(
                 persona=persona,
                 dynamic_status=prompt,
@@ -2726,6 +2735,7 @@ class TangtangService:
                         mode=mode,
                         usage=usage,
                         proactive=proactive,
+                        state_versions=action_state_versions,
                     )
                     return
                 outputs = tuple(self._run_tool(call) for call in result.tool_calls)
@@ -2862,6 +2872,7 @@ class TangtangService:
         mode: str,
         usage: dict[str, Any],
         proactive: bool = False,
+        state_versions: dict[str, str] | None = None,
     ) -> None:
         context = self._turn.get()
         if proactive or (context and context.proactive):
@@ -2909,6 +2920,8 @@ class TangtangService:
             source="native_tool",
             current=self._turn_current,
             execution_results=execution_results,
+            state_versions=state_versions or {},
+            request_id=self._context_request_id(event),
         )
         result_iter = iter(execution_results)
         outputs: list[dict[str, str]] = []

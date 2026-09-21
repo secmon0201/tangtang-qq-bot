@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS chat_context_compaction_jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_context_compaction_jobs_ready
     ON chat_context_compaction_jobs (status, next_attempt_at, lease_until, id);
+CREATE TABLE IF NOT EXISTS agent_action_executions (
+    execution_key TEXT PRIMARY KEY,
+    action TEXT NOT NULL,
+    state_version TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('reserved', 'delivered', 'failed', 'stale')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_action_executions_updated
+    ON agent_action_executions (updated_at DESC);
 """
 
 
@@ -1463,6 +1473,28 @@ class TangtangDb:
                 "UPDATE chat_context_compaction_jobs SET status = 'failed', lease_until = 0, "
                 "next_attempt_at = ?, error_reason = ?, updated_at = ? WHERE id = ?",
                 (float(now_epoch) + delay, str(reason)[:300], str(now), int(job_id)),
+            )
+
+    def claim_action_execution(
+        self, execution_key: str, *, action: str, state_version: str, now: str
+    ) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO agent_action_executions "
+                "(execution_key, action, state_version, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'reserved', ?, ?)",
+                (str(execution_key), str(action), str(state_version), str(now), str(now)),
+            )
+        return cursor.rowcount == 1
+
+    def finish_action_execution(self, execution_key: str, *, status: str, now: str) -> None:
+        if status not in {"delivered", "failed", "stale"}:
+            raise ValueError("invalid action execution status")
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE agent_action_executions SET status = ?, updated_at = ? "
+                "WHERE execution_key = ? AND status = 'reserved'",
+                (str(status), str(now), str(execution_key)),
             )
 
 

@@ -17,6 +17,7 @@ from bot.application.chat_continuation import ContinuationCoordinator, continuat
 from bot.application.local_features import (
     FeatureRequest,
     FeatureDelivery,
+    StaleFeatureState,
     request_from_decision,
     run_feature_call,
     registered_local_features,
@@ -48,16 +49,19 @@ from bot.services.agent_plan import build_plan, needs_plan
 from bot.services.local_skill_contract import ACTION_CONTRACTS, MAX_SKILL_CALLS, valid_request
 from bot.services.tangtang_media import extract_image_references
 from bot.services.agent_tools import ToolExecutionResult
+from bot.services.action_state import STATE_ACTIONS, action_state_versions
 
 
 PASSIVE_EVENT_MAX_AGE_SECONDS = 120
 _GAME_CODE_RE = re.compile(r"^(?:gs|ys|ww|nte|yh)(?=$|\s|[\u4e00-\u9fff])", re.IGNORECASE)
 _CODEX_COMMAND_RE = re.compile(r"^#\s*codex(?:\s|$)", re.IGNORECASE)
 _TARGETED_READ_ACTIONS = frozenset({"archive_records", "archive_search", "archive_profile"})
+_TARGETED_WRITE_ACTIONS = frozenset({"wife_take", "bomb_pass", "idiom_bomb_pass"})
+_TARGETED_ACTIONS = _TARGETED_READ_ACTIONS | _TARGETED_WRITE_ACTIONS
 
 
 def _resolve_request_target(event: Any, request: FeatureRequest) -> FeatureRequest:
-    if request.action not in _TARGETED_READ_ACTIONS:
+    if request.action not in _TARGETED_ACTIONS:
         return request
     mode = request.parameter("target")
     if mode == "self":
@@ -85,7 +89,7 @@ def _feature_denial(event, request: FeatureRequest) -> str:
         return "invalid_args"
     if getattr(event, "message_type", "") != "group" or not getattr(event, "group_id", None):
         return "group_required"
-    if request.action in _TARGETED_READ_ACTIONS and request.target_user_id is None:
+    if request.action in _TARGETED_ACTIONS and request.target_user_id is None:
         return "invalid_args"
     skill = local_action_skill(request.action)
     if skill is None or skill.deprecated or request.action not in registered_local_features():
@@ -129,6 +133,14 @@ def _available_model_skills(event) -> tuple[str, ...]:
             parameters = {"page": 1}
         elif action in {"wuwa_character_rank", "wuwa_echo_rank"}:
             parameters = {"character": "角色", "page": 1}
+        elif action in {"wife_take", "bomb_pass"}:
+            parameters = {"target": "mentioned"}
+        elif action == "idiom_bomb_pass":
+            parameters = {"target": "mentioned", "idiom": "画蛇添足"}
+        elif action == "idiom_bomb_load":
+            parameters = {"mode": "entertainment", "duration_seconds": 120}
+        elif action == "guess_submit":
+            parameters = {"value": 500}
         request = FeatureRequest.with_parameters(action, parameters, args=args)
         return _resolve_request_target(event, request)
 
@@ -141,10 +153,22 @@ def _available_model_skills(event) -> tuple[str, ...]:
 
 async def _run_skill_requests(bot, event, config, requests, *, text="", opening="",
                               usage=None, source="feature_router", current=None,
-                              execution_results=None) -> bool:
+                              execution_results=None, state_versions=None,
+                              request_id="") -> bool:
     """One authorization and delivery path for local, planned and model calls."""
     current = current or service._turn_current
-    requests = tuple(_resolve_request_target(event, request) for request in requests)
+    state_versions = state_versions or {}
+    requests = tuple(
+        replace(
+            _resolve_request_target(event, request),
+            state_version=str(state_versions.get(request.action) or ""),
+            execution_key=(
+                f"{request_id}:{request.action}:{index}"
+                if request.action in STATE_ACTIONS and request_id else ""
+            ),
+        )
+        for index, request in enumerate(requests)
+    )
     delivery = FeatureDelivery(bot, event, current=current)
     usage = usage or {}
     if not current():
@@ -164,8 +188,26 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                 for request in requests
             )
         return True
+    if sum(request.action in STATE_ACTIONS for request in requests) > 1:
+        await delivery.send(persona_rejection("invalid_args", call_keyword=config.call_keyword))
+        if execution_results is not None:
+            execution_results.extend(
+                ToolExecutionResult(
+                    "denied", request.action, tuple(delivery.message_ids),
+                    "direct_qq", "batch_state_conflict",
+                )
+                for request in requests
+            )
+        return True
     for request in requests:
         reason = _feature_denial(event, request)
+        if request.action in STATE_ACTIONS:
+            if source != "native_tool" or not _explicit_state_request(request.action, text):
+                reason = "invalid_args"
+            elif not request.execution_key or not request.state_version:
+                reason = "stale_state"
+            elif action_state_versions(db, int(event.group_id)).get(request.action) != request.state_version:
+                reason = "stale_state"
         if not reason and request.args == "总" and not re.search(r"总|累计|历史|机器人|所有群|bot", text, re.I):
             reason = "invalid_args"
         if not reason and request.cluster:
@@ -180,8 +222,9 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
             if execution_results is not None:
                 execution_results.extend(
-                    ToolExecutionResult(
-                        "denied", item.action, tuple(delivery.message_ids), "direct_qq",
+                ToolExecutionResult(
+                        "stale" if reason == "stale_state" else "denied",
+                        item.action, tuple(delivery.message_ids), "direct_qq",
                         reason if item is request else "batch_denied",
                     )
                     for item in requests
@@ -194,6 +237,11 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             break
         # Switches/permissions may change while a previous image is rendering.
         reason = _feature_denial(event, request)
+        if request.action in STATE_ACTIONS and (
+            action_state_versions(db, int(event.group_id)).get(request.action)
+            != request.state_version
+        ):
+            reason = "stale_state"
         if reason:
             await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
             break
@@ -202,12 +250,34 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             time.monotonic(), len(delivery.receipts), len(delivery.message_ids), False
         )
         error_code = ""
+        claimed = False
         try:
-            handled = await run_feature_call(delivery, bot, event, request)
-            ok = handled and len(delivery.receipts) > before
-            if not ok and current():
-                await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
-                error_code = "failed"
+            if request.action in STATE_ACTIONS:
+                claimed = service.db.claim_action_execution(
+                    request.execution_key,
+                    action=request.action,
+                    state_version=request.state_version,
+                    now=service._now(),
+                )
+                if not claimed:
+                    error_code = "duplicate_request"
+                    await delivery.send(persona_rejection("duplicate_request", call_keyword=config.call_keyword))
+                else:
+                    handled = await run_feature_call(delivery, bot, event, request)
+                    ok = handled and len(delivery.receipts) > before
+                    if not ok and current():
+                        await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
+                        error_code = "failed"
+            else:
+                handled = await run_feature_call(delivery, bot, event, request)
+                ok = handled and len(delivery.receipts) > before
+                if not ok and current():
+                    await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
+                    error_code = "failed"
+        except StaleFeatureState:
+            error_code = "stale_state"
+            if current():
+                await delivery.send(persona_rejection("stale_state", call_keyword=config.call_keyword))
         except Exception as exc:
             error_code = type(exc).__name__
             skill_ledger.record_failure(skill_id=skill.skill_id,
@@ -216,6 +286,12 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             if current():
                 await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
         finally:
+            if claimed:
+                service.db.finish_action_execution(
+                    request.execution_key,
+                    status="delivered" if ok else ("stale" if error_code == "stale_state" else "failed"),
+                    now=service._now(),
+                )
             logger.info("Local skill finished source={} action={} group={} message={} delivered={}",
                 source, request.action, event.group_id, getattr(event, "message_id", ""), ok)
             skill_metrics.record(skill_id=skill.skill_id, group_id=int(event.group_id),
@@ -226,7 +302,11 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                 reasoning_tokens=int(usage.get("reasoning_tokens") or 0) if index == 0 else 0,
                 cost=float(usage.get("cost") or 0) if index == 0 else 0, source=source)
         if execution_results is not None:
-            status = "delivered" if ok else ("stale" if not current() else "failed")
+            status = (
+                "delivered" if ok else
+                "stale" if error_code == "stale_state" or not current() else
+                "denied" if error_code == "duplicate_request" else "failed"
+            )
             execution_results.append(ToolExecutionResult(
                 status,
                 request.action,
@@ -244,6 +324,39 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                             "parameter_names": [key for key, _ in request.parameters],
                             "source": source})
     return True
+
+
+def _explicit_state_request(action: str, text: str) -> bool:
+    normalized = str(text)
+    action_words = r"(?:抽|强取|离婚|解缘|装填|开枪|装弹|丢给|传给|开局|掷|摇|猜|提交)"
+    if re.search(action_words, normalized) and re.search(r"(?:不要|别|不用|取消)", normalized):
+        return False
+    if re.search(action_words, normalized) and re.search(
+        r"(?:历史|摘要|引用|转述|有人说|他说|她说|原话|这句话|那句话|消息里|[\"“”「」『』])",
+        normalized,
+    ):
+        return False
+    patterns = {
+        "wife_draw": r"(?:抽|来一?个).*(?:今日)?(?:缘分|老婆)",
+        "wife_take": r"强取",
+        "wife_divorce": r"离婚|解缘",
+        "roulette_load": r"(?:转盘|俄罗斯转盘|轮盘)?.*装填|装填.*(?:转盘|俄罗斯转盘|轮盘)",
+        "roulette_fire": r"开枪",
+        "bomb_load": r"装弹(?!.*成语)",
+        "bomb_pass": r"丢给|传给",
+        "idiom_bomb_load": r"装弹.*成语|成语.*装弹",
+        "idiom_bomb_pass": r"丢给|传给",
+        "dice_start": r"(?:骰子|骰局).*(?:开局|开始|来一?局|掷|摇)|(?:开局|开始|来一?局).*(?:骰子|骰局)",
+        "guess_start": r"(?:猜数|猜数字).*(?:开局|开始|来一?局)|(?:开局|开始|来一?局).*(?:猜数|猜数字)",
+        "guess_submit": r"(?:猜|提交).*(?:\d)",
+    }
+    return bool(re.search(patterns[action], normalized, re.IGNORECASE))
+
+
+def _feature_state_versions(event: Any) -> dict[str, str]:
+    if getattr(event, "message_type", "") != "group":
+        return {}
+    return action_state_versions(db, int(event.group_id))
 
 
 async def _feature_router(
@@ -303,6 +416,7 @@ service = TangtangService(
     persona_engine=persona_engine(),
     feature_runner=_run_skill_requests,
     feature_catalog=_available_model_skills,
+    feature_state_provider=_feature_state_versions,
 )
 
 

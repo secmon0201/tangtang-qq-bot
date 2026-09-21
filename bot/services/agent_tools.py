@@ -103,6 +103,15 @@ def archive_parameters(*, search: bool = False, page: bool = False) -> dict[str,
             "required": required, "additionalProperties": False}
 
 
+def mentioned_target_parameters() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"target": {"type": "string", "enum": ["mentioned"]}},
+        "required": ["target"],
+        "additionalProperties": False,
+    }
+
+
 KNOWLEDGE_TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "search_zhijiang_knowledge",
@@ -196,6 +205,41 @@ ACTION_TOOL_SPECS: tuple[ToolSpec, ...] = (
              scope_page_parameters(character=True), "read", "direct_qq", True, "wuwa_game_ui"),
     ToolSpec("wuwa_progress_rank", ACTION_CONTRACTS["wuwa_progress_rank"].description,
              scope_page_parameters(), "read", "direct_qq", True, "wuwa_game_ui"),
+    ToolSpec("wife_draw", ACTION_CONTRACTS["wife_draw"].description,
+             empty_parameters(), "write", "direct_qq", True, "today_wife"),
+    ToolSpec("wife_take", ACTION_CONTRACTS["wife_take"].description,
+             mentioned_target_parameters(), "write", "direct_qq", True, "today_wife"),
+    ToolSpec("wife_divorce", ACTION_CONTRACTS["wife_divorce"].description,
+             empty_parameters(), "write", "direct_qq", True, "today_wife"),
+    ToolSpec("roulette_load", ACTION_CONTRACTS["roulette_load"].description,
+             empty_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("roulette_fire", ACTION_CONTRACTS["roulette_fire"].description,
+             empty_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("bomb_load", ACTION_CONTRACTS["bomb_load"].description,
+             empty_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("bomb_pass", ACTION_CONTRACTS["bomb_pass"].description,
+             mentioned_target_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("idiom_bomb_load", ACTION_CONTRACTS["idiom_bomb_load"].description, {
+        "type": "object", "properties": {
+            "mode": {"type": "string", "enum": ["professional", "entertainment"]},
+            "duration_seconds": {"type": "integer", "minimum": 60, "maximum": 600},
+        }, "required": ["mode", "duration_seconds"], "additionalProperties": False,
+    }, "write", "direct_qq", True, "mini_games"),
+    ToolSpec("idiom_bomb_pass", ACTION_CONTRACTS["idiom_bomb_pass"].description, {
+        "type": "object", "properties": {
+            "target": {"type": "string", "enum": ["mentioned"]},
+            "idiom": {"type": "string", "minLength": 4, "maxLength": 4},
+        }, "required": ["target", "idiom"], "additionalProperties": False,
+    }, "write", "direct_qq", True, "mini_games"),
+    ToolSpec("dice_start", ACTION_CONTRACTS["dice_start"].description,
+             empty_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("guess_start", ACTION_CONTRACTS["guess_start"].description,
+             empty_parameters(), "write", "direct_qq", True, "mini_games"),
+    ToolSpec("guess_submit", ACTION_CONTRACTS["guess_submit"].description, {
+        "type": "object", "properties": {
+            "value": {"type": "integer", "minimum": 0, "maximum": 999},
+        }, "required": ["value"], "additionalProperties": False,
+    }, "write", "direct_qq", True, "mini_games"),
 )
 
 BASE_TOOL_SPECS = (*KNOWLEDGE_TOOL_SPECS, *ACTION_TOOL_SPECS)
@@ -251,6 +295,11 @@ def parse_action_tool_call(call: Mapping[str, Any]) -> FeatureRequest:
         request = FeatureRequest.with_parameters(name, arguments)
         if not valid_request(request):
             raise ValueError("invalid archive arguments")
+        return request
+    if name in {"wife_take", "bomb_pass", "idiom_bomb_pass", "idiom_bomb_load", "guess_submit"}:
+        request = FeatureRequest.with_parameters(name, arguments)
+        if not valid_request(request):
+            raise ValueError("invalid state action arguments")
         return request
     if arguments:
         raise ValueError("tool does not accept arguments")

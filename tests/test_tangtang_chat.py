@@ -1570,7 +1570,7 @@ def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_pat
         enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
     ))
     assert provider.calls == 1
-    assert len(provider.toolsets[0]) == 32
+    assert len(provider.toolsets[0]) == 44
     assert [(request.action, request.args, request.cluster) for request in executed] == [
         ("ranking", "周", False)
     ]
@@ -1585,6 +1585,37 @@ def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_pat
         ("tool_result", "confirmed"),
     ]
     assert usage_events(usage_dir)[-1]["detail"] == "native_tool:ranking"
+
+
+def test_native_state_tool_uses_version_captured_before_model_call(tmp_path, monkeypatch):
+    provider = FakeProvider(tool_sequence=[("", [{
+        "call_id": "state-1",
+        "name": "roulette_load",
+        "arguments": "{}",
+    }])])
+    service, _sent, provider, _usage = make_service(
+        tmp_path, monkeypatch, provider=provider
+    )
+    captured = {}
+    service.feature_state_provider = lambda event: {"roulette_load": "before-model"}
+
+    async def feature_runner(bot, event, config, requests, **kwargs):
+        captured.update(kwargs["state_versions"])
+        kwargs["execution_results"].append(ToolExecutionResult(
+            "delivered", requests[0].action, ("qq-message-1",), "direct_qq",
+            model_payload={"delivered": True},
+        ))
+        return True
+
+    service.feature_runner = feature_runner
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="娅娅，装填俄罗斯转盘"),
+        enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
+    ))
+
+    assert captured == {"roulette_load": "before-model"}
+    assert provider.calls == 1
 
 
 def test_proactive_turn_never_exposes_or_executes_native_action_tools(tmp_path, monkeypatch):

@@ -12,6 +12,8 @@ class FeatureRequest:
     cluster: bool = False
     parameters: tuple[tuple[str, str | int], ...] = ()
     target_user_id: int | None = None
+    state_version: str = ""
+    execution_key: str = ""
 
     @classmethod
     def with_parameters(
@@ -71,6 +73,18 @@ ACTION_CONTRACTS = {
     "wuwa_character_rank": ActionContract("鸣潮指定角色评分排行", ("群", "总")),
     "wuwa_echo_rank": ActionContract("鸣潮指定角色声骸排行", ("群", "总")),
     "wuwa_progress_rank": ActionContract("鸣潮练度排行", ("群", "总")),
+    "wife_draw": ActionContract("明确抽取今日缘分"),
+    "wife_take": ActionContract("强取本轮唯一真实 @ 的成员"),
+    "wife_divorce": ActionContract("解除本人当前今日缘分"),
+    "roulette_load": ActionContract("装填俄罗斯转盘并开局"),
+    "roulette_fire": ActionContract("在当前俄罗斯转盘开枪"),
+    "bomb_load": ActionContract("装填普通定时炸弹并开局"),
+    "bomb_pass": ActionContract("把普通炸弹传给本轮唯一真实 @ 的成员"),
+    "idiom_bomb_load": ActionContract("装填成语炸弹并开局"),
+    "idiom_bomb_pass": ActionContract("用四字词把成语炸弹传给本轮唯一真实 @ 的成员"),
+    "dice_start": ActionContract("开始或加入幸运骰局"),
+    "guess_start": ActionContract("开始猜数字对局"),
+    "guess_submit": ActionContract("在当前猜数字对局提交 0 到 999 的数字"),
 }
 MAX_SKILL_CALLS = 6
 SCOPE_LABELS = {"day": "日", "week": "周", "month": "月", "total": "总"}
@@ -131,6 +145,30 @@ def _valid_parameters(request: FeatureRequest) -> bool:
             and isinstance(values.get("character"), str)
             and 1 <= len(str(values["character"]).strip()) <= 24
             and _valid_page(values.get("page"))
+        )
+    if request.action in {"wife_take", "bomb_pass"}:
+        return set(values) == {"target"} and values.get("target") == "mentioned"
+    if request.action == "idiom_bomb_pass":
+        idiom = values.get("idiom")
+        return (
+            set(values) == {"target", "idiom"}
+            and values.get("target") == "mentioned"
+            and isinstance(idiom, str)
+            and len(str(idiom).strip()) == 4
+            and all("\u4e00" <= char <= "\u9fff" for char in str(idiom).strip())
+        )
+    if request.action == "idiom_bomb_load":
+        return (
+            set(values) == {"mode", "duration_seconds"}
+            and values.get("mode") in {"professional", "entertainment"}
+            and type(values.get("duration_seconds")) is int
+            and 60 <= int(values["duration_seconds"]) <= 600
+        )
+    if request.action == "guess_submit":
+        return (
+            set(values) == {"value"}
+            and type(values.get("value")) is int
+            and 0 <= int(values["value"]) <= 999
         )
     return not values
 

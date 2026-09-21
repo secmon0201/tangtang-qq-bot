@@ -17,6 +17,10 @@ _handlers: dict[str, FeatureHandler] = {}
 _SCOPE_LABELS = SCOPE_LABELS
 
 
+class StaleFeatureState(RuntimeError):
+    """The mutable feature changed after the model saw its state."""
+
+
 class FeatureDelivery:
     """Keep sends bound to the requesting QQ event and stop stale turns."""
 
@@ -108,6 +112,7 @@ def registered_local_features() -> tuple[str, ...]:
 
 __all__ = [
     "FeatureRequest",
+    "StaleFeatureState",
     "feature_label",
     "register_local_feature",
     "registered_local_features",

@@ -401,7 +401,16 @@
         "mini_game_roulette",
         "mini_game_bomb",
         "mini_game_dice",
-        "mini_game_guess"
+        "mini_game_guess",
+        "roulette_load",
+        "roulette_fire",
+        "bomb_load",
+        "bomb_pass",
+        "idiom_bomb_load",
+        "idiom_bomb_pass",
+        "dice_start",
+        "guess_start",
+        "guess_submit"
       ],
       "feature_key": "mini_games",
       "required_role": "member"
@@ -689,7 +698,13 @@
         "today_wife_activity",
         "today_wife"
       ],
-      "local_actions": ["wife_personal", "wife_group"],
+      "local_actions": [
+        "wife_personal",
+        "wife_group",
+        "wife_draw",
+        "wife_take",
+        "wife_divorce"
+      ],
       "feature_key": "today_wife",
       "required_role": "member"
     },

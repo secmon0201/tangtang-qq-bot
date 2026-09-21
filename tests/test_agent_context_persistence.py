@@ -46,6 +46,31 @@ def test_confirmed_context_is_idempotent_and_audit_is_inactive(tmp_path: Path):
         assert db.context_session(session_id)["last_confirmed_turn_id"] == first[-1]
 
 
+def test_state_action_execution_key_is_at_most_once(tmp_path: Path):
+    db = TangtangDb(tmp_path / "context.db")
+    assert db.claim_action_execution(
+        "request-1:roulette_load:0",
+        action="roulette_load",
+        state_version="state-a",
+        now="now",
+    )
+    assert not db.claim_action_execution(
+        "request-1:roulette_load:0",
+        action="roulette_load",
+        state_version="state-a",
+        now="later",
+    )
+    db.finish_action_execution(
+        "request-1:roulette_load:0", status="delivered", now="later"
+    )
+    with db._connect() as conn:
+        row = conn.execute(
+            "SELECT status,state_version FROM agent_action_executions WHERE execution_key=?",
+            ("request-1:roulette_load:0",),
+        ).fetchone()
+    assert dict(row) == {"status": "delivered", "state_version": "state-a"}
+
+
 def test_context_scope_isolated_by_group_user_and_persona_database(tmp_path: Path):
     tangtang = TangtangDb(tmp_path / "tangtang.db")
     denia = TangtangDb(tmp_path / "denia-history.db")

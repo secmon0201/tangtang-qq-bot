@@ -19,6 +19,7 @@ from bot.services.mini_games import (
     ROULETTE_SAFE_TEXTS,
     MiniGameService,
 )
+from bot.services.action_state import action_state_versions
 
 
 START = datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
@@ -30,6 +31,17 @@ def make_service(tmp_path):
     db.set_group_info(1001, "测试群一")
     db.set_group_info(1002, "测试群二")
     return db, MiniGameService(db)
+
+
+def test_agent_state_fingerprint_changes_with_game_state(tmp_path):
+    db, service = make_service(tmp_path)
+    initial = action_state_versions(db, 1001)["roulette_load"]
+    service.start_roulette(1001, 2001, "甲", START)
+    loaded = action_state_versions(db, 1001)["roulette_load"]
+    service.fire(1001, 2001, "甲", START + timedelta(seconds=1))
+    fired = action_state_versions(db, 1001)["roulette_fire"]
+    assert initial != loaded
+    assert loaded != fired
 
 
 def stats_row(db: Database, group_id: int, user_id: int):

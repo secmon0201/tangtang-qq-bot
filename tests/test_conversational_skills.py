@@ -258,6 +258,126 @@ def test_archive_mentioned_target_rejects_missing_or_ambiguous_at(rig, targets):
     assert len(rig.bot.sent) == 1
 
 
+def test_state_action_is_explicit_versioned_and_idempotent(rig, monkeypatch):
+    monkeypatch.setattr(
+        plugin,
+        "action_state_versions",
+        lambda database, group_id: {"roulette_load": "state-v1"},
+    )
+    request = FeatureRequest("roulette_load")
+    event = group_message(group_id=1001, text="娅娅，装填俄罗斯转盘")
+    kwargs = {
+        "text": event.get_plaintext(),
+        "source": "native_tool",
+        "state_versions": {"roulette_load": "state-v1"},
+        "request_id": "request-state-1",
+    }
+
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot, event, rig.config, (request,), **kwargs
+    ))
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot, event, rig.config, (request,), **kwargs
+    ))
+
+    assert [item.action for _, item in rig.invoked] == ["roulette_load"]
+    assert len(rig.bot.sent) == 2
+    assert "不会再执行" in rig.bot.sent[-1][1].extract_plain_text()
+
+
+def test_state_action_rejects_changed_state_before_execution(rig, monkeypatch):
+    monkeypatch.setattr(
+        plugin,
+        "action_state_versions",
+        lambda database, group_id: {"roulette_fire": "new-state"},
+    )
+    event = group_message(group_id=1001, text="娅娅，开枪")
+    results = []
+
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot,
+        event,
+        rig.config,
+        (FeatureRequest("roulette_fire"),),
+        text=event.get_plaintext(),
+        source="native_tool",
+        state_versions={"roulette_fire": "old-state"},
+        request_id="request-state-2",
+        execution_results=results,
+    ))
+
+    assert not rig.invoked
+    assert results[0].status == "stale"
+    assert results[0].error_code == "stale_state"
+
+
+def test_multiple_state_actions_are_rejected_as_one_batch(rig, monkeypatch):
+    monkeypatch.setattr(
+        plugin,
+        "action_state_versions",
+        lambda database, group_id: {
+            "roulette_load": "same-state", "roulette_fire": "same-state"
+        },
+    )
+    event = group_message(group_id=1001, text="娅娅，装填俄罗斯转盘然后开枪")
+    results = []
+
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot,
+        event,
+        rig.config,
+        (FeatureRequest("roulette_load"), FeatureRequest("roulette_fire")),
+        text=event.get_plaintext(),
+        source="native_tool",
+        state_versions={"roulette_load": "same-state", "roulette_fire": "same-state"},
+        request_id="request-state-3",
+        execution_results=results,
+    ))
+
+    assert not rig.invoked
+    assert [result.error_code for result in results] == [
+        "batch_state_conflict", "batch_state_conflict"
+    ]
+
+
+@pytest.mark.parametrize(
+    "source,text",
+    [
+        ("model", "娅娅，装填俄罗斯转盘"),
+        ("native_tool", "娅娅，历史消息里有人说过开枪"),
+        ("native_tool", "娅娅，帮我总结“开枪”这句历史消息"),
+        ("native_tool", "娅娅，开枪这句话是在引用"),
+        ("native_tool", "娅娅，不要开枪"),
+        ("native_tool", "娅娅，开枪就不用了"),
+    ],
+)
+def test_state_actions_ignore_legacy_history_and_negated_requests(
+    rig, monkeypatch, source, text
+):
+    monkeypatch.setattr(
+        plugin,
+        "action_state_versions",
+        lambda database, group_id: {
+            "roulette_load": "state-v1", "roulette_fire": "state-v1"
+        },
+    )
+    action = "roulette_load" if "装填" in text else "roulette_fire"
+    event = group_message(group_id=1001, text=text)
+
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot,
+        event,
+        rig.config,
+        (FeatureRequest(action),),
+        text=text,
+        source=source,
+        state_versions={action: "state-v1"},
+        request_id="request-state-rejected",
+    ))
+
+    assert not rig.invoked
+
+
 def test_model_can_request_one_random_denia_gallery_image(rig):
     text = "娅娅，来点好看的"
     rig.provider.response = json.dumps(

@@ -45,6 +45,15 @@ FEATURE_ACTIONS = {
         "mini_game_bomb",
         "mini_game_dice",
         "mini_game_guess",
+        "roulette_load",
+        "roulette_fire",
+        "bomb_load",
+        "bomb_pass",
+        "idiom_bomb_load",
+        "idiom_bomb_pass",
+        "dice_start",
+        "guess_start",
+        "guess_submit",
     ),
     "nte_game_ui.py": ("nte_rank", "nte_help", "nte_mint_rank"),
     "persona_management.py": ("persona_status", "persona_impression"),
@@ -52,7 +61,9 @@ FEATURE_ACTIONS = {
         "wuwa_rank", "wuwa_help", "wuwa_character_rank", "wuwa_echo_rank",
         "wuwa_progress_rank",
     ),
-    "today_wife.py": ("wife_personal", "wife_group"),
+    "today_wife.py": (
+        "wife_personal", "wife_group", "wife_draw", "wife_take", "wife_divorce",
+    ),
     "denia_gallery.py": ("denia_gallery",),
 }
 

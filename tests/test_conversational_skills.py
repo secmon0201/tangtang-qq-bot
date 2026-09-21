@@ -164,6 +164,48 @@ def test_model_batch_executes_and_records_one_usage_charge(rig):
     assert plugin.skill_metrics.summary()["calls"] == 2
 
 
+def test_native_tool_batch_uses_same_handlers_and_ordered_preflight(rig):
+    text = "娅娅，先看本群这周发言排行，再看本周直播"
+    rig.provider.tool_sequence = [("", [
+        {"call_id": "n1", "name": "ranking",
+         "arguments": '{"period":"周","scope":"group"}'},
+        {"call_id": "n2", "name": "week_live", "arguments": "{}"},
+    ])]
+    config = replace(rig.config, native_action_tools="true")
+    event = MergedEvent([group_message(group_id=1001, text=text)])
+    asyncio.run(rig.service._model_reply(rig.bot, event, config, call_text=text))
+    assert [(request.action, request.args) for _, request in rig.invoked] == [
+        ("ranking", "周"), ("week_live", "")
+    ]
+    assert len(rig.bot.sent) == 2
+    assert rig.provider.calls == 1
+    with rig.service.db._connect() as conn:
+        rows = conn.execute(
+            "SELECT item_type, delivery_status FROM chat_context_turns ORDER BY id"
+        ).fetchall()
+    assert [row["item_type"] for row in rows] == [
+        "message", "tool_call", "tool_call", "tool_result", "tool_result"
+    ]
+    assert all(row["delivery_status"] == "confirmed" for row in rows)
+
+
+def test_native_tool_batch_denial_executes_nothing(rig):
+    text = "娅娅，先看本群这周发言排行，再看本周直播"
+    rig.state.disabled.add("speech_ranking")
+    rig.provider.tool_sequence = [("", [
+        {"call_id": "n1", "name": "ranking",
+         "arguments": '{"period":"周","scope":"group"}'},
+        {"call_id": "n2", "name": "week_live", "arguments": "{}"},
+    ])]
+    event = group_message(group_id=1001, text=text)
+    asyncio.run(rig.service._model_reply(
+        rig.bot, event, replace(rig.config, native_action_tools="true"), call_text=text
+    ))
+    assert not rig.invoked
+    assert len(rig.bot.sent) == 1
+    assert rig.provider.calls == 1
+
+
 def test_model_can_request_one_random_denia_gallery_image(rig):
     text = "娅娅，来点好看的"
     rig.provider.response = json.dumps(

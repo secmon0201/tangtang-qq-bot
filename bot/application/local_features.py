@@ -25,6 +25,7 @@ class FeatureDelivery:
             event = event.first
         self.bot, self.event, self.current = bot, event, current
         self.receipts: list[str] = []
+        self.message_ids: list[str] = []
 
     async def send(self, message, **kwargs):
         if not self.current():
@@ -32,6 +33,7 @@ class FeatureDelivery:
         result = await self.bot.send(self.event, message, **kwargs)
         if not isinstance(result, dict) or not result.get("message_id"):
             raise RuntimeError("local feature delivery has no platform receipt")
+        self.message_ids.append(str(result["message_id"]))
         content = Message(message)
         summary = content.extract_plain_text()
         if any(segment.type == "image" for segment in content):

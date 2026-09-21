@@ -30,6 +30,7 @@ from bot.services.tangtang_chat import (
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_media import ImageReference, MediaResolution, VisionImage
 from bot.services.agent_context import ContextEnvelope
+from bot.services.agent_tools import ToolExecutionResult
 
 
 def group_message(
@@ -103,6 +104,7 @@ class FakeProvider:
         self.prompts: list[str] = []
         self.images: list[tuple[VisionImage, ...]] = []
         self.envelopes: list[ContextEnvelope | None] = []
+        self.toolsets: list[tuple[dict, ...]] = []
 
     async def generate(self, config, persona, prompt, images=()):
         self.calls += 1
@@ -123,6 +125,7 @@ class FakeProvider:
         self.histories.append(list(history))
         self.images.append(tuple(images))
         self.envelopes.append(envelope)
+        self.toolsets.append(tuple(tools))
         if self.tool_sequence and self.calls <= len(self.tool_sequence):
             text, calls = self.tool_sequence[self.calls - 1]
             return AgentResult(
@@ -223,6 +226,9 @@ def test_config_validation():
     assert enabled_config(
         TANGTANG_CONTEXT_COMPACTION_ENABLED="true"
     ).context_compaction_enabled is True
+    assert enabled_config().native_action_tools == "false"
+    assert enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="shadow").native_action_tools == "shadow"
+    assert enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true").native_action_tools == "true"
     disabled = TangtangConfig.from_values({"TANGTANG_ENABLED": "false"}, (1001,))
     assert not disabled.enabled
     assert disabled.ignore_probability == 0.05
@@ -236,6 +242,8 @@ def test_config_validation():
         enabled_config(TANGTANG_API_KEY="")
     with pytest.raises(ValueError):
         enabled_config(TANGTANG_CONTEXT_LAYOUT="future")
+    with pytest.raises(ValueError):
+        enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="yes")
 
 
 def test_config_defaults_to_deepseek_flash_for_dialog():
@@ -1527,6 +1535,83 @@ def test_agent_loop_calls_mingchao_tool(tmp_path, monkeypatch):
     assert "好的呀" in sent[0].extract_plain_text()
     outputs = provider.histories[1][0]["outputs"]
     assert any("oo是这样" in output["output"] for output in outputs)
+
+
+def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_path, monkeypatch):
+    native_call = {
+        "call_id": "native-1",
+        "name": "ranking",
+        "arguments": '{"period":"周","scope":"group"}',
+    }
+    legacy_text = json.dumps({
+        "decision": "reply",
+        "messages": ["我先看看"],
+        "voice": "text",
+        "feature_calls": [{"action": "ranking", "args": "周", "cluster": False}],
+    }, ensure_ascii=False)
+    provider = FakeProvider(tool_sequence=[(legacy_text, [native_call])])
+    service, sent, provider, usage_dir = make_service(
+        tmp_path, monkeypatch, provider=provider
+    )
+    executed = []
+
+    async def feature_runner(bot, event, config, requests, **kwargs):
+        executed.extend(requests)
+        kwargs["execution_results"].append(ToolExecutionResult(
+            "delivered", requests[0].action, ("qq-message-1",), "direct_qq",
+            model_payload={"delivered": True},
+        ))
+        return True
+
+    service.feature_runner = feature_runner
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="糖糖 看看本群这周发言排行"),
+        enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
+    ))
+    assert provider.calls == 1
+    assert len(provider.toolsets[0]) == 16
+    assert [(request.action, request.args, request.cluster) for request in executed] == [
+        ("ranking", "周", False)
+    ]
+    assert sent == []
+    with service.db._connect() as conn:
+        rows = conn.execute(
+            "SELECT item_type, delivery_status FROM chat_context_turns ORDER BY id"
+        ).fetchall()
+    assert [(row["item_type"], row["delivery_status"]) for row in rows] == [
+        ("message", "confirmed"),
+        ("tool_call", "confirmed"),
+        ("tool_result", "confirmed"),
+    ]
+    assert usage_events(usage_dir)[-1]["detail"] == "native_tool:ranking"
+
+
+def test_proactive_turn_never_exposes_or_executes_native_action_tools(tmp_path, monkeypatch):
+    native_call = {
+        "call_id": "native-1", "name": "ranking",
+        "arguments": '{"period":"周","scope":"group"}',
+    }
+    provider = FakeProvider(tool_sequence=[("", [native_call])])
+    service, _sent, provider, _usage = make_service(
+        tmp_path, monkeypatch, provider=provider
+    )
+    executed = []
+
+    async def feature_runner(*args, **kwargs):
+        executed.append(args)
+        return True
+
+    service.feature_runner = feature_runner
+    asyncio.run(service._model_reply(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="普通聊天"),
+        enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
+        call_text="普通聊天",
+        proactive=True,
+    ))
+    assert len(provider.toolsets[0]) == 2
+    assert executed == []
 
 
 def test_agent_tool_result_includes_cross_references(tmp_path, monkeypatch):

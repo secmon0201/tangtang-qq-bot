@@ -46,6 +46,7 @@ from bot.services.roles import is_super_admin
 from bot.services.agent_plan import build_plan, needs_plan
 from bot.services.local_skill_contract import ACTION_CONTRACTS, MAX_SKILL_CALLS, valid_request
 from bot.services.tangtang_media import extract_image_references
+from bot.services.agent_tools import ToolExecutionResult
 
 
 PASSIVE_EVENT_MAX_AGE_SECONDS = 120
@@ -91,16 +92,28 @@ def _available_model_skills(event) -> tuple[str, ...]:
 
 
 async def _run_skill_requests(bot, event, config, requests, *, text="", opening="",
-                              usage=None, source="feature_router", current=None) -> bool:
+                              usage=None, source="feature_router", current=None,
+                              execution_results=None) -> bool:
     """One authorization and delivery path for local, planned and model calls."""
     current = current or service._turn_current
     delivery = FeatureDelivery(bot, event, current=current)
     usage = usage or {}
     if not current():
+        if execution_results is not None:
+            execution_results.extend(
+                ToolExecutionResult("stale", request.action, error_code="stale")
+                for request in requests
+            )
         return True
     # Validate the whole batch before emitting an opener or executing any step.
     if not 1 <= len(requests) <= MAX_SKILL_CALLS:
         await delivery.send(persona_rejection("invalid_args", call_keyword=config.call_keyword))
+        if execution_results is not None:
+            execution_results.extend(
+                ToolExecutionResult("denied", request.action,
+                                    tuple(delivery.message_ids), "direct_qq", "invalid_args")
+                for request in requests
+            )
         return True
     for request in requests:
         reason = _feature_denial(event, request)
@@ -111,9 +124,19 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             labels = (domain.name, domain.alias) if domain else ()
             if "集群" not in text and not any(label and label in text for label in labels):
                 reason = "invalid_args"
+        if not reason and source == "native_tool" and not has_feature_hint(text):
+            reason = "invalid_args"
         if reason:
             logger.info("Local skill rejected source={} action={} reason={}", source, request.action, reason)
             await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
+            if execution_results is not None:
+                execution_results.extend(
+                    ToolExecutionResult(
+                        "denied", item.action, tuple(delivery.message_ids), "direct_qq",
+                        reason if item is request else "batch_denied",
+                    )
+                    for item in requests
+                )
             return True
     if opening:
         await delivery.send(opening)
@@ -126,13 +149,18 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
             await delivery.send(persona_rejection(reason, call_keyword=config.call_keyword))
             break
         skill = local_action_skill(request.action)
-        started_at, before, ok = time.monotonic(), len(delivery.receipts), False
+        started_at, before, before_ids, ok = (
+            time.monotonic(), len(delivery.receipts), len(delivery.message_ids), False
+        )
+        error_code = ""
         try:
             handled = await run_feature_call(delivery, bot, event, request)
             ok = handled and len(delivery.receipts) > before
             if not ok and current():
                 await delivery.send(persona_rejection("failed", call_keyword=config.call_keyword))
+                error_code = "failed"
         except Exception as exc:
+            error_code = type(exc).__name__
             skill_ledger.record_failure(skill_id=skill.skill_id,
                 error=f"{type(exc).__name__}: {exc}", group_id=int(event.group_id),
                 user_id=int(event.user_id), source=source)
@@ -148,6 +176,16 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                 completion_tokens=int(usage.get("completion_tokens") or 0) if index == 0 else 0,
                 reasoning_tokens=int(usage.get("reasoning_tokens") or 0) if index == 0 else 0,
                 cost=float(usage.get("cost") or 0) if index == 0 else 0, source=source)
+        if execution_results is not None:
+            status = "delivered" if ok else ("stale" if not current() else "failed")
+            execution_results.append(ToolExecutionResult(
+                status,
+                request.action,
+                tuple(delivery.message_ids[before_ids:]),
+                "direct_qq",
+                error_code or ("stale" if status == "stale" else ""),
+                {"delivered": ok},
+            ))
         if len(delivery.receipts) > before:
             service.record_feature(group_id=int(event.group_id), user_id=int(event.user_id),
                 message_id=getattr(event, "message_id", "") or "", call_text=text,

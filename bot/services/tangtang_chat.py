@@ -63,6 +63,12 @@ from bot.services.context_compaction import (
     compaction_prompt,
     parse_snapshot,
 )
+from bot.services.agent_tools import (
+    ACTION_TOOL_NAMES,
+    ToolExecutionResult,
+    parse_action_tool_call,
+    tool_schemas,
+)
 from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
@@ -87,41 +93,8 @@ MINGCHAO_MEME_MAX_CHARS = 700
 LOCAL_KNOWLEDGE_MAX_CHARS = 1200
 TOOL_MAX_RESULT_CHARS = 700
 
-TOOL_SCHEMAS: tuple[dict[str, Any], ...] = (
-    {
-        "type": "function",
-        "name": "search_zhijiang_knowledge",
-        "description": (
-            "检索本地枝江百科数据库（A-SOUL 与枝江娱乐企划资料）。"
-            "涉及嘉然、贝拉、乃琳、心宜、思诺、小心思、闪耀舞台、灵境少女、银河商店、"
-            "枝江历史、直播时间线等问题时使用。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "自然语言问题或关键词，例如：嘉然是谁"}
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    },
-    {
-        "type": "function",
-        "name": "search_mingchao_meme_culture",
-        "description": (
-            "检索本地鸣潮梗文化库（游戏黑话、玩家社区梗、枝江二创社区梗）。"
-            "涉及鸣潮公式、牢卡、雪豹、小土豆、潮友、乃琳直播鸣潮、贝拉晕3D、战双联动等问题时使用。"
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "自然语言问题或关键词，例如：鸣潮公式是什么"}
-            },
-            "required": ["query"],
-            "additionalProperties": False,
-        },
-    },
-)
+TOOL_SCHEMAS = tool_schemas(include_actions=False)
+NATIVE_ACTION_TOOL_SCHEMAS = tool_schemas(include_actions=True)
 
 
 def _local_member_name(group_id: int, user_id: int) -> str:
@@ -397,6 +370,7 @@ class TangtangConfig:
     humanize_enabled: bool = True
     context_layout: str = "v1"
     context_compaction_enabled: bool = False
+    native_action_tools: str = "false"
 
     @classmethod
     def disabled(cls, reason: str = "TANGTANG_ENABLED=false") -> "TangtangConfig":
@@ -543,6 +517,9 @@ class TangtangConfig:
         context_compaction_enabled = _bool(
             values, "TANGTANG_CONTEXT_COMPACTION_ENABLED", False
         )
+        native_action_tools = _raw(values, "TANGTANG_NATIVE_ACTION_TOOLS", "false").lower()
+        if native_action_tools not in {"false", "shadow", "true"}:
+            raise ValueError("TANGTANG_NATIVE_ACTION_TOOLS must be false, shadow or true")
         vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
         vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "low").lower()
         if vision_detail not in VISION_DETAIL_LEVELS:
@@ -653,6 +630,7 @@ class TangtangConfig:
                 humanize_enabled=humanize_enabled,
                 context_layout=context_layout,
                 context_compaction_enabled=context_compaction_enabled,
+                native_action_tools=native_action_tools,
             )
         if not group_ids:
             raise ValueError("TANGTANG_GROUP_IDS is required when TANGTANG_ENABLED=true")
@@ -715,6 +693,7 @@ class TangtangConfig:
             humanize_enabled=humanize_enabled,
             context_layout=context_layout,
             context_compaction_enabled=context_compaction_enabled,
+            native_action_tools=native_action_tools,
         )
 
     def proactive_values_for(self, group_id: int) -> tuple[float, int, int]:
@@ -1955,6 +1934,8 @@ class TangtangService:
                 "shadow_payload_changed": tokens.get("shadow_payload_changed"),
                 "static_prefix_hash": str(tokens.get("static_prefix_hash") or ""),
                 "tool_schema_hash": str(tokens.get("tool_schema_hash") or ""),
+                "native_tool_mode": config.native_action_tools,
+                "native_tool_schema_hash": str(tokens.get("native_tool_schema_hash") or ""),
                 "static_prefix_chars": int(tokens.get("static_prefix_chars") or 0),
                 "conversation_chars": int(tokens.get("conversation_chars") or 0),
                 "snapshot_chars": int(tokens.get("snapshot_chars") or 0),
@@ -2628,7 +2609,11 @@ class TangtangService:
             continuation = continuation_turn()
             if continuation is not None and not continuation.admit():
                 return
-            tools = TOOL_SCHEMAS if config.tools_enabled else ()
+            tools = (
+                NATIVE_ACTION_TOOL_SCHEMAS
+                if config.tools_enabled and config.native_action_tools == "true" and not proactive
+                else TOOL_SCHEMAS if config.tools_enabled else ()
+            )
             draft_envelope = ContextEnvelope.create(
                 persona=persona,
                 dynamic_status=prompt,
@@ -2696,6 +2681,7 @@ class TangtangService:
             telemetry = {
                 "static_prefix_hash": envelope.static_prefix_hash,
                 "tool_schema_hash": envelope.tool_schema_hash,
+                "native_tool_schema_hash": stable_hash(NATIVE_ACTION_TOOL_SCHEMAS),
                 **envelope.layer_sizes(),
                 "layout_version": envelope.layout_version if request_envelope else config.context_layout,
                 "shadow_payload_hash": shadow_payload_hash,
@@ -2720,6 +2706,28 @@ class TangtangService:
             usage = dict(result.usage)
             loops = 0
             while result.tool_calls and loops < config.tool_loop_max:
+                if any(call.get("name") in ACTION_TOOL_NAMES for call in result.tool_calls):
+                    usage.update(telemetry)
+                    usage["model_calls"] = loops + 1
+                    usage["tool_rounds"] = loops + 1
+                    self._pending_context_items.set((
+                        {
+                            "type": "message",
+                            "role": "user",
+                            "content": envelope.current_text if request_envelope else provider_prompt,
+                        },
+                    ))
+                    await self._run_native_action_tools(
+                        bot,
+                        event,
+                        config,
+                        result.tool_calls,
+                        text=current_text,
+                        mode=mode,
+                        usage=usage,
+                        proactive=proactive,
+                    )
+                    return
                 outputs = tuple(self._run_tool(call) for call in result.tool_calls)
                 history.append({"tool_calls": result.tool_calls, "outputs": outputs})
                 if media_resolution.images:
@@ -2842,6 +2850,113 @@ class TangtangService:
             self._audit_pending_context(event, reason=type(exc).__name__)
         finally:
             self._in_flight.discard(group_id)
+
+    async def _run_native_action_tools(
+        self,
+        bot: Any,
+        event: Any,
+        config: TangtangConfig,
+        calls: tuple[dict[str, str], ...],
+        *,
+        text: str,
+        mode: str,
+        usage: dict[str, Any],
+        proactive: bool = False,
+    ) -> None:
+        context = self._turn.get()
+        if proactive or (context and context.proactive):
+            self._audit_pending_context(event, reason="native_tool_proactive")
+            return
+        if self.feature_runner is None or not self._turn_current():
+            self._audit_pending_context(event, reason="native_tool_stale")
+            return
+        requests = []
+        action_calls: list[dict[str, str]] = []
+        parse_error = ""
+        for call in calls:
+            if call.get("name") not in ACTION_TOOL_NAMES:
+                continue
+            try:
+                requests.append(parse_action_tool_call(call))
+                action_calls.append(call)
+            except ValueError:
+                parse_error = "invalid_args"
+                break
+        if parse_error or not requests:
+            outputs = tuple(
+                {
+                    "call_id": str(call.get("call_id") or ""),
+                    "output": json.dumps({"status": "denied", "error_code": parse_error or "unknown_tool"}),
+                }
+                for call in calls
+            )
+            self._pending_context_items.set((
+                *self._pending_context_items.get(),
+                *history_items(({"tool_calls": calls, "outputs": outputs},)),
+            ))
+            self._audit_pending_context(event, reason=parse_error or "unknown_tool")
+            return
+
+        execution_results: list[ToolExecutionResult] = []
+        await self.feature_runner(
+            bot,
+            event,
+            config,
+            tuple(requests),
+            text=text,
+            opening="",
+            usage=usage,
+            source="native_tool",
+            current=self._turn_current,
+            execution_results=execution_results,
+        )
+        result_iter = iter(execution_results)
+        outputs: list[dict[str, str]] = []
+        delivered = False
+        for call in calls:
+            if call.get("name") in ACTION_TOOL_NAMES:
+                result = next(
+                    result_iter,
+                    ToolExecutionResult("failed", str(call.get("name") or ""),
+                                        error_code="missing_result"),
+                )
+            else:
+                raw = self._execute_tool(call)
+                result = ToolExecutionResult(
+                    "returned",
+                    str(call.get("name") or ""),
+                    result_type="model_data",
+                    model_payload=raw,
+                )
+            delivered = delivered or bool(result.message_ids)
+            output = json.dumps(result.payload(), ensure_ascii=False, separators=(",", ":"))
+            outputs.append({"call_id": str(call.get("call_id") or ""), "output": output})
+        pending = (
+            *self._pending_context_items.get(),
+            *history_items(({"tool_calls": calls, "outputs": tuple(outputs)},)),
+        )
+        self._pending_context_items.set(pending)
+        session_id = self._context_session.get()
+        if session_id is not None:
+            try:
+                self.db.commit_context_items(
+                    session_id,
+                    self._context_request_id(event),
+                    pending,
+                    now=self._now(),
+                    delivery_status="confirmed" if delivered else "audit",
+                )
+            except Exception as exc:
+                logger.warning("Native tool context record failed: {}", type(exc).__name__)
+        self._write_usage(
+            config,
+            int(event.group_id),
+            int(event.user_id),
+            "feature",
+            mode=mode,
+            tokens=usage,
+            detail="native_tool:" + ",".join(request.action for request in requests),
+        )
 
     def _run_tool(self, call: Mapping[str, str]) -> dict[str, str]:
         result = self._execute_tool(call)

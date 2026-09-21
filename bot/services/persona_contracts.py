@@ -24,15 +24,20 @@ class TurnSnapshot:
     intents: list[dict]
     expected: dict[str, int] = field(default_factory=dict)
 
-    def prompt(self) -> str:
+    def payload(self) -> dict:
         # Raw event excerpts are limited to the current scene. Adopted claims
         # travel with the person; evidence remains addressable locally.
-        payload = {'actor': self.user_id, 'scene': self.group_id,
-                   'evidence': [{k: s[k] for k in ('event_key', 'user_id', 'group_id', 'text', 'attribution', 'occurred_at')}
-                                for s in self.sources],
-                   'claims': self.claims, 'state_factors': self.states,
-                   'episodes': self.episodes, 'intents': self.intents}
-        return INSTRUCTION + '\n' + json.dumps(payload, ensure_ascii=False)
+        return {'actor': self.user_id, 'scene': self.group_id,
+                'evidence': [{k: s[k] for k in ('event_key', 'user_id', 'group_id', 'text', 'attribution', 'occurred_at')}
+                             for s in self.sources],
+                'claims': self.claims, 'state_factors': self.states,
+                'episodes': self.episodes, 'intents': self.intents}
+
+    def data_prompt(self) -> str:
+        return json.dumps(self.payload(), ensure_ascii=False)
+
+    def prompt(self) -> str:
+        return INSTRUCTION + '\n' + self.data_prompt()
 
 
 @dataclass

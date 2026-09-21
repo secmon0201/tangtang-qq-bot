@@ -16,6 +16,11 @@ AGENT_INVARIANT_INSTRUCTIONS = """[Agent 固定规则]
 未提供视觉输入的 [图片] 不可见，不知道就明确说不知道。
 普通回复必须遵守当前人格和输出协议；工具直接送达 QQ 时，不把图片或档案原文重新写入模型上下文。"""
 
+AGENT_REPLY_INSTRUCTIONS = """[Agent 固定输出协议]
+第一行必须是 [接话] 或 [沉默]，不要输出分析、理由或思考过程。
+若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。普通聊天默认只发一条，确有两个意思才发第二条；不要按标点机械拆分。
+语气词不要每条都带，也不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略。"""
+
 
 def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -48,7 +53,10 @@ class ContextEnvelope:
         current_input: str = "",
         images: tuple[Any, ...] = (),
         tools: tuple[Mapping[str, Any], ...] = (),
-        fixed_instructions: tuple[str, ...] = (AGENT_INVARIANT_INSTRUCTIONS,),
+        fixed_instructions: tuple[str, ...] = (
+            AGENT_INVARIANT_INSTRUCTIONS,
+            AGENT_REPLY_INSTRUCTIONS,
+        ),
         layout_version: str = CONTEXT_LAYOUT_VERSION,
     ) -> "ContextEnvelope":
         static_instructions = (str(persona).strip(), *(str(item).strip() for item in fixed_instructions))
@@ -129,6 +137,7 @@ def history_items(history: tuple[Mapping[str, Any], ...]) -> tuple[dict[str, Any
 
 __all__ = [
     "AGENT_INVARIANT_INSTRUCTIONS",
+    "AGENT_REPLY_INSTRUCTIONS",
     "CONTEXT_LAYOUT_VERSION",
     "ContextEnvelope",
     "canonical_json",

@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS chat_context_sessions (
     layout_version TEXT NOT NULL,
     persona_version TEXT NOT NULL,
     tool_version TEXT NOT NULL,
+    active_from_turn_id INTEGER NOT NULL DEFAULT 0,
     snapshot_version INTEGER NOT NULL DEFAULT 0,
     last_confirmed_turn_id INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -285,6 +286,15 @@ class TangtangDb:
             conn.execute(
                 "ALTER TABLE tangtang_calls "
                 "ADD COLUMN provenance TEXT NOT NULL DEFAULT ''"
+            )
+        context_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(chat_context_sessions)")
+        }
+        if context_columns and "active_from_turn_id" not in context_columns:
+            conn.execute(
+                "ALTER TABLE chat_context_sessions "
+                "ADD COLUMN active_from_turn_id INTEGER NOT NULL DEFAULT 0"
             )
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tangtang_calls'"
@@ -1190,20 +1200,38 @@ class TangtangDb:
         now: str,
     ) -> int:
         with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO chat_context_sessions "
-                "(group_id, user_id, layout_version, persona_version, tool_version, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "ON CONFLICT(group_id, user_id) DO UPDATE SET "
-                "layout_version=excluded.layout_version, persona_version=excluded.persona_version, "
-                "tool_version=excluded.tool_version, updated_at=excluded.updated_at",
-                (int(group_id), int(user_id), str(layout_version), str(persona_version),
-                 str(tool_version), str(now), str(now)),
-            )
             row = conn.execute(
-                "SELECT id FROM chat_context_sessions WHERE group_id = ? AND user_id = ?",
+                "SELECT * FROM chat_context_sessions WHERE group_id = ? AND user_id = ?",
                 (int(group_id), int(user_id)),
             ).fetchone()
+            if row is None:
+                cursor = conn.execute(
+                    "INSERT INTO chat_context_sessions "
+                    "(group_id, user_id, layout_version, persona_version, tool_version, "
+                    "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (int(group_id), int(user_id), str(layout_version), str(persona_version),
+                     str(tool_version), str(now), str(now)),
+                )
+                return int(cursor.lastrowid)
+            changed = (
+                str(row["layout_version"]) != str(layout_version)
+                or str(row["persona_version"]) != str(persona_version)
+                or str(row["tool_version"]) != str(tool_version)
+            )
+            active_from = int(row["active_from_turn_id"])
+            if changed:
+                latest = conn.execute(
+                    "SELECT COALESCE(MAX(id), 0) AS id FROM chat_context_turns "
+                    "WHERE session_id = ?",
+                    (int(row["id"]),),
+                ).fetchone()
+                active_from = max(active_from, int(latest["id"]))
+            conn.execute(
+                "UPDATE chat_context_sessions SET layout_version = ?, persona_version = ?, "
+                "tool_version = ?, active_from_turn_id = ?, updated_at = ? WHERE id = ?",
+                (str(layout_version), str(persona_version), str(tool_version), active_from,
+                 str(now), int(row["id"])),
+            )
         return int(row["id"])
 
     def context_session(self, session_id: int) -> dict[str, Any] | None:
@@ -1270,11 +1298,20 @@ class TangtangDb:
     ) -> tuple[dict[str, Any] | None, tuple[dict[str, Any], ...]]:
         limit = max(1, min(int(keep_recent), 100))
         with self._connect() as conn:
+            session = conn.execute(
+                "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            active_from = int(session["active_from_turn_id"]) if session is not None else 0
             snapshot = conn.execute(
                 "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND active = 1 "
-                "ORDER BY version DESC LIMIT 1", (int(session_id),)
+                "AND cutoff_turn_id > ? ORDER BY version DESC LIMIT 1",
+                (int(session_id), active_from),
             ).fetchone()
-            cutoff = int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0
+            cutoff = max(
+                active_from,
+                int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0,
+            )
             rows = conn.execute(
                 "SELECT * FROM chat_context_turns WHERE session_id = ? AND delivery_status = 'confirmed' "
                 "AND id > ? ORDER BY id DESC LIMIT ?",
@@ -1288,14 +1325,20 @@ class TangtangDb:
 
     def uncompacted_context_count(self, session_id: int) -> int:
         with self._connect() as conn:
+            session = conn.execute(
+                "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            active_from = int(session["active_from_turn_id"]) if session is not None else 0
             row = conn.execute(
                 "SELECT COALESCE(MAX(cutoff_turn_id), 0) AS cutoff FROM chat_context_snapshots "
-                "WHERE session_id = ? AND active = 1", (int(session_id),)
+                "WHERE session_id = ? AND active = 1 AND cutoff_turn_id > ?",
+                (int(session_id), active_from),
             ).fetchone()
             count = conn.execute(
                 "SELECT COUNT(*) AS count FROM chat_context_turns "
                 "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ?",
-                (int(session_id), int(row["cutoff"])),
+                (int(session_id), max(active_from, int(row["cutoff"]))),
             ).fetchone()
         return int(count["count"])
 
@@ -1303,11 +1346,20 @@ class TangtangDb:
         self, session_id: int, *, keep_recent: int = 16
     ) -> dict[str, Any] | None:
         with self._connect() as conn:
+            session = conn.execute(
+                "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            active_from = int(session["active_from_turn_id"]) if session is not None else 0
             snapshot = conn.execute(
                 "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND active = 1 "
-                "ORDER BY version DESC LIMIT 1", (int(session_id),)
+                "AND cutoff_turn_id > ? ORDER BY version DESC LIMIT 1",
+                (int(session_id), active_from),
             ).fetchone()
-            cutoff = int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0
+            cutoff = max(
+                active_from,
+                int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0,
+            )
             rows = conn.execute(
                 "SELECT id, payload_json FROM chat_context_turns "
                 "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ? ORDER BY id",

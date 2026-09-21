@@ -31,6 +31,7 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_media import ImageReference, MediaResolution, VisionImage
 from bot.services.agent_context import ContextEnvelope
 from bot.services.agent_tools import ToolExecutionResult
+from bot.services.persona_contracts import INSTRUCTION, TurnSnapshot
 
 
 def group_message(
@@ -1245,6 +1246,125 @@ def test_context_layout_switch_controls_provider_payload(
     )
     assert bool(events[-1]["shadow_payload_hash"]) is (layout == "shadow")
     assert events[-1]["shadow_payload_changed"] is (True if layout == "shadow" else None)
+
+
+def test_shadow_builds_full_native_candidate_without_sending_it(tmp_path, monkeypatch):
+    service, _sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="糖糖 随便聊聊"),
+        enabled_config(
+            TANGTANG_CONTEXT_LAYOUT="shadow",
+            TANGTANG_NATIVE_ACTION_TOOLS="shadow",
+        ),
+    ))
+
+    candidate_prompt = service._build_prompt(
+        group_message(group_id=1001, text="糖糖 随便聊聊"),
+        enabled_config(
+            TANGTANG_CONTEXT_LAYOUT="shadow",
+            TANGTANG_NATIVE_ACTION_TOOLS="shadow",
+        ),
+        call_text="糖糖 随便聊聊",
+        separate_current_input=True,
+        layered_context=True,
+    )
+    assert len(provider.toolsets[0]) == 2
+    assert provider.calls == 1
+    assert "[本轮普通用户工具可用性]" in candidate_prompt
+    assert "feature_calls" not in candidate_prompt
+    event = usage_events(usage_dir)[-1]
+    assert event["layout_version"] == "shadow"
+    assert event["tool_schema_hash"] == event["native_tool_schema_hash"]
+    assert event["shadow_payload_changed"] is True
+
+
+def test_shadow_keeps_legacy_cognition_request_and_layers_candidate(
+    tmp_path, monkeypatch
+):
+    service, _sent, provider, _usage_dir = make_service(
+        tmp_path, monkeypatch, response="[沉默]"
+    )
+    snapshot = TurnSnapshot("turn", 3, 1001, [], [], [], [], [])
+
+    class Cognition:
+        def __init__(self):
+            self.snapshot = snapshot
+
+        @staticmethod
+        def current():
+            return True
+
+        @staticmethod
+        def apply(text):
+            return text
+
+    captured_envelopes = []
+    original = TangtangProvider._responses_payload
+
+    def capture(config, persona, prompt, tools=(), history=(), images=(), envelope=None):
+        captured_envelopes.append(envelope)
+        return original(
+            config,
+            persona,
+            prompt,
+            tools=tools,
+            history=history,
+            images=images,
+            envelope=envelope,
+        )
+
+    monkeypatch.setattr(TangtangProvider, "_responses_payload", staticmethod(capture))
+    token = service._cognition_turn.set(Cognition())
+    try:
+        asyncio.run(service._model_reply(
+            SimpleNamespace(self_id=2),
+            group_message(group_id=1001, text="糖糖 记得我吗"),
+            enabled_config(TANGTANG_CONTEXT_LAYOUT="shadow"),
+            call_text="糖糖 记得我吗",
+        ))
+    finally:
+        service._cognition_turn.reset(token)
+
+    assert provider.calls == 1
+    assert provider.envelopes == [None]
+    assert provider.prompts[0].count(INSTRUCTION) == 1
+    assert snapshot.data_prompt() in provider.prompts[0]
+    assert captured_envelopes[0] is None
+    candidate = captured_envelopes[1]
+    assert candidate is not None
+    assert candidate.static_text.count(INSTRUCTION.strip()) == 1
+    assert INSTRUCTION.strip() not in candidate.dynamic_status
+    assert snapshot.data_prompt() in candidate.dynamic_status
+
+
+def test_v2_dynamic_tail_omits_legacy_interaction_history(tmp_path, monkeypatch):
+    service, _sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
+    service.db.insert_call(
+        group_id=1001,
+        user_id=2001,
+        message_id="old",
+        call_text="旧问题唯一标记",
+        reply_text="旧回答唯一标记",
+        reply_kind="model",
+        mode="d",
+        created_at="2026-09-21T00:00:00+08:00",
+    )
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, text="糖糖 新问题"),
+        enabled_config(TANGTANG_CONTEXT_LAYOUT="v2"),
+    ))
+
+    envelope = provider.envelopes[-1]
+    assert envelope is not None
+    assert "旧问题唯一标记" not in envelope.dynamic_status
+    assert "旧回答唯一标记" not in envelope.dynamic_status
+    assert "[你与该群友的成功互动历史" not in envelope.dynamic_status
+    assert "[该群友最近发言" not in envelope.dynamic_status
+    assert usage_events(usage_dir)[-1]["dynamic_status_chars"] == len(
+        envelope.dynamic_status
+    )
 
 
 def test_v2_next_request_appends_confirmed_previous_turn(tmp_path, monkeypatch):

@@ -89,6 +89,44 @@ def test_context_scope_isolated_by_group_user_and_persona_database(tmp_path: Pat
     assert denia.context_window(scopes[3])[1][0]["content"] == "scope-3"
 
 
+def test_context_version_change_starts_fresh_window_without_deleting_raw_turns(
+    tmp_path: Path,
+):
+    db = TangtangDb(tmp_path / "context.db")
+    session_id = session(db)
+    db.commit_context_items(
+        session_id,
+        "old-request",
+        (message("user", "old-layout"), message("assistant", "old-answer")),
+        now="old",
+    )
+    assert db.context_window(session_id)[1]
+
+    same_id = db.ensure_context_session(
+        group_id=1001,
+        user_id=2001,
+        layout_version="agent-context-v3",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        now="new",
+    )
+
+    assert same_id == session_id
+    assert db.context_window(session_id) == (None, ())
+    with db._connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM chat_context_turns WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()[0] == 2
+    db.commit_context_items(
+        session_id,
+        "new-request",
+        (message("user", "new-layout"),),
+        now="new",
+    )
+    assert db.context_window(session_id)[1] == (message("user", "new-layout"),)
+
+
 def populate(db: TangtangDb, session_id: int, count: int = 12) -> None:
     for index in range(count):
         db.commit_context_items(

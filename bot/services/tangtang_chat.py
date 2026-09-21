@@ -57,12 +57,19 @@ from bot.services.tangtang_reply import (
     reply_style_instruction,
 )
 from bot.services.local_skill_contract import skill_prompt
-from bot.services.agent_context import ContextEnvelope, history_items, stable_hash
+from bot.services.agent_context import (
+    AGENT_INVARIANT_INSTRUCTIONS,
+    AGENT_REPLY_INSTRUCTIONS,
+    ContextEnvelope,
+    history_items,
+    stable_hash,
+)
 from bot.services.context_compaction import (
     COMPACTION_SYSTEM_PROMPT,
     compaction_prompt,
     parse_snapshot,
 )
+from bot.services.persona_contracts import INSTRUCTION as PERSONA_COGNITION_INSTRUCTION
 from bot.services.agent_tools import (
     ACTION_TOOL_NAMES,
     ToolExecutionResult,
@@ -1103,13 +1110,13 @@ class TangtangProvider:
                     "type": "function_call_output", "call_id": item["call_id"],
                     "output": item["output"],
                 })
-        payload: dict[str, Any] = {
-            "model": config.model,
-            "input": input_items,
-            "max_output_tokens": config.max_output_tokens,
-        }
+        # Preserve wire order so the stable tool schema precedes the append-only
+        # conversation. Some compatible gateways key caches from serialized order.
+        payload: dict[str, Any] = {"model": config.model}
         if tools:
             payload["tools"] = list(tools)
+        payload["input"] = input_items
+        payload["max_output_tokens"] = config.max_output_tokens
         if config.reasoning_effort:
             payload["reasoning"] = {"effort": config.reasoning_effort}
         return payload
@@ -1238,16 +1245,15 @@ class TangtangProvider:
                 content = multimodal
             messages.append({"role": item.get("role"), "content": content})
         flush_calls()
-        payload: dict[str, Any] = {
-            "model": config.model,
-            "messages": messages,
-            "max_completion_tokens": config.max_output_tokens,
-        }
+        # Keep tools ahead of the changing message tail for prefix-cache reuse.
+        payload: dict[str, Any] = {"model": config.model}
         if tools:
             payload["tools"] = [
                 {"type": "function", "function": {k: v for k, v in tool.items() if k != "type"}}
                 for tool in tools
             ]
+        payload["messages"] = messages
+        payload["max_completion_tokens"] = config.max_output_tokens
         if config.reasoning_effort == "none":
             payload["thinking"] = {"type": "disabled"}
         else:
@@ -1995,23 +2001,27 @@ class TangtangService:
         black_meme_instruction: str | None = None,
         media_resolution: MediaResolution | None = None,
         separate_current_input: bool = False,
+        layered_context: bool = False,
     ) -> str:
         group_id = int(event.group_id)
         context_lines = self._group_context_lines(group_id, config.group_context_messages)
-        history_limit = None if config.history_chars <= 0 else config.history_chars
-        history = self.db.model_reply_lines(
-            int(event.user_id),
-            group_id,
-            config.history_messages,
-            history_limit,
-        )
-        history = self.memory.safe_text(group_id, int(event.user_id), history)
-        user_history = self._user_history_lines(
-            int(event.user_id),
-            group_id,
-            config.history_messages,
-            config.history_chars,
-        )
+        history = ""
+        user_history = ""
+        if not layered_context:
+            history_limit = None if config.history_chars <= 0 else config.history_chars
+            history = self.db.model_reply_lines(
+                int(event.user_id),
+                group_id,
+                config.history_messages,
+                history_limit,
+            )
+            history = self.memory.safe_text(group_id, int(event.user_id), history)
+            user_history = self._user_history_lines(
+                int(event.user_id),
+                group_id,
+                config.history_messages,
+                config.history_chars,
+            )
         sender = getattr(event, "sender", None)
         nickname = str(getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友")
         mentioned = bool(event.is_tome())
@@ -2089,7 +2099,16 @@ class TangtangService:
                 "资料没覆盖就明说不知道。"
             )
             fixed_parts.append("")
-        skill_contract = self._local_skill_contract(event) if not proactive else ""
+        skill_contract = ""
+        if not proactive:
+            if layered_context and config.native_action_tools in {"shadow", "true"}:
+                actions = self.feature_catalog(event) if self.feature_catalog is not None else ()
+                skill_contract = (
+                    "[本轮普通用户工具可用性]\n可用动作：" + "、".join(actions)
+                    if actions else "[本轮普通用户工具可用性]\n当前没有可执行的直送动作。"
+                )
+            else:
+                skill_contract = self._local_skill_contract(event)
         if skill_contract:
             fixed_parts.append(skill_contract)
             fixed_parts.append("")
@@ -2103,16 +2122,17 @@ class TangtangService:
             if proactive_turn() is not None and proactive_turn().strategy == "low_traffic_v1":
                 fixed_parts.append("这是少人聊天场景，一个群友的有内容发言也值得回应；不要仅因缺少多人讨论而沉默，仍可对无意义内容保持沉默。")
             fixed_parts.append("")
-        fixed_parts.append(
-            "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
-            "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。语气词（如“哈哈哈、嘿嘿、哼”）"
-            "不要每条都带、不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略；"
-            "普通聊天默认只发一条，确有两个意思才发第二条；不要按标点机械拆分，"
-            "别解释。"
-        )
-        fixed_parts.append(
-            "未提供视觉输入的[图片]不可见，不知道就说不知道，不能猜。"
-        )
+        if not layered_context or self._cognition_turn.get():
+            fixed_parts.append(
+                "输出格式：第一行必须是 [接话] 或 [沉默]，不要输出任何分析、理由或思考过程；"
+                "若 [接话]，后续每条要单独发送的消息都以 [消息] 开头。语气词（如“哈哈哈、嘿嘿、哼”）"
+                "不要每条都带、不要习惯性单独成条；偶尔一条纯语气词可以，多数时候并进正文开头或省略；"
+                "普通聊天默认只发一条，确有两个意思才发第二条；不要按标点机械拆分，"
+                "别解释。"
+            )
+            fixed_parts.append(
+                "未提供视觉输入的[图片]不可见，不知道就说不知道，不能猜。"
+            )
         if self._cognition_turn.get():
             fixed_parts.append('用自然的群友口吻。长短服从内容，需要解释就讲清楚；避免服务式收尾，不刻意压成几个字。最终输出统一JSON合同，不使用前面的方括号消息标记。')
         else:
@@ -2136,13 +2156,16 @@ class TangtangService:
         context_parts.extend([
             f"[最近群聊气氛（最近 {config.group_context_messages} 条，仅供感受氛围，不要逐条复述）]",
             "\n".join(context_lines) if context_lines else "（暂无）",
-            "",
-            f"[你与该群友的成功互动历史（{config.history_messages} 条内，仅供参考延续）]",
-            history or "（暂无）",
-            "",
-            f"[该群友最近发言（{config.history_messages} 条内，来自其历史聊天记录）]",
-            user_history or "（暂无）",
         ])
+        if not layered_context:
+            context_parts.extend([
+                "",
+                f"[你与该群友的成功互动历史（{config.history_messages} 条内，仅供参考延续）]",
+                history or "（暂无）",
+                "",
+                f"[该群友最近发言（{config.history_messages} 条内，来自其历史聊天记录）]",
+                user_history or "（暂无）",
+            ])
         context_joined = "\n".join(context_parts)
         knowledge = self._local_knowledge(call_text)
         memory_sections: list[str] = []
@@ -2574,7 +2597,7 @@ class TangtangService:
                     (*current_references, *context_references)
                 )
             persona = self._persona_text()
-            prompt = self._build_prompt(
+            provider_prompt = self._build_prompt(
                 event,
                 config,
                 at_labels=at_labels,
@@ -2582,39 +2605,119 @@ class TangtangService:
                 proactive=proactive,
                 black_meme_instruction=black_meme_instruction,
                 media_resolution=media_resolution,
-                separate_current_input=config.context_layout in {"shadow", "v2"},
+                separate_current_input=config.context_layout == "v2",
+                layered_context=config.context_layout == "v2",
             )
+            candidate_prompt = provider_prompt
+            if config.context_layout == "shadow":
+                candidate_prompt = self._build_prompt(
+                    event,
+                    config,
+                    at_labels=at_labels,
+                    call_text=call_text,
+                    proactive=proactive,
+                    black_meme_instruction=black_meme_instruction,
+                    media_resolution=media_resolution,
+                    separate_current_input=True,
+                    layered_context=True,
+                )
             context = self._turn.get()
             voice_candidate = False
             voice_status = "未绑定声线"
+            prompts = [provider_prompt, candidate_prompt]
+            stable_persona_instructions: tuple[str, ...] = ()
             if context and self.personas:
                 if context.persona.key != "tangtang":
-                    prompt = prompt.replace("再按糖糖人格决定", "再按达妮娅人格决定").replace("没有人呼叫糖糖", "没有人呼叫娅娅")
-                    prompt += "\n日常用自然短句，但不套用糖糖的极短字数要求；需要认真说明时可以展开。"
+                    prompts = [
+                        value.replace("再按糖糖人格决定", "再按达妮娅人格决定")
+                        .replace("没有人呼叫糖糖", "没有人呼叫娅娅")
+                        + "\n日常用自然短句，但不套用糖糖的极短字数要求；需要认真说明时可以展开。"
+                        for value in prompts
+                    ]
                 voice_status = self.personas.speech.status(context.persona.key, group_id,
                     group_enabled=self.personas.feature_enabled(group_id, "persona_voice"))
                 voice_candidate = self.personas.speech.random_candidate(group_id, random.random())
-                prompt += "\n" + self.personas.extra_prompt(context, current_text)
-                prompt += delivery_instruction(voice_status, voice_candidate, self.personas.expression_ids(context))
-                if self.personas:
-                    prompt += "\n" + self.personas.expression_prompt(context)
+                if config.context_layout in {"shadow", "v2"}:
+                    stable_extra = self.personas.stable_extra_prompt(context)
+                    dynamic_extra = self.personas.dynamic_extra_prompt(context, current_text)
+                    if stable_extra:
+                        stable_persona_instructions = (stable_extra,)
+                else:
+                    dynamic_extra = self.personas.extra_prompt(context, current_text)
+                dynamic_persona_suffix = "\n" + dynamic_extra if dynamic_extra else ""
+                dynamic_persona_suffix += delivery_instruction(
+                    voice_status, voice_candidate, self.personas.expression_ids(context)
+                )
+                legacy_suffix = (
+                    dynamic_persona_suffix + "\n" + self.personas.expression_prompt(context)
+                )
+                layered_suffix = (
+                    dynamic_persona_suffix + "\n"
+                    + self.personas.expression_availability_prompt(context)
+                )
+                if config.context_layout == "shadow":
+                    prompts = [prompts[0] + legacy_suffix, prompts[1] + layered_suffix]
+                elif config.context_layout == "v2":
+                    prompts = [value + layered_suffix for value in prompts]
+                else:
+                    prompts = [value + legacy_suffix for value in prompts]
+                if config.context_layout in {"shadow", "v2"}:
+                    stable_persona_instructions = (*stable_persona_instructions,
+                        self.personas.stable_expression_catalog_prompt(context.persona),
+                    )
             cognition = self._cognition_turn.get()
             if cognition:
                 config = replace(config, max_output_tokens=max(config.max_output_tokens, 4000))
-                prompt += '\n' + cognition.snapshot.prompt()
+                legacy_cognition_suffix = '\n' + cognition.snapshot.prompt()
+                layered_cognition_suffix = '\n' + cognition.snapshot.data_prompt()
+                if config.context_layout == "shadow":
+                    provider_prompt = prompts[0] + legacy_cognition_suffix
+                    candidate_prompt = prompts[1] + layered_cognition_suffix
+                elif config.context_layout == "v2":
+                    provider_prompt, candidate_prompt = (
+                        prompts[0] + layered_cognition_suffix,
+                        prompts[1] + layered_cognition_suffix,
+                    )
+                else:
+                    provider_prompt, candidate_prompt = (
+                        prompts[0] + legacy_cognition_suffix,
+                        prompts[1] + legacy_cognition_suffix,
+                    )
+                if config.context_layout in {"shadow", "v2"}:
+                    stable_persona_instructions = (
+                        *stable_persona_instructions,
+                        PERSONA_COGNITION_INSTRUCTION,
+                    )
             elif config.memory_enabled:
-                prompt += "\n" + self.memory.memory_prompt(group_id, user_id, event.get_plaintext().strip())
+                suffix = "\n" + self.memory.memory_prompt(
+                    group_id, user_id, event.get_plaintext().strip()
+                )
+                provider_prompt, candidate_prompt = (
+                    prompts[0] + suffix,
+                    prompts[1] + suffix,
+                )
             else:
-                prompt += "\n个人长期记忆已关闭，不能声称本轮保存了个人记忆。"
+                suffix = "\n个人长期记忆已关闭，不能声称本轮保存了个人记忆。"
+                provider_prompt, candidate_prompt = (
+                    prompts[0] + suffix,
+                    prompts[1] + suffix,
+                )
             if not self._turn_current():
                 return
             continuation = continuation_turn()
             if continuation is not None and not continuation.admit():
                 return
-            tools = (
+            provider_tools = (
                 NATIVE_ACTION_TOOL_SCHEMAS
                 if config.tools_enabled and config.native_action_tools == "true" and not proactive
                 else TOOL_SCHEMAS if config.tools_enabled else ()
+            )
+            candidate_tools = (
+                NATIVE_ACTION_TOOL_SCHEMAS
+                if config.tools_enabled
+                and config.native_action_tools in {"shadow", "true"}
+                and not proactive
+                else provider_tools
             )
             action_state_versions = (
                 self.feature_state_provider(event)
@@ -2623,12 +2726,28 @@ class TangtangService:
                 and not proactive
                 else {}
             )
+            fixed_instructions = (
+                (AGENT_INVARIANT_INSTRUCTIONS, *stable_persona_instructions)
+                if cognition else
+                (
+                    AGENT_INVARIANT_INSTRUCTIONS,
+                    AGENT_REPLY_INSTRUCTIONS,
+                    *stable_persona_instructions,
+                )
+            )
+            session_prompt = (
+                candidate_prompt if config.context_layout == "shadow" else provider_prompt
+            )
+            session_tools = (
+                candidate_tools if config.context_layout == "shadow" else provider_tools
+            )
             draft_envelope = ContextEnvelope.create(
                 persona=persona,
-                dynamic_status=prompt,
+                dynamic_status=session_prompt,
                 current_input=current_text,
                 images=media_resolution.images,
-                tools=tools,
+                tools=session_tools,
+                fixed_instructions=fixed_instructions,
             )
             persona_version = (
                 context.persona.version if context else stable_hash(persona)[:16]
@@ -2651,22 +2770,35 @@ class TangtangService:
             envelope = ContextEnvelope.create(
                 persona=persona,
                 conversation_items=(
-                    conversation_items if config.context_layout in {"shadow", "v2"} else ()
+                    conversation_items if config.context_layout == "v2" else ()
                 ),
                 compacted_snapshot=(
-                    snapshot_text if config.context_layout in {"shadow", "v2"} else ""
+                    snapshot_text if config.context_layout == "v2" else ""
                 ),
-                dynamic_status=prompt,
+                dynamic_status=provider_prompt,
                 current_input=current_text,
                 images=media_resolution.images,
-                tools=tools,
+                tools=provider_tools,
+                fixed_instructions=fixed_instructions,
             )
             request_envelope = envelope if config.context_layout == "v2" else None
-            provider_prompt = prompt
+            candidate_envelope = envelope
             if config.context_layout == "shadow":
-                provider_prompt = prompt.replace(
-                    "消息：见 [当前输入]", f"消息：{current_text}", 1
+                candidate_envelope = ContextEnvelope.create(
+                    persona=persona,
+                    conversation_items=conversation_items,
+                    compacted_snapshot=snapshot_text,
+                    dynamic_status=candidate_prompt,
+                    current_input=current_text,
+                    images=media_resolution.images,
+                    tools=candidate_tools,
+                    fixed_instructions=fixed_instructions,
                 )
+            persisted_user_content = (
+                candidate_envelope.current_text
+                if config.context_layout == "shadow" else
+                envelope.current_text if request_envelope else provider_prompt
+            )
             shadow_payload_hash = ""
             shadow_payload_changed: bool | None = None
             if config.context_layout == "shadow":
@@ -2676,23 +2808,28 @@ class TangtangService:
                     else TangtangProvider._chat_payload
                 )
                 legacy_payload = payload_builder(
-                    config, persona, provider_prompt, tools=tools,
+                    config, persona, provider_prompt, tools=provider_tools,
                     images=media_resolution.images,
                 )
                 candidate_payload = payload_builder(
-                    config, persona, provider_prompt, tools=tools,
-                    images=media_resolution.images, envelope=envelope,
+                    config, persona, candidate_prompt, tools=candidate_tools,
+                    images=media_resolution.images, envelope=candidate_envelope,
                 )
                 legacy_hash = stable_hash(legacy_payload)
                 candidate_hash = stable_hash(candidate_payload)
                 shadow_payload_changed = legacy_hash != candidate_hash
                 shadow_payload_hash = stable_hash((legacy_hash, candidate_hash))
+            telemetry_envelope = (
+                candidate_envelope if config.context_layout == "shadow" else envelope
+            )
             telemetry = {
-                "static_prefix_hash": envelope.static_prefix_hash,
-                "tool_schema_hash": envelope.tool_schema_hash,
+                "static_prefix_hash": telemetry_envelope.static_prefix_hash,
+                "tool_schema_hash": telemetry_envelope.tool_schema_hash,
                 "native_tool_schema_hash": stable_hash(NATIVE_ACTION_TOOL_SCHEMAS),
-                **envelope.layer_sizes(),
-                "layout_version": envelope.layout_version if request_envelope else config.context_layout,
+                **telemetry_envelope.layer_sizes(),
+                "layout_version": (
+                    telemetry_envelope.layout_version if request_envelope else config.context_layout
+                ),
                 "shadow_payload_hash": shadow_payload_hash,
                 "shadow_payload_changed": shadow_payload_changed,
             }
@@ -2703,14 +2840,15 @@ class TangtangService:
                     config,
                     persona,
                     provider_prompt,
-                    tools,
+                    provider_tools,
                     tuple(history),
                     media_resolution.images,
                     request_envelope,
                 )
             else:
                 result = await self.provider.generate_agent(
-                    config, persona, provider_prompt, tools, tuple(history), (), request_envelope
+                    config, persona, provider_prompt, provider_tools,
+                    tuple(history), (), request_envelope
                 )
             usage = dict(result.usage)
             loops = 0
@@ -2723,7 +2861,7 @@ class TangtangService:
                         {
                             "type": "message",
                             "role": "user",
-                            "content": envelope.current_text if request_envelope else provider_prompt,
+                            "content": persisted_user_content,
                         },
                     ))
                     await self._run_native_action_tools(
@@ -2745,14 +2883,15 @@ class TangtangService:
                         config,
                         persona,
                         provider_prompt,
-                        tools,
+                        provider_tools,
                         tuple(history),
                         media_resolution.images,
                         request_envelope,
                     )
                 else:
                     result = await self.provider.generate_agent(
-                        config, persona, provider_prompt, tools, tuple(history), (), request_envelope
+                        config, persona, provider_prompt, provider_tools,
+                        tuple(history), (), request_envelope
                     )
                 usage = self._merge_usage(usage, result.usage)
                 loops += 1
@@ -2763,7 +2902,7 @@ class TangtangService:
                 {
                     "type": "message",
                     "role": "user",
-                    "content": envelope.current_text if request_envelope else provider_prompt,
+                    "content": persisted_user_content,
                 },
                 *history_items(tuple(history)),
             ))

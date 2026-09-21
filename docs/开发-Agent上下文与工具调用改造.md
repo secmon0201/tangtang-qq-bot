@@ -132,3 +132,39 @@ TANGTANG_CONTEXT_COMPACTION_ENABLED=false|true
 - 同场景非缓存输入 token 相比 Q0 下降至少 50%。
 - 普通用户能力台账保持 100% 分类，14 个旧动作全部原生工具化。
 - 完整仓库门禁和 pytest 通过；仅重启 NoneBot 后核验新 PID、8080、OneBot 连接、实际聊天/工具调用及空错误日志。
+
+## Q8 灰度、指标与回退
+
+先执行不访问模型、不发送 QQ 消息的离线回放：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\replay_agent_context.py
+.\.venv\Scripts\python.exe scripts\benchmark_agent_cache.py
+```
+
+`replay_agent_context.py` 对 Responses 与 Chat Completions 构造相同的两轮语义序列，验证上一轮请求是下一轮的严格前缀、工具调用／结果顺序一致、shadow 候选含完整 44 项 Schema 且没有第二次付费请求。报告只含字符数、条目数和 hash，默认写入忽略的 `reports/agent-context-replay.json`。`benchmark_agent_cache.py` 默认同样只构造合成上下文并记录零网络请求；只有人工明确加 `--live` 才会用当前 `config_loader` 和 `TangtangProvider` 连续请求，首轮预热、后续统计真实缓存字段。live 报告使用纯合成长前缀，不包含群聊、身份、端点或密钥；HTTP 失败仍写入脱敏状态和已尝试次数并返回非零，供应商不返回缓存字段时保持 `unsupported`，不得补成零或宣称达标。
+
+生产 usage 聚合使用：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_agent_usage.py `
+  --baseline-start 2026-09-21T00:00:00+08:00 `
+  --baseline-end 2026-09-21T12:00:00+08:00 `
+  --candidate-start 2026-09-21T12:00:00+08:00 `
+  --output reports\agent-usage.json
+```
+
+时间窗口必须替换为实际灰度边界。脚本按 `request_trace` 去重，只汇总终态模型请求；输出 token、缓存 read/write/miss、缓存比例中位数、非缓存输入、延迟、模型／工具回合、布局和 hash，不复制正文、群／用户 ID、明细或密钥。另以 `payload_builds` 聚合 `model_started` 的布局、Schema hash、分层字符数和 shadow 比较结果，因此即使供应商请求失败也能证明本地候选构造，但不能把它当成模型成功或缓存命中。老记录或缺字段记录继续计入请求量，但缓存状态为 `unsupported`。
+
+上线顺序固定如下：
+
+1. 离线回放和完整门禁通过。
+2. 运行 `.\.venv\Scripts\python.exe scripts\configure_agent_rollout.py --mode shadow --apply`，原子设置 `TANGTANG_CONTEXT_LAYOUT=shadow`、`TANGTANG_NATIVE_ACTION_TOOLS=shadow`、`TANGTANG_CONTEXT_COMPACTION_ENABLED=false`，然后仅重启 NoneBot。shadow 仍只发送一次旧 payload，候选仅本地构造。
+3. 在配置的固定测试群发送普通聊天、一个只读工具和一个明确拒绝用例；核对回复、QQ 回执、usage、OneBot 流量和错误日志。状态型工具优先自动化测试，不为验收制造无必要的真实状态变更。
+4. 依次在固定测试群、少量管理群、全部已启用群观察；三个开关仍为进程级，因此扩大范围使用现有群功能／技能灰度，不新增第四个上下文开关。
+5. 运行 `scripts\configure_agent_rollout.py --mode v2 --apply`，原子设置 `TANGTANG_CONTEXT_LAYOUT=v2`、`TANGTANG_NATIVE_ACTION_TOOLS=true`、`TANGTANG_CONTEXT_COMPACTION_ENABLED=true`，仅重启 NoneBot并重复实聊、只读工具和健康检查。
+6. 执行一次开关回退演练：用 `scripts\configure_agent_rollout.py --mode rollback --apply` 切到 `v1/false/false`，仅重启 NoneBot并验证，再用 `--mode v2 --apply` 恢复 `v2/true/true`。每次写入都在 `data/backups` 保存 `.env` 恢复副本；不得删除会话、轮次、快照或压缩任务。
+
+每次重启都必须核验新 PID、`127.0.0.1:8080` 监听归属、已建立 OneBot 连接／实际流量以及空 `logs/bot.err.log`，并确认 SnowLuma、QQ 和 Core 未被重启。固定测试群通知只能使用 `scripts/notify_test_group.py`，不得向脚本传群号。
+
+旧 `feature_calls` 提示协议在 v2 原生工具稳定后可从新请求中停止注入；兼容解析器需保留一个回退观察期，防止重试中的旧响应失效。同一请求仍由去重门保证只执行一个协议。只有受控 live 基准实际达到 90%、供应商支持时生产中位数达到目标、同场景非缓存输入下降至少 50%，才能把相应指标标记为完成；未达到时记录实测值和继续观察，不修改报告冒充通过。

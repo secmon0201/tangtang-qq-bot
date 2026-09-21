@@ -117,6 +117,24 @@ class PersonaEngine:
             f"情绪={','.join(r.get('emotion', []))}；强度={r.get('intensity',0.0)}；适用={r['use']}；避免={r['avoid']}）" for r in rows
         )
 
+    def stable_expression_catalog_prompt(self, persona: PersonaProfile) -> str:
+        rows = sorted(
+            (row for row in self.expressions.catalog(persona) if not row.get("explicit_only")),
+            key=lambda row: str(row["id"]),
+        )
+        return "表情目录（固定顺序不表示优先级；语义组仅供参考，可跨组轻松联想或接梗；逐项检查适用/避免，无合适项留空）。" + "；".join(
+            f"{r['id']}（{r['name']}；组={r.get('group',r['id'])}；画面={r.get('visual','')}；"
+            f"情绪={','.join(r.get('emotion', []))}；强度={r.get('intensity',0.0)}；适用={r['use']}；避免={r['avoid']}）" for r in rows
+        )
+
+    def expression_availability_prompt(self, context: ChatContext) -> str:
+        allowed = self.expression_ids(context)
+        return (
+            "本轮允许选择的表情 ID：" + "、".join(allowed)
+            if allowed else
+            "本轮表情发送不可用，表情选择留空。"
+        )
+
     def expression_intent(self, context: ChatContext, text: str) -> str:
         return expression_request(text, self.expressions.names(context.persona))
 
@@ -145,7 +163,7 @@ class PersonaEngine:
                 return MessageSegment.image(path.resolve().as_uri())
         return None
 
-    def extra_prompt(self, context: ChatContext, query: str) -> str:
+    def stable_extra_prompt(self, context: ChatContext) -> str:
         parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。个人资料与本人自述记忆跨群共享，不能因换群装作不认识。群聊上下文、话题与未完问题只使用本群记录，不能引用其他群聊天原文续聊。明确限定本群的约定和称呼仍只在本群使用。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if context.persona.key == 'denia':
             parts[0] = '个人资料、经历、称呼、约定、交流印象与熟悉程度按人格和用户全局共享，群号仅表示来源。只有聊天上下文、话题与未完问题限当前群，不引用其他群聊天原文续聊。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。'
@@ -154,6 +172,10 @@ class PersonaEngine:
         scene_rules = context.persona.resource_dir / "scene-expression.md"
         if scene_rules.is_file():
             parts.append(scene_rules.read_text(encoding="utf-8"))
+        return "\n\n".join(part for part in parts if part)
+
+    def dynamic_extra_prompt(self, context: ChatContext, query: str) -> str:
+        parts: list[str] = []
         if self.feature_enabled(context.group_id, "persona_growth") and not self.v2_enabled(context.persona.key):
             parts.append(self.growth.prompt(context.persona.key, context.group_id))
             if context.persona.key == 'denia':
@@ -178,6 +200,14 @@ class PersonaEngine:
         if self.topics and self.feature_enabled(context.group_id, "persona_topics"):
             parts.append(self.topics.prompt(context, query))
         return "\n\n".join(p for p in parts if p)
+
+    def extra_prompt(self, context: ChatContext, query: str) -> str:
+        return "\n\n".join(
+            part for part in (
+                self.stable_extra_prompt(context),
+                self.dynamic_extra_prompt(context, query),
+            ) if part
+        )
 
     def observe(self, context: ChatContext, source: str, reply: str, *, growth_updates=()) -> None:
         if self.feature_enabled(context.group_id, "persona_growth") and not self.v2_enabled(context.persona.key):

@@ -20,6 +20,15 @@
 - Verify: new PID in `logs\bot.pid`; `127.0.0.1:8080` listening; `logs\bot.err.log` empty; startup log shows `Feature plugin loaded` lines, the loaded adapter, and OneBot traffic; Core `8765` and proxy `18765` are unchanged.
 - Never restart SnowLuma or QQ unless the user explicitly asks.
 
+## Agent context rollout
+
+- Run `scripts\replay_agent_context.py` before rollout. It must confirm both API styles have the same semantic order, the previous request is a strict prefix of the next request, and the local shadow candidate has all 44 tools without a second provider call. Reports stay under ignored `reports/` and contain only counts and hashes.
+- `scripts\benchmark_agent_cache.py` is offline by default. `--live` is the only mode allowed to make paid calls; it uses synthetic context and reports actual cache support and ratios without prompt text, identities, endpoints, or keys. Never turn `unsupported` into zero.
+- Roll out in order with `scripts\configure_agent_rollout.py --mode shadow|v2|rollback --apply`: `shadow/shadow/false`, fixed test group, small managed-group scope, then `v2/true/true`. The three values are `TANGTANG_CONTEXT_LAYOUT`, `TANGTANG_NATIVE_ACTION_TOOLS`, and `TANGTANG_CONTEXT_COMPACTION_ENABLED`; do not add a parallel rollout switch. The script changes only these keys, writes atomically, and keeps ignored `.env` backups under `data/backups`.
+- Use `scripts\report_agent_usage.py` with explicit baseline/candidate timestamps. It deduplicates terminal request records and emits only aggregates, bounded labels, and hashes.
+- Roll back only by setting `v1/false/false` and restarting NoneBot. Never delete context turns, snapshots, compaction jobs, raw chat, or memory evidence. Preserve the legacy `feature_calls` parser through the rollback observation window even after v2 stops injecting the old prompt protocol.
+- Each shadow, v2, rollback, and restore restart must verify the new bot PID, listener ownership on 8080, established OneBot traffic, real ordinary chat plus a read-only native tool in the fixed test group, and an empty `logs\bot.err.log`. Use `scripts\notify_test_group.py`; it never accepts a group ID. Do not restart SnowLuma, QQ, or Core.
+
 ## Watchdog recovery
 
 - `start_watchdog.ps1` installs a per-workspace, current-user scheduled check at logon and every minute. The action must use the project `pythonw.exe` with `run_watchdog_check.py` and `CREATE_NO_WINDOW`; directly scheduling PowerShell with `-WindowStyle Hidden` can flash a console before argument parsing. The check has a 45-second timeout and UTF-8 failure logging in `logs/watchdog-supervisor-check.log`; the scheduled action is bounded to 50 seconds. `ensure_watchdog.ps1` restores exited or stale (180-second completed heartbeat) watchdogs, allowing 180 seconds for startup. Launch via WMI outside the invoking terminal/task process tree. Keep lifecycle operations serialized with the shared file lock.

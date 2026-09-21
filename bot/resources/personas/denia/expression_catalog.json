@@ -1427,5 +1427,854 @@
     "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
     "visual": "侧脸略微歪头看向一旁，眉眼微收，嘴角轻抿，头顶叠有醒目的黑白问号",
     "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。"
+  },
+  {
+    "id": "expr_052",
+    "file": "挥手浅笑.gif",
+    "name": "挥手浅笑",
+    "use": "见面问好、轻松告别、友好回应",
+    "avoid": "不以挥手带过严肃求助或坏消息",
+    "frames": 44,
+    "emotion": [
+      "友好招呼",
+      "温和亲切"
+    ],
+    "intensity": 0.35,
+    "action": "先带着浅笑看向前方，抬起红手套挥手后自然放下",
+    "group": "greeting",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "先带着浅笑看向前方，抬起红手套挥手后自然放下",
+    "aliases": [
+      "挥手浅笑",
+      "挥手",
+      "问好"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      9,
+      17,
+      26,
+      34,
+      43
+    ],
+    "sha256": "4f998e97efc61db02761e78850bb3b08b917d3bc7b78d51095801c07846fae70",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_053",
+    "file": "被摸头安心.gif",
+    "name": "被摸头安心",
+    "use": "被安慰、被认可或收到温柔关心时回应",
+    "avoid": "不把普通互动自动解释为亲密或恋爱关系",
+    "frames": 32,
+    "emotion": [
+      "安心",
+      "被安慰后的温暖"
+    ],
+    "intensity": 0.4,
+    "action": "闭眼接受对方摸头，随后睁眼露出安静的微笑",
+    "group": "comforted",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "闭眼接受对方摸头，随后睁眼露出安静的微笑",
+    "aliases": [
+      "被摸头安心",
+      "摸头",
+      "安心"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      6,
+      12,
+      19,
+      25,
+      31
+    ],
+    "sha256": "0b11beb5e7a5881610ceafdac8ddb8845ddeef1a4f5f4c92d95bcb12a486ea54",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_054",
+    "file": "含泪眨眼.gif",
+    "name": "含泪眨眼",
+    "use": "感动落泪、克制地表达伤心或不舍",
+    "avoid": "不夸大用户的痛苦，也不以哭泣抢走倾诉者注意",
+    "frames": 57,
+    "emotion": [
+      "含泪",
+      "伤感不舍"
+    ],
+    "intensity": 0.7,
+    "action": "眼部近景逐渐泛起泪光，闭眼后泪水滑落，再缓缓睁眼",
+    "group": "crying",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "眼部近景逐渐泛起泪光，闭眼后泪水滑落，再缓缓睁眼",
+    "aliases": [
+      "含泪眨眼",
+      "眼泪",
+      "落泪"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      11,
+      22,
+      34,
+      45,
+      56
+    ],
+    "sha256": "821547ccd6e0443cd872ead5ecab8e399da6045eaf70a18301bde4a0bb51b361",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_055",
+    "file": "暖阳抬眼.gif",
+    "name": "暖阳抬眼",
+    "use": "温和接话、被理解后放松、安静表示认可",
+    "avoid": "不用于强烈庆祝或明显悲伤的场景",
+    "frames": 50,
+    "emotion": [
+      "平静",
+      "温柔释然"
+    ],
+    "intensity": 0.25,
+    "action": "在暖色光线下从闭眼低头缓缓抬眼，最后露出浅笑",
+    "group": "gentle_smile",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "在暖色光线下从闭眼低头缓缓抬眼，最后露出浅笑",
+    "aliases": [
+      "暖阳抬眼",
+      "抬眼浅笑",
+      "温柔抬眼"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      10,
+      20,
+      29,
+      39,
+      49
+    ],
+    "sha256": "21c2d36ab9a6be6b2fa4430b83ec78aafa555655c1b7fb6c116636b62a58c62f",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_056",
+    "file": "指尖逗笑.gif",
+    "name": "指尖逗笑",
+    "use": "轻松逗趣、给自己打气、故意摆出笑脸",
+    "avoid": "不在悲伤倾诉或严肃道歉时强行逗笑",
+    "frames": 45,
+    "emotion": [
+      "俏皮",
+      "努力开心"
+    ],
+    "intensity": 0.5,
+    "action": "从自然说话变成用两根食指托住嘴角，闭眼摆出笑脸",
+    "group": "playful_smile",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "从自然说话变成用两根食指托住嘴角，闭眼摆出笑脸",
+    "aliases": [
+      "指尖逗笑",
+      "托嘴角",
+      "逗笑"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      9,
+      18,
+      26,
+      35,
+      44
+    ],
+    "sha256": "b4190e27e8cd74b061e095cc2a44b14fab3f37078693b3313bbb34894deed97c",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_057",
+    "file": "害羞闭眼笑.gif",
+    "name": "害羞闭眼笑",
+    "use": "收到夸奖后腼腆道谢、轻松地开心回应",
+    "avoid": "不把害羞自动解释成恋爱示好",
+    "frames": 39,
+    "emotion": [
+      "腼腆",
+      "开心"
+    ],
+    "intensity": 0.4,
+    "action": "先垂眼浅笑，随后闭起双眼并轻轻低头",
+    "group": "shy",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "先垂眼浅笑，随后闭起双眼并轻轻低头",
+    "aliases": [
+      "害羞闭眼笑",
+      "腼腆笑",
+      "害羞"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      15,
+      23,
+      30,
+      38
+    ],
+    "sha256": "5f78e190f12f9554556fc576ddaccd086c7fa86435b5a71eb60d59ff693d3681",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_058",
+    "file": "眨眼委屈.gif",
+    "name": "眨眼委屈",
+    "use": "小事不顺、被熟人逗弄后表达一点委屈",
+    "avoid": "不用于真实冲突、投诉或需要实际帮助的情境",
+    "frames": 41,
+    "emotion": [
+      "委屈",
+      "轻微闹别扭"
+    ],
+    "intensity": 0.55,
+    "action": "坐在紫色灯光前抿嘴委屈，反复眨眼并短暂闭眼",
+    "group": "hurt",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "坐在紫色灯光前抿嘴委屈，反复眨眼并短暂闭眼",
+    "aliases": [
+      "眨眼委屈",
+      "委屈眨眼",
+      "小委屈"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      16,
+      24,
+      32,
+      40
+    ],
+    "sha256": "a5bbb64b838a8af48085fa41c3fc3cc7e38521d11e2bcd23d3bf4367acc20bf7",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_059",
+    "file": "愣住不安.gif",
+    "name": "愣住不安",
+    "use": "突然没反应过来、听到意外消息后发愣",
+    "avoid": "真实危险或紧急求助时先提供有用信息",
+    "frames": 20,
+    "emotion": [
+      "错愕",
+      "不安"
+    ],
+    "intensity": 0.6,
+    "action": "正面近景先轻轻张嘴，随后眼神紧张、嘴角收住",
+    "group": "bewildered",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "正面近景先轻轻张嘴，随后眼神紧张、嘴角收住",
+    "aliases": [
+      "愣住不安",
+      "愣住",
+      "不安"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      4,
+      8,
+      11,
+      15,
+      19
+    ],
+    "sha256": "800501e183b8ab5e3b1b00d9d828d6caa440bcebc7fc027ea9a0aadd3c1f2b39",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_060",
+    "file": "低头甜笑.gif",
+    "name": "低头甜笑",
+    "use": "小小开心、收到善意或温柔道谢",
+    "avoid": "不用于嘲讽、幸灾乐祸或严肃坏消息",
+    "frames": 44,
+    "emotion": [
+      "满足",
+      "温柔开心"
+    ],
+    "intensity": 0.4,
+    "action": "闭眼带笑，头部轻轻低下又回到原位",
+    "group": "happy",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "闭眼带笑，头部轻轻低下又回到原位",
+    "aliases": [
+      "低头甜笑",
+      "甜笑",
+      "低头笑"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      9,
+      17,
+      26,
+      34,
+      43
+    ],
+    "sha256": "ba89b4b7f68643f536621570983e23631d3e9b85f6b000b6f4d4d94545b8d66c",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_061",
+    "file": "低头后释然.gif",
+    "name": "低头后释然",
+    "use": "担心消退、事情有了着落后松一口气",
+    "avoid": "问题尚未解决时不提前表现得一切都好",
+    "frames": 39,
+    "emotion": [
+      "从忧虑到释然"
+    ],
+    "intensity": 0.45,
+    "action": "在暖光中低头垂眼，重新抬眼后逐渐露出轻松微笑",
+    "group": "bittersweet",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "在暖光中低头垂眼，重新抬眼后逐渐露出轻松微笑",
+    "aliases": [
+      "低头后释然",
+      "释然",
+      "松口气"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      15,
+      23,
+      30,
+      38
+    ],
+    "sha256": "ad6609646447f754bbb4d10e089f628f33748a118cdb5a640d83de3b124feb4f",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_062",
+    "file": "紧张睁眼.gif",
+    "name": "紧张睁眼",
+    "use": "听到出乎意料的消息、轻度担心地确认情况",
+    "avoid": "不把真实危机做成夸张反应，先回应事实和行动",
+    "frames": 40,
+    "emotion": [
+      "紧张",
+      "意外"
+    ],
+    "intensity": 0.6,
+    "action": "原本不安地看向前方，随后双眼明显睁大、嘴微张",
+    "group": "surprised",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "原本不安地看向前方，随后双眼明显睁大、嘴微张",
+    "aliases": [
+      "紧张睁眼",
+      "突然紧张",
+      "睁眼惊讶"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      16,
+      23,
+      31,
+      39
+    ],
+    "sha256": "793622f40bb40cd7ca89c65a6f453ccc167a5422abb6381a7eb3f1c58de17efd",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_063",
+    "file": "破涕为笑.gif",
+    "name": "破涕为笑",
+    "use": "难过后得到安慰、紧张解除或苦中作乐",
+    "avoid": "不以笑容否定仍在持续的痛苦",
+    "frames": 69,
+    "emotion": [
+      "由悲伤转为释然",
+      "含泪微笑"
+    ],
+    "intensity": 0.65,
+    "action": "起初眉眼低落、眼中含泪，随后闭眼笑起来并恢复平静",
+    "group": "bittersweet",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "起初眉眼低落、眼中含泪，随后闭眼笑起来并恢复平静",
+    "aliases": [
+      "破涕为笑",
+      "含泪释然",
+      "雨过天晴"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      14,
+      27,
+      41,
+      54,
+      68
+    ],
+    "sha256": "04e2939203124abbf72c50e06f6943522f2c491135de1fa2cb8ccc5184668f15",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_064",
+    "file": "掩嘴偷笑.gif",
+    "name": "掩嘴偷笑",
+    "use": "听到有趣的话、忍不住笑或善意接梗",
+    "avoid": "不嘲笑真实损失、失败或痛苦",
+    "frames": 26,
+    "emotion": [
+      "忍俊不禁",
+      "俏皮"
+    ],
+    "intensity": 0.55,
+    "action": "侧身带笑，抬起红手套遮住嘴并闭眼偷笑",
+    "group": "amused",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "侧身带笑，抬起红手套遮住嘴并闭眼偷笑",
+    "aliases": [
+      "掩嘴偷笑",
+      "偷笑",
+      "捂嘴笑"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      5,
+      10,
+      15,
+      20,
+      25
+    ],
+    "sha256": "469ebc0b1085ab2a743cdf70870d3a6b4879dd010f51c07664b2caf4cee4c32e",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_065",
+    "file": "握拳期待.gif",
+    "name": "握拳期待",
+    "use": "期待结果、给对方加油或为小目标鼓劲",
+    "avoid": "不以期待给用户施压，也不用于严肃失败后的催促",
+    "frames": 18,
+    "emotion": [
+      "期待",
+      "鼓劲"
+    ],
+    "intensity": 0.5,
+    "action": "双手握拳收在胸前，睁大眼睛专注看向前方，轮廓轻微抖动",
+    "group": "encouraging",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "双手握拳收在胸前，睁大眼睛专注看向前方，轮廓轻微抖动",
+    "aliases": [
+      "握拳期待",
+      "期待",
+      "加油"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      3,
+      7,
+      10,
+      14,
+      17
+    ],
+    "sha256": "68099f64f92396a760c45ccd7b24823dbd9e8f25b4ab6f2ab89c4a40746ca4dc",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_066",
+    "file": "垂眸失落.gif",
+    "name": "垂眸失落",
+    "use": "小失望、遗憾或告别时有些不舍",
+    "avoid": "不渲染绝望，也不向用户索取安慰",
+    "frames": 36,
+    "emotion": [
+      "失落",
+      "不舍"
+    ],
+    "intensity": 0.5,
+    "action": "侧脸原本带着浅笑，目光逐渐垂下，嘴角收紧",
+    "group": "sad",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "侧脸原本带着浅笑，目光逐渐垂下，嘴角收紧",
+    "aliases": [
+      "垂眸失落",
+      "失落垂眸",
+      "不舍"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      7,
+      14,
+      21,
+      28,
+      35
+    ],
+    "sha256": "9e50fd2c6ca5db0e7e57150e0d0be138da4f9845892a2a2143ae3ea9f142cf7c",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_067",
+    "file": "抵唇嘘声.gif",
+    "name": "抵唇嘘声",
+    "use": "轻松提醒小声一点、保守小秘密或俏皮卖关子",
+    "avoid": "不能用来压制求助、揭露风险或必要的严肃表达",
+    "frames": 60,
+    "emotion": [
+      "俏皮提醒",
+      "保持安静"
+    ],
+    "intensity": 0.5,
+    "action": "正面说话后抬起食指抵住嘴唇，半眯眼作出嘘声动作",
+    "group": "playful",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "正面说话后抬起食指抵住嘴唇，半眯眼作出嘘声动作",
+    "aliases": [
+      "抵唇嘘声",
+      "嘘",
+      "小声点"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      12,
+      24,
+      35,
+      47,
+      59
+    ],
+    "sha256": "e8c72be7aa239f6074faf6d696b87bdd4d8717b1968bd6a200dd25571ed9007c",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_068",
+    "file": "羞涩低头.gif",
+    "name": "羞涩低头",
+    "use": "收到夸奖、被温柔关照后腼腆回应",
+    "avoid": "不自动发展成恋爱、占有或排他关系",
+    "frames": 42,
+    "emotion": [
+      "羞涩",
+      "被夸后的开心"
+    ],
+    "intensity": 0.55,
+    "action": "脸颊泛红地浅笑，低头闭起一只眼，神情越来越腼腆",
+    "group": "shy",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "脸颊泛红地浅笑，低头闭起一只眼，神情越来越腼腆",
+    "aliases": [
+      "羞涩低头",
+      "脸红低头",
+      "腼腆"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      16,
+      25,
+      33,
+      41
+    ],
+    "sha256": "7a22be572444f1ebfee2935036df6ec183908df78225d610eb76062fe96235d3",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_069",
+    "file": "含泪强笑.gif",
+    "name": "含泪强笑",
+    "use": "感动又酸涩、难过时努力保持温柔回应",
+    "avoid": "不当作纯开心庆祝，也不靠脆弱感施压用户",
+    "frames": 59,
+    "emotion": [
+      "笑中带泪",
+      "克制难过"
+    ],
+    "intensity": 0.65,
+    "action": "脸部近景眼中含泪、双颊泛红，短暂闭眼后勉强露出浅笑",
+    "group": "bittersweet",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "脸部近景眼中含泪、双颊泛红，短暂闭眼后勉强露出浅笑",
+    "aliases": [
+      "含泪强笑",
+      "笑中带泪",
+      "酸涩微笑"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      12,
+      23,
+      35,
+      46,
+      58
+    ],
+    "sha256": "4ebfec885086a342aa4333584afdb68b0de28ca56fda1bd63453ae6fb1cec2d1",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_070",
+    "file": "暖阳回眸.gif",
+    "name": "暖阳回眸",
+    "use": "友好确认、温柔接话或告别前回头回应",
+    "avoid": "不暗示额外承诺或特殊关系",
+    "frames": 35,
+    "emotion": [
+      "温暖",
+      "从容友善"
+    ],
+    "intensity": 0.3,
+    "action": "在暖色光线中从半闭眼转向镜头，最后露出安静微笑",
+    "group": "gentle_smile",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "在暖色光线中从半闭眼转向镜头，最后露出安静微笑",
+    "aliases": [
+      "暖阳回眸",
+      "回眸微笑",
+      "温暖回眸"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      7,
+      14,
+      20,
+      27,
+      34
+    ],
+    "sha256": "bef16ac2b7f5aeb97ed28201d20d5d40357b84e8fcb6e791fc09c61bfba25796",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_071",
+    "file": "睁眼惊讶.gif",
+    "name": "睁眼惊讶",
+    "use": "没想到的新消息、轻松语境里的突然发现",
+    "avoid": "真实灾难或危险场景不用夸张表演替代帮助",
+    "frames": 34,
+    "emotion": [
+      "意外",
+      "轻度惊讶"
+    ],
+    "intensity": 0.55,
+    "action": "从闭眼浅笑逐渐睁开双眼，嘴微张并转为惊讶神情",
+    "group": "surprised",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "从闭眼浅笑逐渐睁开双眼，嘴微张并转为惊讶神情",
+    "aliases": [
+      "睁眼惊讶",
+      "突然发现",
+      "惊讶"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      7,
+      13,
+      20,
+      26,
+      33
+    ],
+    "sha256": "47bc33c64ecfab2b4314d3124f1f8242ee44c36292936329b979c48b5482250e",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_072",
+    "file": "歪头含泪.gif",
+    "name": "歪头含泪",
+    "use": "表达脆弱、感动或有些难过地回应",
+    "avoid": "不卖惨、不情感绑架，也不替用户定义痛苦程度",
+    "frames": 64,
+    "emotion": [
+      "脆弱",
+      "含泪不安"
+    ],
+    "intensity": 0.65,
+    "action": "侧着头望向前方，眼角带泪光，眼神在眨动中逐渐柔弱",
+    "group": "vulnerable",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "侧着头望向前方，眼角带泪光，眼神在眨动中逐渐柔弱",
+    "aliases": [
+      "歪头含泪",
+      "含泪歪头",
+      "脆弱"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      13,
+      25,
+      38,
+      50,
+      63
+    ],
+    "sha256": "9a7cf11944a1cdbbb57ee7d54d6c35dddddb78aca6d46612c7760424895e0739",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_073",
+    "file": "阴影惊恐.gif",
+    "name": "阴影惊恐",
+    "use": "轻松玩梗时表达被吓到、发现离谱反转",
+    "avoid": "真实危险、创伤或恐惧倾诉中不要用惊悚画面",
+    "frames": 39,
+    "emotion": [
+      "夸张惊恐",
+      "震惊"
+    ],
+    "intensity": 0.85,
+    "action": "紫红阴影中的全身画面缓缓抬头，双眼亮起并直视前方",
+    "group": "shocked",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "紫红阴影中的全身画面缓缓抬头，双眼亮起并直视前方",
+    "aliases": [
+      "阴影惊恐",
+      "惊恐",
+      "吓人"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      8,
+      15,
+      23,
+      30,
+      38
+    ],
+    "sha256": "c51da4031fc99579659742c3e4d521f274dc6905717d06ecd26ebdc98c475a0c",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_074",
+    "file": "暖阳无奈.gif",
+    "name": "暖阳无奈",
+    "use": "好笑又没办法、轻度吐槽或接受小麻烦",
+    "avoid": "不蔑视用户，不用于严肃批评或求助",
+    "frames": 32,
+    "emotion": [
+      "无奈",
+      "带笑接受"
+    ],
+    "intensity": 0.4,
+    "action": "暖光下先闭眼，随后半垂眼看向前方并露出无奈浅笑",
+    "group": "resigned",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "暖光下先闭眼，随后半垂眼看向前方并露出无奈浅笑",
+    "aliases": [
+      "暖阳无奈",
+      "无奈浅笑",
+      "没办法"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      6,
+      12,
+      19,
+      25,
+      31
+    ],
+    "sha256": "e1da58cb0686ffec5114339b0b16ace42ffd00c0d1baf3f129d91d7edd370161",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_075",
+    "file": "笑中难过.gif",
+    "name": "笑中难过",
+    "use": "开心里带遗憾、笑容慢慢收住的复杂感受",
+    "avoid": "不用于纯庆祝，也不把用户悲伤轻描淡写",
+    "frames": 34,
+    "emotion": [
+      "笑意消退",
+      "难过"
+    ],
+    "intensity": 0.55,
+    "action": "正面浅笑逐渐变得勉强，眉眼低垂，最后露出难过神情",
+    "group": "bittersweet",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "正面浅笑逐渐变得勉强，眉眼低垂，最后露出难过神情",
+    "aliases": [
+      "笑中难过",
+      "笑容消退",
+      "勉强微笑"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      7,
+      13,
+      20,
+      26,
+      33
+    ],
+    "sha256": "cb5b6856c5838245d9ddf96525dbd41216be21379e67e20ce4c6fb8de3460958",
+    "explicit_only": false
+  },
+  {
+    "id": "expr_076",
+    "file": "侧目吐槽.gif",
+    "name": "侧目吐槽",
+    "use": "熟人间接离谱梗、轻度嫌弃或无语吐槽",
+    "avoid": "不用于否定真实求助、侮辱用户或严肃争执",
+    "frames": 65,
+    "emotion": [
+      "无语",
+      "轻度嫌弃"
+    ],
+    "intensity": 0.5,
+    "action": "先侧目半眯眼说话，随后闭眼皱眉，保持略显无语的神情",
+    "group": "speechless",
+    "analysis_method": "assistant_direct_image_and_keyframe_inspection_v2",
+    "visual": "先侧目半眯眼说话，随后闭眼皱眉，保持略显无语的神情",
+    "aliases": [
+      "侧目吐槽",
+      "侧目无语",
+      "嫌弃"
+    ],
+    "visible_text": "",
+    "analysis_note": "视觉观察与语用解释分别记录；情绪为上下文相关解释，不是客观心理诊断。",
+    "reviewed_frames": [
+      0,
+      13,
+      26,
+      38,
+      51,
+      64
+    ],
+    "sha256": "6e1e49a00707821e94b2f71d9f11e8e96e80b747b939456c986f8c937335448c",
+    "explicit_only": false
   }
 ]

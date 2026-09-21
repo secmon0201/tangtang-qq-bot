@@ -1570,7 +1570,7 @@ def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_pat
         enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
     ))
     assert provider.calls == 1
-    assert len(provider.toolsets[0]) == 16
+    assert len(provider.toolsets[0]) == 32
     assert [(request.action, request.args, request.cluster) for request in executed] == [
         ("ranking", "周", False)
     ]

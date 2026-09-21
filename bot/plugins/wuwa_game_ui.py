@@ -6,7 +6,7 @@ import asyncio
 from typing import Any
 
 from nonebot import logger, on_message
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.rule import Rule
 
 from bot.config import ROOT, settings
@@ -19,6 +19,7 @@ from bot.services.wuwa_command_policy import (
 from bot.services.wuwa_help_render import WuwaFullHelpRenderer, WuwaHelpRenderer
 from bot.services.wuwa_rank_data import (
     WuwaRankDataError,
+    WuwaRankRequest,
     default_wuwa_rank_service,
     is_full_wuwa_help_command,
     is_new_wuwa_help_command,
@@ -68,7 +69,7 @@ async def _(event: GroupMessageEvent) -> None:
         await wuwa_game_ui.finish(ROVER_REMINDER_DISABLED_MESSAGE)
         return
     if is_wuwa_help_command(text):
-        await _send_help(text)
+        await _send_help(wuwa_game_ui, text)
         return
     await _send_rank(wuwa_game_ui, event, text)
 
@@ -81,8 +82,46 @@ async def _chat_wuwa_rank(
     request: FeatureRequest,
 ) -> None:
     del bot
-    scope = "总" if str(request.args) == "总" else "群"
-    await _send_rank(matcher, event, f"#ww{scope}最强排行")
+    await _send_rank_request(
+        matcher,
+        event,
+        WuwaRankRequest("strongest", None, "bot" if request.args == "总" else "group"),
+    )
+
+
+@register_local_feature(
+    "wuwa_help", "wuwa_character_rank", "wuwa_echo_rank", "wuwa_progress_rank"
+)
+async def _chat_wuwa_read(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    if request.action == "wuwa_help":
+        await _send_help(matcher, "#ww帮助")
+        return
+    kind = {
+        "wuwa_character_rank": "role",
+        "wuwa_echo_rank": "phantom",
+        "wuwa_progress_rank": "practice",
+    }[request.action]
+    character = (
+        str(request.parameter("character", "") or "").strip()
+        if kind in {"role", "phantom"}
+        else None
+    )
+    await _send_rank_request(
+        matcher,
+        event,
+        WuwaRankRequest(
+            kind,
+            character,
+            "bot" if request.args == "总" else "group",
+            int(request.parameter("page", 1) or 1),
+        ),
+    )
 
 
 async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
@@ -90,6 +129,12 @@ async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     if request is None:
         await matcher.finish()
         return
+    await _send_rank_request(matcher, event, request)
+
+
+async def _send_rank_request(
+    matcher: Any, event: GroupMessageEvent, request: WuwaRankRequest
+) -> None:
     try:
         result = await asyncio.to_thread(rank_service.build, request, int(event.group_id), int(event.user_id))
         avatar_rows = [*result.rows, *([result.self_overflow] if result.self_overflow else [])]
@@ -108,32 +153,32 @@ async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     await matcher.finish(local_image_segment(image_path))
 
 
-async def _send_help(text: str) -> None:
+async def _send_help(matcher: Any, text: str) -> None:
     if is_original_wuwa_help_command(text):
         if not ORIGINAL_HELP_PATH.exists():
-            await wuwa_game_ui.finish(
+            await matcher.finish(
                 "原版帮助快照尚未生成，请在项目目录运行："
                 "python scripts/export_wuwa_original_help.py"
             )
             return
-        await wuwa_game_ui.finish(local_image_segment(ORIGINAL_HELP_PATH))
+        await matcher.finish(local_image_segment(ORIGINAL_HELP_PATH))
     if is_full_wuwa_help_command(text):
         try:
             image_path = await asyncio.to_thread(full_help_renderer.render)
         except Exception:
             logger.exception("Wuthering Waves full help render failed")
-            await wuwa_game_ui.finish("鸣潮完整帮助图生成失败，请稍后重试。")
+            await matcher.finish("鸣潮完整帮助图生成失败，请稍后重试。")
             return
-        await wuwa_game_ui.finish(local_image_segment(image_path))
+        await matcher.finish(local_image_segment(image_path))
     if is_new_wuwa_help_command(text):
         try:
             image_path = await asyncio.to_thread(help_renderer.render)
         except Exception:
             logger.exception("Wuthering Waves help render failed")
-            await wuwa_game_ui.finish("新版鸣潮帮助图生成失败，请稍后重试。")
+            await matcher.finish("新版鸣潮帮助图生成失败，请稍后重试。")
             return
-        await wuwa_game_ui.finish(local_image_segment(image_path))
-    await wuwa_game_ui.finish()
+        await matcher.finish(local_image_segment(image_path))
+    await matcher.finish()
 
 
 __all__ = ["is_wuwa_ui_message", "wuwa_game_ui"]

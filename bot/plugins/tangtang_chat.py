@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+from dataclasses import replace
 from typing import Any
 
 from nonebot import on_message, get_driver, get_bots, logger
@@ -52,6 +53,29 @@ from bot.services.agent_tools import ToolExecutionResult
 PASSIVE_EVENT_MAX_AGE_SECONDS = 120
 _GAME_CODE_RE = re.compile(r"^(?:gs|ys|ww|nte|yh)(?=$|\s|[\u4e00-\u9fff])", re.IGNORECASE)
 _CODEX_COMMAND_RE = re.compile(r"^#\s*codex(?:\s|$)", re.IGNORECASE)
+_TARGETED_READ_ACTIONS = frozenset({"archive_records", "archive_search", "archive_profile"})
+
+
+def _resolve_request_target(event: Any, request: FeatureRequest) -> FeatureRequest:
+    if request.action not in _TARGETED_READ_ACTIONS:
+        return request
+    mode = request.parameter("target")
+    if mode == "self":
+        return replace(request, target_user_id=int(event.user_id))
+    if mode != "mentioned":
+        return request
+    original = getattr(event, "original_message", getattr(event, "message", ()))
+    targets: list[int] = []
+    for segment in original:
+        if segment.type != "at":
+            continue
+        value = str(segment.data.get("qq") or "")
+        if value == str(getattr(event, "self_id", "")) or not value.isdigit():
+            continue
+        targets.append(int(value))
+    if len(targets) != 1:
+        return request
+    return replace(request, target_user_id=targets[0])
 
 
 def _feature_denial(event, request: FeatureRequest) -> str:
@@ -61,15 +85,21 @@ def _feature_denial(event, request: FeatureRequest) -> str:
         return "invalid_args"
     if getattr(event, "message_type", "") != "group" or not getattr(event, "group_id", None):
         return "group_required"
+    if request.action in _TARGETED_READ_ACTIONS and request.target_user_id is None:
+        return "invalid_args"
     skill = local_action_skill(request.action)
     if skill is None or skill.deprecated or request.action not in registered_local_features():
         return "unknown_skill"
     group_id = int(event.group_id)
     if not skill_ledger.enabled_for_group(skill.skill_id, group_id):
         return "group_disabled"
-    if skill.feature_key and not group_domains().effective_feature_enabled(group_id, skill.feature_key):
+    if (
+        skill.feature_key
+        and request.action != "user_help"
+        and not group_domains().effective_feature_enabled(group_id, skill.feature_key)
+    ):
         return "group_disabled"
-    if request.action in {"nte_rank", "wuwa_rank"} and (
+    if request.action.startswith(("nte_", "wuwa_")) and (
         not settings.game_api_enabled or not passive_settings().is_game_api_enabled()
     ):
         return "group_disabled"
@@ -87,8 +117,26 @@ def _feature_denial(event, request: FeatureRequest) -> str:
 
 
 def _available_model_skills(event) -> tuple[str, ...]:
-    return tuple(action for action, contract in ACTION_CONTRACTS.items()
-                 if not _feature_denial(event, FeatureRequest(action, contract.args[0])))
+    def sample(action: str, args: str) -> FeatureRequest:
+        parameters: dict[str, str | int] = {}
+        if action in {"archive_records", "archive_profile"}:
+            parameters = {"target": "self"}
+            if action == "archive_records":
+                parameters["page"] = 1
+        elif action == "archive_search":
+            parameters = {"target": "self", "keyword": "测试", "page": 1}
+        elif action in {"nte_mint_rank", "wuwa_progress_rank"}:
+            parameters = {"page": 1}
+        elif action in {"wuwa_character_rank", "wuwa_echo_rank"}:
+            parameters = {"character": "角色", "page": 1}
+        request = FeatureRequest.with_parameters(action, parameters, args=args)
+        return _resolve_request_target(event, request)
+
+    return tuple(
+        action
+        for action, contract in ACTION_CONTRACTS.items()
+        if not _feature_denial(event, sample(action, contract.args[0]))
+    )
 
 
 async def _run_skill_requests(bot, event, config, requests, *, text="", opening="",
@@ -96,6 +144,7 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                               execution_results=None) -> bool:
     """One authorization and delivery path for local, planned and model calls."""
     current = current or service._turn_current
+    requests = tuple(_resolve_request_target(event, request) for request in requests)
     delivery = FeatureDelivery(bot, event, current=current)
     usage = usage or {}
     if not current():
@@ -191,7 +240,9 @@ async def _run_skill_requests(bot, event, config, requests, *, text="", opening=
                 message_id=getattr(event, "message_id", "") or "", call_text=text,
                 reply_text="\n".join(delivery.receipts[before:]),
                 provenance={"skill_id": skill.skill_id, "action": request.action,
-                            "args": request.args, "source": source})
+                            "args": request.args,
+                            "parameter_names": [key for key, _ in request.parameters],
+                            "source": source})
     return True
 
 

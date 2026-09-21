@@ -7,6 +7,7 @@ from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent
 from nonebot.params import CommandArg
 from bot.application.personas import persona_engine
+from bot.application.local_features import FeatureRequest, register_local_feature
 
 from bot.services.group_domains import FEATURES, GroupDomainService
 from bot.services.hourly_announcements import HourlyAnnouncementService
@@ -88,6 +89,17 @@ def _feature_status(group_id: int, *, admin: bool) -> str:
         lines.append("修改代称：#群设置 代称 <名称>")
         lines.append("群过滤：#群设置 过滤 添加|移除|列表 <QQ号>")
     return "\n".join(lines)
+
+
+@register_local_feature("group_feature_status")
+async def _run_local_group_status(
+    matcher: object,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot, request
+    await matcher.finish(_feature_status(int(event.group_id), admin=False))
 
 
 def _shortcut_feature(text: str) -> str | None:

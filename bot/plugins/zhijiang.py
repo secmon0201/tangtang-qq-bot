@@ -204,3 +204,14 @@ async def _run_local_zhijiang_feature(
 ) -> None:
     del bot, event
     await finish_zhijiang_schedule(matcher, request.args)
+
+
+@register_local_feature("zhijiang_status")
+async def _run_local_zhijiang_status(
+    matcher: object,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot, event, request
+    await finish_zhijiang_schedule(matcher, "状态")

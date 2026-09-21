@@ -59,7 +59,7 @@ async def _(bot: Bot, event: GroupMessageEvent) -> None:
     del bot
     text = event.get_plaintext().strip()
     if is_nte_help_command(text):
-        await _send_help(text)
+        await _send_help(nte_game_ui, text)
         return
     await _send_rank(nte_game_ui, event, text)
 
@@ -72,8 +72,34 @@ async def _chat_nte_rank(
     request: FeatureRequest,
 ) -> None:
     del bot
-    scope = "总" if str(request.args) == "总" else "群"
-    await _send_rank(matcher, event, f"#nte{scope}最强排行")
+    await _send_rank_request(
+        matcher,
+        event,
+        RankRequest(None, True, "bot" if request.args == "总" else "group"),
+    )
+
+
+@register_local_feature("nte_help", "nte_mint_rank")
+async def _chat_nte_read(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    if request.action == "nte_help":
+        await _send_help(matcher, "#nte帮助")
+        return
+    await _send_rank_request(
+        matcher,
+        event,
+        RankRequest(
+            "薄荷",
+            False,
+            "bot" if request.args == "总" else "group",
+            int(request.parameter("page", 1) or 1),
+        ),
+    )
 
 
 async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
@@ -81,6 +107,12 @@ async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     if request is None:
         await matcher.finish()
         return
+    await _send_rank_request(matcher, event, request)
+
+
+async def _send_rank_request(
+    matcher: Any, event: GroupMessageEvent, request: RankRequest
+) -> None:
     try:
         result = await asyncio.to_thread(
             rank_service.build_strongest_rank if request.strongest else rank_service.build_role_rank,
@@ -114,24 +146,24 @@ async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:
     await matcher.finish(local_image_segment(image_path))
 
 
-async def _send_help(text: str) -> None:
+async def _send_help(matcher: Any, text: str) -> None:
     if is_original_nte_help_command(text):
         if not ORIGINAL_HELP_PATH.exists():
-            await nte_game_ui.finish(
+            await matcher.finish(
                 "原版帮助快照尚未生成，请在项目目录运行："
                 "python scripts/export_nte_original_help.py"
             )
             return
-        await nte_game_ui.finish(local_image_segment(ORIGINAL_HELP_PATH))
+        await matcher.finish(local_image_segment(ORIGINAL_HELP_PATH))
     if is_new_nte_help_command(text):
         try:
             image_path = await asyncio.to_thread(help_renderer.render)
         except Exception:
             logger.exception("NTE help render failed")
-            await nte_game_ui.finish("新版异环帮助图生成失败，请稍后重试。")
+            await matcher.finish("新版异环帮助图生成失败，请稍后重试。")
             return
-        await nte_game_ui.finish(local_image_segment(image_path))
-    await nte_game_ui.finish()
+        await matcher.finish(local_image_segment(image_path))
+    await matcher.finish()
 
 
 __all__ = ["nte_game_ui", "is_nte_ui_message"]

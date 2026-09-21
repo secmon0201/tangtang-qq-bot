@@ -34,17 +34,24 @@ PLUGIN_RULES = {
 # Deterministic local-feature handlers registered by the plugins. These are
 # the only actions the registry may route without going through the model.
 FEATURE_ACTIONS = {
-    "asoul.py": ("today_live", "tomorrow_live", "week_live"),
-    "commands.py": ("ranking",),
-    "zhijiang.py": ("zhijiang_schedule",),
+    "a_coast_archive.py": ("archive_records", "archive_search", "archive_profile"),
+    "asoul.py": ("asoul_help", "today_live", "tomorrow_live", "week_live"),
+    "commands.py": ("ranking", "user_help"),
+    "group_settings.py": ("group_feature_status",),
+    "zhijiang.py": ("zhijiang_schedule", "zhijiang_status"),
     "mini_games.py": (
+        "mini_game_help",
         "mini_game_roulette",
         "mini_game_bomb",
         "mini_game_dice",
         "mini_game_guess",
     ),
-    "nte_game_ui.py": ("nte_rank",),
-    "wuwa_game_ui.py": ("wuwa_rank",),
+    "nte_game_ui.py": ("nte_rank", "nte_help", "nte_mint_rank"),
+    "persona_management.py": ("persona_status", "persona_impression"),
+    "wuwa_game_ui.py": (
+        "wuwa_rank", "wuwa_help", "wuwa_character_rank", "wuwa_echo_rank",
+        "wuwa_progress_rank",
+    ),
     "today_wife.py": ("wife_personal", "wife_group"),
     "denia_gallery.py": ("denia_gallery",),
 }

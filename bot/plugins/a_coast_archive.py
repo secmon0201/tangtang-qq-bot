@@ -10,6 +10,7 @@ from nonebot.params import CommandArg
 
 from bot.config import settings
 from bot.application.command_helpers import text_arg
+from bot.application.local_features import FeatureRequest, register_local_feature
 from bot.services.a_coast_archive import ACoastArchiveService, bounded_evidence
 from bot.services.a_coast_archive_render import ACoastArchiveImageRenderer
 from bot.services.avatars import AvatarService
@@ -409,6 +410,62 @@ async def incremental_ai_profile_text(
 archive_records = on_command("发言记录", priority=5, block=True)
 archive_search = on_command("发言搜索", priority=5, block=True)
 archive_profile = on_command("发言画像", aliases={"画像"}, priority=5, block=True)
+
+
+@register_local_feature("archive_records", "archive_search", "archive_profile")
+async def _run_local_archive_read(
+    matcher: Any,
+    bot: Any,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    user_id = request.target_user_id
+    if user_id is None:
+        await matcher.finish("档案查询需要指定本人或在本轮消息中真实 @ 一位成员。")
+    if request.action in {"archive_records", "archive_search"}:
+        scope = archive_scope(event)
+        if not scope:
+            await matcher.finish("发言档案只能在目标 QQ 群内查询。")
+        page = int(request.parameter("page", 1) or 1)
+        keyword = (
+            str(request.parameter("keyword", "") or "").strip()
+            if request.action == "archive_search"
+            else ""
+        )
+        await finish_message_rows(
+            matcher,
+            int(user_id),
+            service.records(int(user_id), scope, keyword=keyword, page=page),
+            page,
+            scope,
+            keyword,
+        )
+        return
+    if not settings.a_coast_profile_enabled:
+        await matcher.finish("画像功能已临时关闭，可稍后由管理员重新开启。")
+    scope, scope_key = profile_scope(event)
+    if not scope or not scope_key:
+        await matcher.finish("发言画像只能在目标 QQ 群内查询。")
+    message_count = service.message_count(int(user_id), scope)
+    if message_count == 0:
+        await matcher.finish("该用户暂无已存档发言。")
+    if not has_enough_profile_messages(message_count):
+        await matcher.finish(
+            f"该用户当前仅有 {message_count} 条已存档发言，发言太少。"
+            "请至少发言超过 100 条，再进行画像绘制。"
+        )
+    previous = db.a_coast_profile_state(int(user_id), scope_key)
+    if not previous:
+        await matcher.finish("该用户还没有已生成的发言画像，请先使用 #发言画像 生成。")
+    await finish_profile_image(
+        matcher,
+        int(user_id),
+        previous,
+        scope,
+        scope_key,
+        include_ai_profile=profile_service.config().enabled,
+    )
 
 
 @archive_records.handle()

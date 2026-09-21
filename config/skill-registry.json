@@ -29,7 +29,11 @@
       "plugin_rules": [
         "archive_search_router"
       ],
-      "local_actions": [],
+      "local_actions": [
+        "archive_records",
+        "archive_search",
+        "archive_profile"
+      ],
       "required_role": "member"
     },
     {
@@ -123,6 +127,7 @@
       "deprecated": false,
       "plugin_rules": [],
       "local_actions": [
+        "asoul_help",
         "today_live",
         "tomorrow_live",
         "week_live"
@@ -255,6 +260,7 @@
         "named_cluster_ranking"
       ],
       "local_actions": [
+        "user_help",
         "ranking"
       ],
       "feature_key": "speech_ranking",
@@ -325,7 +331,9 @@
       "owner": "project",
       "deprecated": false,
       "plugin_rules": [],
-      "local_actions": [],
+      "local_actions": [
+        "group_feature_status"
+      ],
       "required_role": "member"
     },
     {
@@ -389,6 +397,7 @@
         "mini_games"
       ],
       "local_actions": [
+        "mini_game_help",
         "mini_game_roulette",
         "mini_game_bomb",
         "mini_game_dice",
@@ -411,6 +420,8 @@
         "nte_game_ui"
       ],
       "local_actions": [
+        "nte_help",
+        "nte_mint_rank",
         "nte_rank"
       ],
       "feature_key": "nte",
@@ -495,7 +506,10 @@
       "owner": "project",
       "deprecated": false,
       "plugin_rules": [],
-      "local_actions": [],
+      "local_actions": [
+        "persona_status",
+        "persona_impression"
+      ],
       "required_role": "member"
     },
     {
@@ -710,6 +724,10 @@
         "wuwa_game_ui"
       ],
       "local_actions": [
+        "wuwa_help",
+        "wuwa_character_rank",
+        "wuwa_echo_rank",
+        "wuwa_progress_rank",
         "wuwa_rank"
       ],
       "feature_key": "ww",
@@ -738,7 +756,8 @@
       "deprecated": false,
       "plugin_rules": [],
       "local_actions": [
-        "zhijiang_schedule"
+        "zhijiang_schedule",
+        "zhijiang_status"
       ],
       "feature_key": "zhijiang_calendar",
       "required_role": "member"

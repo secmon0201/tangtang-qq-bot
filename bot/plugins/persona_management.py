@@ -9,6 +9,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message
 from nonebot.params import CommandArg
 
 from bot.application.personas import persona_engine
+from bot.application.local_features import FeatureRequest, register_local_feature
 from bot.application.speech_background import SpeechSupervisor
 from bot.config import ROOT
 from bot.integrations.speech_runtime import SpeechRuntime
@@ -77,6 +78,29 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         database().audit(int(event.user_id), "persona_growth_rollback", group_id, " ".join(tokens[2:]))
         await persona_command.finish("已回退并保留版本历史。" if changed else "没有本群当前人格的这个版本。")
     await persona_command.finish("用法：#人格 状态 / #人格 印象 / #人格 切换 糖糖|达妮娅 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")
+
+
+@register_local_feature("persona_status", "persona_impression")
+async def _run_local_persona_read(
+    matcher: object,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del bot
+    engine = persona_engine()
+    group_id = int(event.group_id)
+    if request.action == "persona_impression":
+        await matcher.finish(engine.personal_impression(group_id, int(event.user_id)))
+    profile = engine.profile(group_id)
+    voice = engine.speech.status(
+        profile.key,
+        group_id,
+        group_enabled=engine.feature_enabled(group_id, "persona_voice"),
+    )
+    await matcher.finish(
+        f"当前人格：{profile.name}\n呼叫：{profile.call_keyword} 或 @机器人\n语音：{voice}"
+    )
 
 
 _background = None

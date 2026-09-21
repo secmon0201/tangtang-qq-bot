@@ -206,6 +206,58 @@ def test_native_tool_batch_denial_executes_nothing(rig):
     assert rig.provider.calls == 1
 
 
+def test_archive_native_tool_resolves_only_current_real_mention(rig):
+    text = "娅娅，搜索我刚刚 @ 的成员关于枝江的发言"
+    event = group_message(group_id=1001, text=text)
+    message = Message([MessageSegment.text(text), MessageSegment.at(42)])
+    event.message = message
+    event.original_message = message
+    rig.provider.tool_sequence = [("", [{
+        "call_id": "archive-1",
+        "name": "archive_search",
+        "arguments": '{"target":"mentioned","keyword":"枝江","page":1}',
+    }])]
+
+    asyncio.run(rig.service._model_reply(
+        rig.bot,
+        event,
+        replace(rig.config, native_action_tools="true"),
+        call_text=text,
+    ))
+
+    assert len(rig.invoked) == 1
+    request = rig.invoked[0][1]
+    assert request.action == "archive_search"
+    assert request.target_user_id == 42
+    assert request.parameter("keyword") == "枝江"
+    with rig.service.db._connect() as conn:
+        result = conn.execute(
+            "SELECT payload_json FROM chat_context_turns "
+            "WHERE item_type = 'tool_result' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert "枝江" not in result["payload_json"]
+    assert "功能图片" not in result["payload_json"]
+
+
+@pytest.mark.parametrize("targets", [(), (41, 42)])
+def test_archive_mentioned_target_rejects_missing_or_ambiguous_at(rig, targets):
+    text = "娅娅，查看我 @ 的成员发言记录"
+    event = group_message(group_id=1001, text=text)
+    message = Message([MessageSegment.text(text), *(MessageSegment.at(value) for value in targets)])
+    event.message = message
+    event.original_message = message
+    request = FeatureRequest.with_parameters(
+        "archive_records", {"target": "mentioned", "page": 1}
+    )
+
+    asyncio.run(plugin._run_skill_requests(
+        rig.bot, event, rig.config, (request,), text=text, source="native_tool"
+    ))
+
+    assert not rig.invoked
+    assert len(rig.bot.sent) == 1
+
+
 def test_model_can_request_one_random_denia_gallery_image(rig):
     text = "娅娅，来点好看的"
     rig.provider.response = json.dumps(
@@ -263,9 +315,17 @@ def test_catalog_excludes_disabled_and_unregistered_actions(rig):
         "tomorrow_live",
         "week_live",
         "denia_gallery",
+        "user_help",
+        "asoul_help",
+        "group_feature_status",
+        "persona_status",
+        "persona_impression",
+        "archive_records",
+        "archive_search",
+        "archive_profile",
     )
     prompt = rig.service._build_prompt(event, rig.config)
-    assert "聊天记录全文检索" in prompt and "没有开放" in prompt
+    assert "档案查询只能" in prompt and "公告发布没有开放" in prompt
     assert "- ranking:" not in prompt
 
 

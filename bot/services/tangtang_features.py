@@ -40,7 +40,7 @@ GAME_RANK_ACTIONS = frozenset({"nte_rank", "wuwa_rank"})
 _FEATURE_HINT_RE = re.compile(
     r"直播|在播|有谁在播|谁在播|发言|排行|榜|统计|灌水|集群|日程|枝江|"
     r"A-SOUL|A手|有直播|直播安排|转盘|炸弹|骰子|猜数|猜数字|异环|鸣潮|谁最能聊|谁.*话最多|缘分|老婆|"
-    r"美图|自拍|照片|写真|美照",
+    r"美图|自拍|照片|写真|美照|帮助|功能状态|人格状态|印象|发言记录|发言搜索|发言画像|画像|薄荷|声骸|练度",
     re.IGNORECASE,
 )
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)

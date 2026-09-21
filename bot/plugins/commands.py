@@ -240,6 +240,14 @@ async def send_user_help_image(matcher: Any) -> None:
     await matcher.finish(f"帮助在线：{link}")
 
 
+@register_local_feature("user_help")
+async def _run_local_help_feature(
+    matcher: Any, bot: Bot, event: GroupMessageEvent, request: FeatureRequest
+) -> None:
+    del bot, event, request
+    await send_user_help_image(matcher)
+
+
 user_help = on_command("帮助", priority=5, block=True)
 
 

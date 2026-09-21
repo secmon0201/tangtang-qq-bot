@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
-from bot.services.local_skill_contract import ACTION_CONTRACTS, FeatureRequest
+from bot.services.local_skill_contract import ACTION_CONTRACTS, FeatureRequest, valid_request
 
 
 ToolEffect = Literal["read", "write"]
@@ -70,6 +70,39 @@ def enum_parameters(name: str, values: tuple[str, ...], description: str) -> dic
     }
 
 
+def scope_page_parameters(*, character: bool = False) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        "scope": {"type": "string", "enum": ["group", "bot"],
+                  "description": "本群；仅用户明确要求总榜时使用 bot"},
+        "page": {"type": "integer", "minimum": 1, "maximum": 999},
+    }
+    required = ["scope", "page"]
+    if character:
+        properties["character"] = {
+            "type": "string", "minLength": 1, "maxLength": 24,
+            "description": "用户明确说出的角色名",
+        }
+        required.append("character")
+    return {"type": "object", "properties": properties,
+            "required": required, "additionalProperties": False}
+
+
+def archive_parameters(*, search: bool = False, page: bool = False) -> dict[str, Any]:
+    properties: dict[str, Any] = {
+        "target": {"type": "string", "enum": ["self", "mentioned"],
+                   "description": "本人或当前消息中唯一真实 @ 的成员"},
+    }
+    required = ["target"]
+    if search:
+        properties["keyword"] = {"type": "string", "minLength": 1, "maxLength": 80}
+        required.append("keyword")
+    if page:
+        properties["page"] = {"type": "integer", "minimum": 1, "maximum": 999}
+        required.append("page")
+    return {"type": "object", "properties": properties,
+            "required": required, "additionalProperties": False}
+
+
 KNOWLEDGE_TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec(
         "search_zhijiang_knowledge",
@@ -131,6 +164,38 @@ ACTION_TOOL_SPECS: tuple[ToolSpec, ...] = (
              empty_parameters(), "read", "direct_qq", True, "today_wife"),
     ToolSpec("denia_gallery", ACTION_CONTRACTS["denia_gallery"].description,
              empty_parameters(), "read", "direct_qq", True, "denia_gallery"),
+    ToolSpec("user_help", ACTION_CONTRACTS["user_help"].description,
+             empty_parameters(), "read", "direct_qq", True, "commands"),
+    ToolSpec("mini_game_help", ACTION_CONTRACTS["mini_game_help"].description,
+             empty_parameters(), "read", "direct_qq", True, "mini_games"),
+    ToolSpec("asoul_help", ACTION_CONTRACTS["asoul_help"].description,
+             empty_parameters(), "read", "direct_qq", True, "asoul"),
+    ToolSpec("group_feature_status", ACTION_CONTRACTS["group_feature_status"].description,
+             empty_parameters(), "read", "direct_qq", True, "group_settings"),
+    ToolSpec("persona_status", ACTION_CONTRACTS["persona_status"].description,
+             empty_parameters(), "read", "direct_qq", True, "persona_management"),
+    ToolSpec("persona_impression", ACTION_CONTRACTS["persona_impression"].description,
+             empty_parameters(), "read", "direct_qq", True, "persona_management"),
+    ToolSpec("archive_records", ACTION_CONTRACTS["archive_records"].description,
+             archive_parameters(page=True), "read", "direct_qq", True, "a_coast_archive"),
+    ToolSpec("archive_search", ACTION_CONTRACTS["archive_search"].description,
+             archive_parameters(search=True, page=True), "read", "direct_qq", True, "a_coast_archive"),
+    ToolSpec("archive_profile", ACTION_CONTRACTS["archive_profile"].description,
+             archive_parameters(), "read", "direct_qq", True, "a_coast_archive"),
+    ToolSpec("zhijiang_status", ACTION_CONTRACTS["zhijiang_status"].description,
+             empty_parameters(), "read", "direct_qq", True, "zhijiang"),
+    ToolSpec("nte_help", ACTION_CONTRACTS["nte_help"].description,
+             empty_parameters(), "read", "direct_qq", True, "nte_game_ui"),
+    ToolSpec("nte_mint_rank", ACTION_CONTRACTS["nte_mint_rank"].description,
+             scope_page_parameters(), "read", "direct_qq", True, "nte_game_ui"),
+    ToolSpec("wuwa_help", ACTION_CONTRACTS["wuwa_help"].description,
+             empty_parameters(), "read", "direct_qq", True, "wuwa_game_ui"),
+    ToolSpec("wuwa_character_rank", ACTION_CONTRACTS["wuwa_character_rank"].description,
+             scope_page_parameters(character=True), "read", "direct_qq", True, "wuwa_game_ui"),
+    ToolSpec("wuwa_echo_rank", ACTION_CONTRACTS["wuwa_echo_rank"].description,
+             scope_page_parameters(character=True), "read", "direct_qq", True, "wuwa_game_ui"),
+    ToolSpec("wuwa_progress_rank", ACTION_CONTRACTS["wuwa_progress_rank"].description,
+             scope_page_parameters(), "read", "direct_qq", True, "wuwa_game_ui"),
 )
 
 BASE_TOOL_SPECS = (*KNOWLEDGE_TOOL_SPECS, *ACTION_TOOL_SPECS)
@@ -170,6 +235,23 @@ def parse_action_tool_call(call: Mapping[str, Any]) -> FeatureRequest:
         if set(arguments) != {"scope"} or arguments.get("scope") not in {"group", "bot"}:
             raise ValueError("invalid ranking scope")
         return FeatureRequest(name, "总" if arguments["scope"] == "bot" else "群")
+    if name in {"nte_mint_rank", "wuwa_progress_rank", "wuwa_character_rank", "wuwa_echo_rank"}:
+        expected = {"scope", "page"} | ({"character"} if name.startswith("wuwa_") and name not in {"wuwa_progress_rank"} else set())
+        if set(arguments) != expected or arguments.get("scope") not in {"group", "bot"}:
+            raise ValueError("invalid ranking arguments")
+        request = FeatureRequest.with_parameters(
+            name,
+            {key: value for key, value in arguments.items() if key != "scope"},
+            args="总" if arguments["scope"] == "bot" else "群",
+        )
+        if not valid_request(request):
+            raise ValueError("invalid ranking arguments")
+        return request
+    if name in {"archive_records", "archive_search", "archive_profile"}:
+        request = FeatureRequest.with_parameters(name, arguments)
+        if not valid_request(request):
+            raise ValueError("invalid archive arguments")
+        return request
     if arguments:
         raise ValueError("tool does not accept arguments")
     return FeatureRequest(name)

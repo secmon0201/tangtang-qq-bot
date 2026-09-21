@@ -369,6 +369,17 @@ async def _send_menu(bot: Bot, matcher: Any, group_id: int) -> None:
     await matcher.finish()
 
 
+@register_local_feature("mini_game_help")
+async def _run_chat_game_help(
+    matcher: Any,
+    bot: Bot,
+    event: GroupMessageEvent,
+    request: FeatureRequest,
+) -> None:
+    del request
+    await _send_menu(bot, matcher, int(event.group_id))
+
+
 async def _send_ranking(
     matcher: Any, game_type: str, group_id: int, *, total: bool
 ) -> None:

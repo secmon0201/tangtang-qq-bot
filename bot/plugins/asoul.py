@@ -217,14 +217,26 @@ tomorrow_live = on_command("明日直播", priority=5, block=True)
 week_live = on_command("本周直播", priority=5, block=True)
 
 
-@asoul_help.handle()
-async def _():
-    await asoul_help.finish(
+async def finish_asoul_help(matcher: Any) -> None:
+    await matcher.finish(
         "【A-SOUL 功能】\n"
         "#今日直播  #明日直播  #本周直播\n"
         "管理员：#日程高亮、#取消日程高亮、#日程高亮列表、#取消日程高亮记录、"
         "#bili_status、#bili_login、#bili_logout、#bili_test_*。"
     )
+
+
+@asoul_help.handle()
+async def _():
+    await finish_asoul_help(asoul_help)
+
+
+@register_local_feature("asoul_help")
+async def _run_local_asoul_help(
+    matcher: Any, bot: Bot, event: GroupMessageEvent, request: FeatureRequest
+) -> None:
+    del bot, event, request
+    await finish_asoul_help(matcher)
 
 
 async def finish_schedule_reply(matcher: Any, title: str, target_day: datetime, args: str = "") -> None:

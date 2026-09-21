@@ -374,8 +374,10 @@ async def test_accepted_voice_replaces_text_and_records_only_delivered(tmp_path,
     assert len(engine.store.interactions("denia", 1001)) == 1
     records = [json.loads(line) for path in (tmp_path / "usage").glob("*.jsonl")
                for line in path.read_text("utf-8").splitlines()]
-    assert {row["request_id"] for row in records} == {"1001:1"}
-    assert {row["message_id"] for row in records} == {"1"}
+    assert len({row["request_trace"] for row in records}) == 1
+    assert records[0]["request_trace"]
+    assert all("group_id" not in row and "user_id" not in row for row in records)
+    assert all("request_id" not in row and "message_id" not in row for row in records)
     assert {"model_started", "model_result", "send_result", "reply"} <= {row["event"] for row in records}
     await engine.speech.close()
 
@@ -664,4 +666,3 @@ async def test_matching_topic_never_imports_another_groups_conversation(tmp_path
     prompt=provider.seen[0][1]
     assert '我是教师' in prompt and '先聊养成' in prompt
     assert '先聊配队' not in prompt and '配队还没解决' not in prompt
-

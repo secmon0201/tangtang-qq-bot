@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import random
 import re
@@ -1217,20 +1218,77 @@ class TangtangProvider:
     def _extract_usage(data: Any) -> dict[str, Any]:
         if not isinstance(data, dict):
             return {}
-        usage = data.get("usage")
+        usage = data.get("usage") or data.get("usage_metadata") or data.get("usageMetadata")
         if not isinstance(usage, dict):
             return {}
+
+        def integer(*values: Any) -> int:
+            for value in values:
+                if value is not None:
+                    try:
+                        return int(value)
+                    except (TypeError, ValueError):
+                        continue
+            return 0
+
         result: dict[str, Any] = {}
-        result["prompt_tokens"] = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-        result["completion_tokens"] = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-        details = usage.get("output_tokens_details")
+        result["prompt_tokens"] = integer(
+            usage.get("prompt_tokens"), usage.get("input_tokens"),
+            usage.get("promptTokenCount"),
+        )
+        result["completion_tokens"] = integer(
+            usage.get("completion_tokens"), usage.get("output_tokens"),
+            usage.get("candidatesTokenCount"),
+        )
+        details = usage.get("output_tokens_details") or usage.get("completion_tokens_details")
         if isinstance(details, dict):
-            result["reasoning_tokens"] = int(details.get("reasoning_tokens") or 0)
-        else:
-            result["reasoning_tokens"] = int(
-                (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+            result["reasoning_tokens"] = integer(
+                details.get("reasoning_tokens"), details.get("reasoningTokens")
             )
-        result["total_tokens"] = int(usage.get("total_tokens") or 0)
+        else:
+            result["reasoning_tokens"] = integer(usage.get("thoughtsTokenCount"))
+        result["total_tokens"] = integer(
+            usage.get("total_tokens"), usage.get("totalTokenCount")
+        )
+        if not result["total_tokens"]:
+            result["total_tokens"] = result["prompt_tokens"] + result["completion_tokens"]
+
+        input_details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details")
+        if not isinstance(input_details, dict):
+            input_details = {}
+        cache_values = (
+            input_details.get("cached_tokens"),
+            usage.get("cached_tokens"),
+            usage.get("cache_read_input_tokens"),
+            usage.get("prompt_cache_hit_tokens"),
+            usage.get("cachedContentTokenCount"),
+        )
+        write_values = (
+            usage.get("cache_creation_input_tokens"),
+            usage.get("cache_write_input_tokens"),
+            usage.get("prompt_cache_write_tokens"),
+        )
+        miss_values = (
+            usage.get("cache_miss_input_tokens"),
+            usage.get("prompt_cache_miss_tokens"),
+        )
+        cache_supported = any(value is not None for value in (*cache_values, *write_values, *miss_values))
+        result["cache_status"] = "reported" if cache_supported else "unsupported"
+        if cache_supported:
+            cache_read = integer(*cache_values)
+            cache_write = integer(*write_values)
+            explicit_miss = next((value for value in miss_values if value is not None), None)
+            cache_miss = (
+                integer(explicit_miss)
+                if explicit_miss is not None
+                else max(0, result["prompt_tokens"] - cache_read)
+            )
+            result.update(
+                cached_tokens=cache_read,
+                cache_read_tokens=cache_read,
+                cache_write_tokens=cache_write,
+                cache_miss_tokens=cache_miss,
+            )
         return result
 
 
@@ -1722,8 +1780,6 @@ class TangtangService:
             path.parent.mkdir(parents=True, exist_ok=True)
             record = {
                 "ts": now.isoformat(timespec="seconds"),
-                "group_id": int(group_id),
-                "user_id": int(user_id),
                 "event": event_kind,
                 "mode": mode or "",
                 "model": config.model if config.enabled else "",
@@ -1732,9 +1788,25 @@ class TangtangService:
                 "completion_tokens": int(tokens.get("completion_tokens") or 0),
                 "reasoning_tokens": int(tokens.get("reasoning_tokens") or 0),
                 "total_tokens": int(tokens.get("total_tokens") or 0),
+                "cache_status": str(tokens.get("cache_status") or "unsupported"),
+                "cached_tokens": tokens.get("cached_tokens"),
+                "cache_read_tokens": tokens.get("cache_read_tokens"),
+                "cache_write_tokens": tokens.get("cache_write_tokens"),
+                "cache_miss_tokens": tokens.get("cache_miss_tokens"),
+                "model_calls": int(tokens.get("model_calls") or 0),
+                "tool_rounds": int(tokens.get("tool_rounds") or 0),
+                "static_prefix_hash": str(tokens.get("static_prefix_hash") or ""),
+                "tool_schema_hash": str(tokens.get("tool_schema_hash") or ""),
+                "static_prefix_chars": int(tokens.get("static_prefix_chars") or 0),
+                "conversation_chars": int(tokens.get("conversation_chars") or 0),
+                "snapshot_chars": int(tokens.get("snapshot_chars") or 0),
+                "dynamic_status_chars": int(tokens.get("dynamic_status_chars") or 0),
+                "current_input_chars": int(tokens.get("current_input_chars") or 0),
                 "detail": detail,
-                "request_id": context.request_id if context else "",
-                "message_id": context.request_id.partition(":")[2] if context else "",
+                "request_trace": (
+                    hashlib.sha256(context.request_id.encode("utf-8")).hexdigest()[:16]
+                    if context else ""
+                ),
             }
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -2397,6 +2469,18 @@ class TangtangService:
             if continuation is not None and not continuation.admit():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
+            canonical_tools = json.dumps(tools, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            telemetry = {
+                "static_prefix_hash": hashlib.sha256(
+                    ("q1\0" + persona + "\0" + canonical_tools).encode("utf-8")
+                ).hexdigest(),
+                "tool_schema_hash": hashlib.sha256(canonical_tools.encode("utf-8")).hexdigest(),
+                "static_prefix_chars": len(persona) + len(canonical_tools),
+                "conversation_chars": 0,
+                "snapshot_chars": 0,
+                "dynamic_status_chars": max(0, len(prompt) - len(current_text)),
+                "current_input_chars": len(current_text),
+            }
             self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens={})
             history: list[dict[str, Any]] = []
             if media_resolution.images:
@@ -2432,6 +2516,9 @@ class TangtangService:
                     )
                 usage = self._merge_usage(usage, result.usage)
                 loops += 1
+            usage.update(telemetry)
+            usage["model_calls"] = loops + 1
+            usage["tool_rounds"] = loops
             answer_raw = result.text
             if cognition:
                 try:
@@ -2556,6 +2643,17 @@ class TangtangService:
         merged = dict(accumulated)
         for key in ("prompt_tokens", "completion_tokens", "reasoning_tokens", "total_tokens", "latency_ms"):
             merged[key] = int(merged.get(key) or 0) + int(current.get(key) or 0)
+        cache_supported = (
+            accumulated.get("cache_status") == "reported"
+            or current.get("cache_status") == "reported"
+        )
+        merged["cache_status"] = "reported" if cache_supported else "unsupported"
+        if cache_supported:
+            for key in ("cached_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"):
+                merged[key] = int(accumulated.get(key) or 0) + int(current.get(key) or 0)
+        else:
+            for key in ("cached_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"):
+                merged.pop(key, None)
         return merged
 
     async def _run_skill_call(self, bot, event, config, plan, *, call_text, mode, usage):

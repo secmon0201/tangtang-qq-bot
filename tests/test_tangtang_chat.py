@@ -414,6 +414,67 @@ def test_reasoning_effort_accepts_official_deepseek_values():
             enabled_config(TANGTANG_REASONING_EFFORT=effort)
 
 
+def test_usage_normalizes_responses_and_chat_cache_fields():
+    responses = TangtangProvider._extract_usage({"usage": {
+        "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+        "input_tokens_details": {"cached_tokens": 80},
+        "output_tokens_details": {"reasoning_tokens": 5},
+    }})
+    assert responses == {
+        "prompt_tokens": 100, "completion_tokens": 20, "reasoning_tokens": 5,
+        "total_tokens": 120, "cache_status": "reported", "cached_tokens": 80,
+        "cache_read_tokens": 80, "cache_write_tokens": 0, "cache_miss_tokens": 20,
+    }
+
+    chat = TangtangProvider._extract_usage({"usage": {
+        "prompt_tokens": 90, "completion_tokens": 10,
+        "prompt_tokens_details": {"cached_tokens": 0},
+        "completion_tokens_details": {"reasoning_tokens": 3},
+    }})
+    assert chat["cache_status"] == "reported"
+    assert chat["cached_tokens"] == 0
+    assert chat["cache_miss_tokens"] == 90
+    assert chat["total_tokens"] == 100
+
+
+def test_usage_normalizes_anthropic_and_gemini_cache_fields():
+    anthropic = TangtangProvider._extract_usage({"usage": {
+        "input_tokens": 70, "output_tokens": 8,
+        "cache_read_input_tokens": 50, "cache_creation_input_tokens": 10,
+    }})
+    assert anthropic["cache_read_tokens"] == 50
+    assert anthropic["cache_write_tokens"] == 10
+    assert anthropic["cache_miss_tokens"] == 20
+
+    gemini = TangtangProvider._extract_usage({"usageMetadata": {
+        "promptTokenCount": 60, "candidatesTokenCount": 9,
+        "cachedContentTokenCount": 42, "totalTokenCount": 69,
+    }})
+    assert gemini["cache_read_tokens"] == 42
+    assert gemini["cache_miss_tokens"] == 18
+
+
+def test_usage_without_cache_fields_is_unsupported_not_zero():
+    usage = TangtangProvider._extract_usage({"usage": {
+        "prompt_tokens": 12, "completion_tokens": 4,
+    }})
+    assert usage["cache_status"] == "unsupported"
+    assert "cached_tokens" not in usage
+    assert "cache_miss_tokens" not in usage
+
+
+def test_usage_merge_accumulates_cache_across_tool_rounds():
+    merged = TangtangService._merge_usage(
+        {"prompt_tokens": 100, "cache_status": "reported", "cached_tokens": 80,
+         "cache_read_tokens": 80, "cache_write_tokens": 0, "cache_miss_tokens": 20},
+        {"prompt_tokens": 120, "cache_status": "reported", "cached_tokens": 110,
+         "cache_read_tokens": 110, "cache_write_tokens": 0, "cache_miss_tokens": 10},
+    )
+    assert merged["prompt_tokens"] == 220
+    assert merged["cached_tokens"] == 190
+    assert merged["cache_miss_tokens"] == 30
+
+
 def test_call_event_rule(monkeypatch):
     enable_plugin_group_features(monkeypatch, 1001)
     monkeypatch.setattr(
@@ -1322,6 +1383,15 @@ def test_agent_loop_calls_local_tool_then_answers(tmp_path, monkeypatch):
     events = usage_events(usage_dir)
     assert events[-1]["event"] == "reply"
     assert events[-1]["prompt_tokens"] == 20
+    assert events[-1]["cache_status"] == "unsupported"
+    assert events[-1]["model_calls"] == 2
+    assert events[-1]["tool_rounds"] == 1
+    assert len(events[-1]["static_prefix_hash"]) == 64
+    assert len(events[-1]["tool_schema_hash"]) == 64
+    assert events[-1]["static_prefix_chars"] > 0
+    assert events[-1]["dynamic_status_chars"] > 0
+    assert events[-1]["current_input_chars"] > 0
+    assert "group_id" not in events[-1] and "user_id" not in events[-1]
 
 
 def test_agent_loop_calls_mingchao_tool(tmp_path, monkeypatch):

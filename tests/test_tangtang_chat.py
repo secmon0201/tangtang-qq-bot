@@ -537,16 +537,21 @@ def test_call_event_rule(monkeypatch):
         "bot.plugins.tangtang_chat.loader",
         SimpleNamespace(load=lambda: enabled_config()),
     )
-    assert is_call_event(group_message(group_id=1001, text="糖糖在吗"))
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.persona_engine",
+        lambda: SimpleNamespace(profile=lambda group: SimpleNamespace(call_keyword="娅娅")),
+    )
+    assert is_call_event(group_message(group_id=1001, text="娅娅在吗"))
+    assert not is_call_event(group_message(group_id=1001, text="糖糖在吗"))
     assert is_call_event(group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello"))
     assert not is_call_event(group_message(group_id=1001, to_me=True, text="hello"))
     assert not is_call_event(group_message(group_id=1001, text="普通消息"))
-    assert not is_call_event(group_message(group_id=1002, text="糖糖在吗"))
+    assert not is_call_event(group_message(group_id=1002, text="娅娅在吗"))
     assert not is_call_event(group_message(group_id=1001, text="#糖糖"))
     assert not is_call_event(group_message(group_id=1001, text="nte帮助"))
     assert not is_call_event(group_message(group_id=1001, text="NTE角色列表"))
     assert not is_call_event(
-        group_message(group_id=1001, text="糖糖在吗", timestamp=int(time()) - 300)
+        group_message(group_id=1001, text="娅娅在吗", timestamp=int(time()) - 300)
     )
     assert not is_call_event(group_message(group_id=1001, text="报名 517"))
 
@@ -574,7 +579,7 @@ def test_proactive_event_rule(monkeypatch):
         ),
     )
     assert is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
-    assert not is_proactive_event(group_message(group_id=1001, text="糖糖在吗"))
+    assert not is_proactive_event(group_message(group_id=1001, text="娅娅在吗"))
     assert not is_proactive_event(group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello"))
     assert not is_proactive_event(group_message(group_id=1001, text="#帮助"))
     assert not is_proactive_event(group_message(group_id=1001, text="nte帮助"))
@@ -616,11 +621,11 @@ def test_global_chat_switches_gate_call_and_proactive_rules(monkeypatch):
             is_chat_globally_enabled=lambda feature: enabled[feature]
         ),
     )
-    assert not is_call_event(group_message(group_id=1001, text="糖糖在吗"))
+    assert not is_call_event(group_message(group_id=1001, text="娅娅在吗"))
     assert is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
 
     enabled.update(mention_chat=True, proactive_chat=False)
-    assert is_call_event(group_message(group_id=1001, text="糖糖在吗"))
+    assert is_call_event(group_message(group_id=1001, text="娅娅在吗"))
     assert not is_proactive_event(group_message(group_id=1001, text="今天天气不错"))
 
 
@@ -956,7 +961,7 @@ def test_parallel_compatibility_with_passive_matcher(monkeypatch):
         SimpleNamespace(is_group_enabled=lambda group_id: group_id == 1001),
     )
     monkeypatch.setattr("bot.plugins.random_reactions.automation_is_paused", lambda: False)
-    keyword_call = group_message(group_id=1001, text="糖糖在吗")
+    keyword_call = group_message(group_id=1001, text="娅娅在吗")
     assert is_call_event(keyword_call)
     assert is_passive_reaction_event(keyword_call)
     at_call = group_message(group_id=1001, to_me=True, text="[CQ:at,qq=2]hello")
@@ -1386,6 +1391,46 @@ def test_v2_next_request_appends_confirmed_previous_turn(tmp_path, monkeypatch):
     second_items = second.canonical_semantic_items()
     assert second_items[: len(first_items)] == first_items
     assert second_items[len(first_items)]["role"] == "assistant"
+
+
+def test_v2_group_context_uses_baseline_then_only_confirmed_delta(
+    tmp_path, monkeypatch
+):
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    config = enabled_config(TANGTANG_CONTEXT_LAYOUT="v2")
+    for index in range(35):
+        service.record_group_message(
+            1001,
+            f"群友{index}",
+            f"群消息{index}",
+            user_id=3000 + index,
+            message_id=f"ambient-{index}",
+        )
+
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=71, text="娅娅 第一轮"),
+        config,
+    ))
+    first = provider.envelopes[-1]
+    assert first is not None
+    assert "[群聊气氛基线" in first.dynamic_status
+    assert "群消息5" in first.dynamic_status
+    assert "群消息4" not in first.dynamic_status
+
+    service.record_group_message(
+        1001, "新群友", "只应新增这一条", user_id=4999, message_id="ambient-new"
+    )
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=72, text="娅娅 第二轮"),
+        config,
+    ))
+    second = provider.envelopes[-1]
+    assert second is not None
+    assert "[新增群聊气氛" in second.dynamic_status
+    assert "只应新增这一条" in second.dynamic_status
+    assert "群消息34" not in second.dynamic_status
 
 
 def test_model_silent_does_not_send(tmp_path, monkeypatch):

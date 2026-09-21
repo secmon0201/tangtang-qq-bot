@@ -52,9 +52,11 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         scope_group = 0
         tokens = ['成长', *tokens[2:]]
     if len(tokens) == 2 and tokens[0] == "切换":
+        if engine.locked_persona is not None:
+            await persona_command.finish("聊天人格已固定为达妮娅，糖糖不再参与对话。")
         target = next((p for p in engine.profiles.values() if p.name == tokens[1]), None)
         if target is None:
-            await persona_command.finish("可切换：糖糖、达妮娅。")
+            await persona_command.finish("聊天人格已固定为达妮娅。")
         engine.store.switch(group_id, target.key)
         database().audit(int(event.user_id), "persona_switch", group_id, target.key)
         await persona_command.finish(f"本群已切换为{target.name}。叫“{target.call_keyword}”或 @机器人即可。")
@@ -77,7 +79,7 @@ async def handle_persona(bot: Bot, event: GroupMessageEvent, args: Message = Com
         changed = engine.growth.rollback(profile.key, scope_group, int(tokens[2]), int(tokens[3]), time.time())
         database().audit(int(event.user_id), "persona_growth_rollback", group_id, " ".join(tokens[2:]))
         await persona_command.finish("已回退并保留版本历史。" if changed else "没有本群当前人格的这个版本。")
-    await persona_command.finish("用法：#人格 状态 / #人格 印象 / #人格 切换 糖糖|达妮娅 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")
+    await persona_command.finish("用法：#人格 状态 / #人格 印象 / #人格 成长 列表|停用 <编号>|回退 <编号> <版本>")
 
 
 @register_local_feature("persona_status", "persona_impression")

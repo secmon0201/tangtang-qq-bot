@@ -71,6 +71,12 @@ def make_runtime(tmp_path):
     return engine, backend
 
 
+def make_locked_runtime(tmp_path):
+    engine, backend = make_runtime(tmp_path)
+    engine.locked_persona = "denia"
+    return engine, backend
+
+
 def event(text="娅娅，今天过得怎么样", *, group=1001, message=1):
     return SimpleNamespace(group_id=group, user_id=2001, message_id=message, self_id=3001,
         message=Message(text), original_message=Message(text), get_plaintext=lambda: text,
@@ -329,6 +335,32 @@ def test_selection_revisions_and_storage_isolate_personas(tmp_path):
     engine.store.switch(1001, "tangtang")
     assert not engine.current(initial)
     assert engine.history("tangtang", base) is base
+
+
+def test_denia_lock_ignores_old_and_future_tangtang_selections(tmp_path):
+    engine, _ = make_locked_runtime(tmp_path)
+    assert engine.store.selection(1001) == ("tangtang", 0)
+    assert engine.profile(1001).key == "denia"
+    frozen = engine.snapshot(event(), "model", False)
+    assert frozen.persona.key == "denia"
+
+    engine.store.switch(1001, "tangtang")
+
+    assert engine.profile(1001).key == "denia"
+    assert engine.current(frozen)
+    assert "tangtang" in engine.profiles
+
+
+def test_persona_lock_rejects_unknown_profile(tmp_path):
+    engine, _ = make_runtime(tmp_path)
+    with pytest.raises(ValueError, match="unknown locked persona"):
+        PersonaEngine(
+            engine.store,
+            engine.speech,
+            feature_enabled=lambda *_: True,
+            chat_enabled=lambda *_: True,
+            locked_persona="missing",
+        )
 
 
 def test_chat_configuration_change_invalidates_unsent_turn(tmp_path):

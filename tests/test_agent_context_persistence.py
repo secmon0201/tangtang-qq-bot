@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bot.services.context_compaction import parse_snapshot, validate_snapshot
-from bot.services.tangtang_chat import TangtangService
+from bot.services.tangtang_chat import TangtangService, _context_compaction_due
 from bot.services.tangtang_db import TangtangDb
 from tests.test_tangtang_chat import enabled_config
 
@@ -127,12 +127,155 @@ def test_context_version_change_starts_fresh_window_without_deleting_raw_turns(
     assert db.context_window(session_id)[1] == (message("user", "new-layout"),)
 
 
+def test_group_context_cursor_advances_only_with_confirmed_delivery(tmp_path: Path):
+    db = TangtangDb(tmp_path / "context.db")
+    session_id = session(db)
+    for index in range(35):
+        db.insert_group_message(
+            group_id=1001,
+            user_id=3000 + index,
+            nickname=f"member-{index}",
+            text=f"group-{index}",
+            message_id=f"message-{index}",
+            created_at=f"time-{index}",
+        )
+    baseline = db.group_context_messages(1001, limit=30)
+    assert [row["text"] for row in baseline] == [f"group-{i}" for i in range(5, 35)]
+    baseline_cursor = baseline[-1]["id"]
+
+    db.commit_context_items(
+        session_id,
+        "request-1",
+        (message("user", "delivered"),),
+        now="now",
+        group_context_cursor_id=baseline_cursor,
+    )
+    assert db.context_session(session_id)["group_context_cursor_id"] == baseline_cursor
+
+    db.insert_group_message(
+        group_id=1001,
+        user_id=4001,
+        nickname="new-member",
+        text="new-group-message",
+        message_id="new-message",
+        created_at="later",
+    )
+    delta = db.group_context_messages(1001, after_id=baseline_cursor, limit=30)
+    delta_cursor = delta[-1]["id"]
+    db.commit_context_items(
+        session_id,
+        "request-2",
+        (message("user", "not delivered"),),
+        now="later",
+        delivery_status="audit",
+        group_context_cursor_id=delta_cursor,
+    )
+    assert db.context_session(session_id)["group_context_cursor_id"] == baseline_cursor
+
+    db.ensure_context_session(
+        group_id=1001,
+        user_id=2001,
+        layout_version="agent-context-v3",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        now="new-layout",
+    )
+    assert db.context_session(session_id)["group_context_cursor_id"] == 0
+
+
 def populate(db: TangtangDb, session_id: int, count: int = 12) -> None:
     for index in range(count):
         db.commit_context_items(
             session_id, f"request-{index}", (message("user", f"turn-{index}"),),
             now=f"2026-09-21T00:00:{index:02d}+08:00",
         )
+
+
+def populate_rounds(
+    db: TangtangDb, session_id: int, count: int, *, start: int = 0
+) -> None:
+    for index in range(start, start + count):
+        db.commit_context_items(
+            session_id,
+            f"round-{index}",
+            (
+                message("user", f"question-{index}"),
+                {"type": "tool_call", "call_id": f"call-{index}", "name": "search", "arguments": "{}"},
+                {"type": "tool_result", "call_id": f"call-{index}", "output": "ok"},
+                message("assistant", f"answer-{index}"),
+            ),
+            now=f"round-{index}",
+        )
+
+
+def test_generation_window_appends_thirty_to_fifty_complete_rounds(tmp_path: Path):
+    db = TangtangDb(tmp_path / "context.db")
+    session_id = session(db)
+    populate_rounds(db, session_id, 30)
+    first = db.context_window(session_id)[1]
+    assert len(first) == 120
+    assert db.uncompacted_context_round_count(session_id) == 30
+
+    populate_rounds(db, session_id, 20, start=30)
+    second = db.context_window(session_id)[1]
+    assert second[: len(first)] == first
+    assert len(second) == 200
+    assert db.uncompacted_context_round_count(session_id) == 50
+
+
+def test_round_compaction_rebases_to_latest_thirty_without_splitting_requests(
+    tmp_path: Path,
+):
+    db = TangtangDb(tmp_path / "context.db")
+    session_id = session(db)
+    populate_rounds(db, session_id, 51)
+    source = db.compaction_source(session_id, keep_recent_rounds=30)
+    assert source is not None
+    assert len(source["source"]["turns"]) == 21 * 4
+    assert source["source"]["turns"][-1]["item"]["content"] == "answer-20"
+
+    job_id = db.enqueue_compaction_job(
+        session_id, source["source_hash"], source["cutoff_turn_id"], now="now"
+    )
+    assert db.claim_compaction_job(
+        job_id, owner="worker", now_epoch=100.0, lease_seconds=60, now="now"
+    )
+    loaded_source = db.compaction_job_source(job_id)
+    assert db.complete_compaction_job(
+        job_id,
+        owner="worker",
+        summary=valid_summary(loaded_source, 1),
+        now="done",
+    ) == 1
+
+    snapshot, recent = db.context_window(session_id)
+    assert snapshot is not None
+    assert len(recent) == 30 * 4
+    assert recent[0]["content"] == "question-21"
+    assert recent[-1]["content"] == "answer-50"
+    with db._connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM chat_context_turns WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()[0] == 51 * 4
+
+
+def test_compaction_threshold_stays_inside_thirty_to_fifty_round_band():
+    assert not _context_compaction_due(
+        30, prompt_tokens=50_000, cache_status="unsupported", serialized_chars=50_000
+    )
+    assert not _context_compaction_due(
+        50, prompt_tokens=1_000, cache_status="reported", serialized_chars=50_000
+    )
+    assert _context_compaction_due(
+        31, prompt_tokens=12_000, cache_status="reported", serialized_chars=1_000
+    )
+    assert _context_compaction_due(
+        31, prompt_tokens=0, cache_status="unsupported", serialized_chars=12_000
+    )
+    assert _context_compaction_due(
+        51, prompt_tokens=1_000, cache_status="reported", serialized_chars=1_000
+    )
 
 
 def valid_summary(source: dict, revision: int) -> dict:

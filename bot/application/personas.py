@@ -28,6 +28,7 @@ def persona_engine() -> PersonaEngine:
     speech = SpeechService(store, SovitsBackend(), ROOT / "data" / "personas" / "audio")
     return PersonaEngine(store, speech,
         history_db=TangtangDb(),
+        locked_persona="denia",
         feature_enabled=lambda group, feature: group_domains().effective_feature_enabled(group, feature),
         chat_enabled=chat_enabled,
         gate_revision=lambda group: database().chat_gate_revision(group),

@@ -29,12 +29,16 @@ class PersonaEngine:
                  configuration_version: Callable[[], str] | None = None,
                  gate_revision: Callable[[int], tuple[int, int]] | None = None,
                  profiles: dict[str, PersonaProfile] | None = None,
-                 history_db: TangtangDb | None = None) -> None:
+                 history_db: TangtangDb | None = None,
+                 locked_persona: str | None = None) -> None:
         self.store, self.speech = store, speech
         self.feature_enabled, self.chat_enabled = feature_enabled, chat_enabled
         self.configuration_version = configuration_version or (lambda: "")
         self.gate_revision = gate_revision or (lambda group_id: (0, 0))
         self.profiles = profiles or load_personas()
+        if locked_persona is not None and locked_persona not in self.profiles:
+            raise ValueError("unknown locked persona")
+        self.locked_persona = locked_persona
         self.expressions = ExpressionSelection(store)
         for profile in self.profiles.values():
             self.expressions.catalog(profile)
@@ -46,7 +50,12 @@ class PersonaEngine:
         self.topics = None
 
     def profile(self, group_id: int) -> PersonaProfile:
-        return self.profiles[self.store.selection(group_id)[0]]
+        return self.profiles[self._selection(group_id)[0]]
+
+    def _selection(self, group_id: int) -> tuple[str, int]:
+        if self.locked_persona is not None:
+            return self.locked_persona, 0
+        return self.store.selection(group_id)
 
     def v2_enabled(self, persona: str) -> bool:
         return persona == 'denia' and bool(self.store.option('denia_v2_enabled', False))
@@ -58,14 +67,14 @@ class PersonaEngine:
 
     def snapshot(self, event, model: str, proactive: bool) -> ChatContext:
         group_id = int(event.group_id)
-        persona, revision = self.store.selection(group_id)
+        persona, revision = self._selection(group_id)
         message_id = str(getattr(event, "message_id", "") or uuid.uuid4().hex)
         return ChatContext(self.profiles[persona], group_id, int(event.user_id),
                            f"{group_id}:{message_id}", revision, self.store.revision(), model, proactive,
                            self.configuration_version(), self.gate_revision(group_id))
 
     def current(self, context: ChatContext) -> bool:
-        return (self.store.selection(context.group_id) == (context.persona.key, context.selection_revision)
+        return (self._selection(context.group_id) == (context.persona.key, context.selection_revision)
                 and self.store.revision() == context.settings_revision
                 and self.profiles[context.persona.key].version == context.persona.version
                 and self.configuration_version() == context.configuration_version

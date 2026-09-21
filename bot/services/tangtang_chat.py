@@ -60,6 +60,8 @@ from bot.services.local_skill_contract import skill_prompt
 from bot.services.agent_context import (
     AGENT_INVARIANT_INSTRUCTIONS,
     AGENT_REPLY_INSTRUCTIONS,
+    CONTEXT_MAX_ROUNDS,
+    CONTEXT_MIN_ROUNDS,
     ContextEnvelope,
     history_items,
     stable_hash,
@@ -91,6 +93,25 @@ SOFT_BLACKLIST_PATH = RESOURCE_DIR / "soft_blacklist.txt"
 LINES_PATH = RESOURCE_DIR / "lines.txt"
 
 GROUP_CONTEXT_MESSAGES = 30
+
+
+def _context_compaction_due(
+    round_count: int,
+    *,
+    prompt_tokens: int,
+    cache_status: str,
+    serialized_chars: int,
+) -> bool:
+    above_minimum = int(round_count) > CONTEXT_MIN_ROUNDS
+    return (
+        int(round_count) > CONTEXT_MAX_ROUNDS
+        or (above_minimum and int(prompt_tokens) >= 12_000)
+        or (
+            above_minimum
+            and cache_status == "unsupported"
+            and int(serialized_chars) >= 12_000
+        )
+    )
 CONTEXT_IMAGE_MESSAGE_WINDOW = 10
 CALL_REPEAT_MERGE_SECONDS = 60
 ZHIJIANG_KNOWLEDGE_LIMIT = 3
@@ -1472,6 +1493,9 @@ class TangtangService:
         self._pending_context_items: ContextVar[tuple[dict[str, Any], ...]] = ContextVar(
             "agent_pending_context_items", default=()
         )
+        self._pending_group_context_cursor: ContextVar[int | None] = ContextVar(
+            "agent_pending_group_context_cursor", default=None
+        )
         self._compaction_tasks: dict[int, asyncio.Task[Any]] = {}
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
@@ -1527,6 +1551,7 @@ class TangtangService:
         cognition_token = self._cognition_turn.set(None)
         session_token = self._context_session.set(None)
         pending_token = self._pending_context_items.set(())
+        group_cursor_token = self._pending_group_context_cursor.set(None)
         try:
             request_ids = tuple(f"{context.group_id}:{mid}" for mid in getattr(event, "source_message_ids", (event.message_id,))) if context else ()
             if context and (not self._turn_current() or not self.personas.store.claim_requests(request_ids, time.time())):
@@ -1550,6 +1575,7 @@ class TangtangService:
                     logger.warning('Persona source lease release deferred: {}', type(exc).__name__)
             self._cognition_turn.reset(cognition_token)
             self._pending_context_items.reset(pending_token)
+            self._pending_group_context_cursor.reset(group_cursor_token)
             self._context_session.reset(session_token)
             self._memory_revision.reset(memory_token)
             self._turn.reset(token)
@@ -1652,6 +1678,44 @@ class TangtangService:
         if scheduled is not None or self.memory.people.revision():
             return []
         return list(self._group_context.get(group_id, ()))
+
+    def _session_group_context_lines(
+        self,
+        session_id: int,
+        group_id: int,
+        limit: int,
+        *,
+        exclude_message_id: str = "",
+    ) -> tuple[list[str], int, bool]:
+        session = self.db.context_session(session_id) or {}
+        cursor = int(session.get("group_context_cursor_id") or 0)
+        scheduled = proactive_turn()
+        effective_limit = min(int(limit), 20) if scheduled is not None else int(limit)
+        try:
+            raw_rows = self._base_db.group_context_messages(
+                group_id,
+                after_id=cursor,
+                limit=max(1, effective_limit) + 1,
+            )
+        except Exception as exc:
+            logger.warning("Agent group context delta read failed: {}", type(exc).__name__)
+            return self._group_context_lines(group_id, effective_limit), cursor, cursor > 0
+        next_cursor = max((int(row["id"]) for row in raw_rows), default=cursor)
+        rows = [
+            row for row in raw_rows
+            if not exclude_message_id or str(row.get("message_id") or "") != exclude_message_id
+        ]
+        if scheduled is not None:
+            rows = self._fresh_context_rows(rows)
+        rows = [
+            row for row in rows
+            if self.memory.safe_text(group_id, int(row["user_id"]), row["text"])
+        ][-max(1, effective_limit):]
+        return (
+            [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows],
+            next_cursor,
+            cursor > 0,
+        )
 
     def _group_summary_lines(
         self,
@@ -2002,9 +2066,15 @@ class TangtangService:
         media_resolution: MediaResolution | None = None,
         separate_current_input: bool = False,
         layered_context: bool = False,
+        group_context_lines: tuple[str, ...] | None = None,
+        group_context_is_delta: bool = False,
     ) -> str:
         group_id = int(event.group_id)
-        context_lines = self._group_context_lines(group_id, config.group_context_messages)
+        context_lines = (
+            list(group_context_lines)
+            if group_context_lines is not None
+            else self._group_context_lines(group_id, config.group_context_messages)
+        )
         history = ""
         user_history = ""
         if not layered_context:
@@ -2153,8 +2223,23 @@ class TangtangService:
                     "",
                 )
             )
+        if group_context_lines is None:
+            group_context_title = (
+                f"[最近群聊气氛（最近 {config.group_context_messages} 条，"
+                "仅供感受氛围，不要逐条复述）]"
+            )
+        elif group_context_is_delta:
+            group_context_title = (
+                f"[新增群聊气氛（自上次确认送达后，最多 {config.group_context_messages} 条，"
+                "仅供感受氛围，不要逐条复述）]"
+            )
+        else:
+            group_context_title = (
+                f"[群聊气氛基线（最近 {config.group_context_messages} 条，"
+                "仅供感受氛围，不要逐条复述）]"
+            )
         context_parts.extend([
-            f"[最近群聊气氛（最近 {config.group_context_messages} 条，仅供感受氛围，不要逐条复述）]",
+            group_context_title,
             "\n".join(context_lines) if context_lines else "（暂无）",
         ])
         if not layered_context:
@@ -2597,6 +2682,45 @@ class TangtangService:
                     (*current_references, *context_references)
                 )
             persona = self._persona_text()
+            context = self._turn.get()
+            provider_tools = (
+                NATIVE_ACTION_TOOL_SCHEMAS
+                if config.tools_enabled and config.native_action_tools == "true" and not proactive
+                else TOOL_SCHEMAS if config.tools_enabled else ()
+            )
+            candidate_tools = (
+                NATIVE_ACTION_TOOL_SCHEMAS
+                if config.tools_enabled
+                and config.native_action_tools in {"shadow", "true"}
+                and not proactive
+                else provider_tools
+            )
+            session_tools = (
+                candidate_tools if config.context_layout == "shadow" else provider_tools
+            )
+            persona_version = (
+                context.persona.version if context else stable_hash(persona)[:16]
+            )
+            session_id = self.db.ensure_context_session(
+                group_id=group_id,
+                user_id=user_id,
+                layout_version=config.context_layout,
+                persona_version=persona_version,
+                tool_version=stable_hash(tuple(dict(tool) for tool in session_tools)),
+                now=self._now(),
+            )
+            self._context_session.set(session_id)
+            layered_group_lines: tuple[str, ...] | None = None
+            group_context_is_delta = False
+            if config.context_layout in {"shadow", "v2"}:
+                lines, next_cursor, group_context_is_delta = self._session_group_context_lines(
+                    session_id,
+                    group_id,
+                    config.group_context_messages,
+                    exclude_message_id=str(getattr(event, "message_id", "") or ""),
+                )
+                layered_group_lines = tuple(lines)
+                self._pending_group_context_cursor.set(next_cursor)
             provider_prompt = self._build_prompt(
                 event,
                 config,
@@ -2607,6 +2731,12 @@ class TangtangService:
                 media_resolution=media_resolution,
                 separate_current_input=config.context_layout == "v2",
                 layered_context=config.context_layout == "v2",
+                group_context_lines=(
+                    layered_group_lines if config.context_layout == "v2" else None
+                ),
+                group_context_is_delta=(
+                    group_context_is_delta if config.context_layout == "v2" else False
+                ),
             )
             candidate_prompt = provider_prompt
             if config.context_layout == "shadow":
@@ -2620,8 +2750,9 @@ class TangtangService:
                     media_resolution=media_resolution,
                     separate_current_input=True,
                     layered_context=True,
+                    group_context_lines=layered_group_lines,
+                    group_context_is_delta=group_context_is_delta,
                 )
-            context = self._turn.get()
             voice_candidate = False
             voice_status = "未绑定声线"
             prompts = [provider_prompt, candidate_prompt]
@@ -2707,18 +2838,6 @@ class TangtangService:
             continuation = continuation_turn()
             if continuation is not None and not continuation.admit():
                 return
-            provider_tools = (
-                NATIVE_ACTION_TOOL_SCHEMAS
-                if config.tools_enabled and config.native_action_tools == "true" and not proactive
-                else TOOL_SCHEMAS if config.tools_enabled else ()
-            )
-            candidate_tools = (
-                NATIVE_ACTION_TOOL_SCHEMAS
-                if config.tools_enabled
-                and config.native_action_tools in {"shadow", "true"}
-                and not proactive
-                else provider_tools
-            )
             action_state_versions = (
                 self.feature_state_provider(event)
                 if self.feature_state_provider is not None
@@ -2735,33 +2854,7 @@ class TangtangService:
                     *stable_persona_instructions,
                 )
             )
-            session_prompt = (
-                candidate_prompt if config.context_layout == "shadow" else provider_prompt
-            )
-            session_tools = (
-                candidate_tools if config.context_layout == "shadow" else provider_tools
-            )
-            draft_envelope = ContextEnvelope.create(
-                persona=persona,
-                dynamic_status=session_prompt,
-                current_input=current_text,
-                images=media_resolution.images,
-                tools=session_tools,
-                fixed_instructions=fixed_instructions,
-            )
-            persona_version = (
-                context.persona.version if context else stable_hash(persona)[:16]
-            )
-            session_id = self.db.ensure_context_session(
-                group_id=group_id,
-                user_id=user_id,
-                layout_version=config.context_layout,
-                persona_version=persona_version,
-                tool_version=draft_envelope.tool_schema_hash,
-                now=self._now(),
-            )
-            self._context_session.set(session_id)
-            snapshot, conversation_items = self.db.context_window(session_id, keep_recent=16)
+            snapshot, conversation_items = self.db.context_window(session_id)
             snapshot_text = (
                 json.dumps(snapshot["summary"], ensure_ascii=False, sort_keys=True,
                            separators=(",", ":"))
@@ -3097,6 +3190,9 @@ class TangtangService:
                     pending,
                     now=self._now(),
                     delivery_status="confirmed" if delivered else "audit",
+                    group_context_cursor_id=(
+                        self._pending_group_context_cursor.get() if delivered else None
+                    ),
                 )
             except Exception as exc:
                 logger.warning("Native tool context record failed: {}", type(exc).__name__)
@@ -3196,6 +3292,7 @@ class TangtangService:
                 self._context_request_id(event),
                 (*items, {"type": "message", "role": "assistant", "content": delivered_text}),
                 now=self._now(),
+                group_context_cursor_id=self._pending_group_context_cursor.get(),
             )
             self._maybe_schedule_compaction(self.db, session_id, config, tokens)
         except Exception as exc:
@@ -3210,7 +3307,7 @@ class TangtangService:
     ) -> None:
         if not config.context_compaction_enabled:
             return
-        uncompacted = db.uncompacted_context_count(session_id)
+        uncompacted_rounds = db.uncompacted_context_round_count(session_id)
         serialized_chars = sum(
             int(tokens.get(key) or 0)
             for key in (
@@ -3218,14 +3315,17 @@ class TangtangService:
                 "dynamic_status_chars", "current_input_chars",
             )
         )
-        should_compact = (
-            int(tokens.get("prompt_tokens") or 0) >= 12_000
-            or uncompacted > 24
-            or (tokens.get("cache_status") == "unsupported" and serialized_chars >= 12_000)
+        should_compact = _context_compaction_due(
+            uncompacted_rounds,
+            prompt_tokens=int(tokens.get("prompt_tokens") or 0),
+            cache_status=str(tokens.get("cache_status") or ""),
+            serialized_chars=serialized_chars,
         )
         if not should_compact:
             return
-        source = db.compaction_source(session_id, keep_recent=16)
+        source = db.compaction_source(
+            session_id, keep_recent_rounds=CONTEXT_MIN_ROUNDS
+        )
         if source is None:
             return
         job_id = db.enqueue_compaction_job(

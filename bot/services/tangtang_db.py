@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS chat_context_sessions (
     persona_version TEXT NOT NULL,
     tool_version TEXT NOT NULL,
     active_from_turn_id INTEGER NOT NULL DEFAULT 0,
+    group_context_cursor_id INTEGER NOT NULL DEFAULT 0,
     snapshot_version INTEGER NOT NULL DEFAULT 0,
     last_confirmed_turn_id INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
@@ -295,6 +296,11 @@ class TangtangDb:
             conn.execute(
                 "ALTER TABLE chat_context_sessions "
                 "ADD COLUMN active_from_turn_id INTEGER NOT NULL DEFAULT 0"
+            )
+        if context_columns and "group_context_cursor_id" not in context_columns:
+            conn.execute(
+                "ALTER TABLE chat_context_sessions "
+                "ADD COLUMN group_context_cursor_id INTEGER NOT NULL DEFAULT 0"
             )
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tangtang_calls'"
@@ -681,6 +687,23 @@ class TangtangDb:
                 "SELECT * FROM tangtang_group_messages WHERE group_id = ? "
                 "ORDER BY id DESC LIMIT ?",
                 (int(group_id), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def group_context_messages(
+        self,
+        group_id: int,
+        *,
+        after_id: int = 0,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Latest bounded context after a confirmed session cursor, oldest first."""
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tangtang_group_messages WHERE group_id = ? AND id > ? "
+                "ORDER BY id DESC LIMIT ?",
+                (int(group_id), max(0, int(after_id)), max(1, int(limit))),
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
@@ -1219,6 +1242,7 @@ class TangtangDb:
                 or str(row["tool_version"]) != str(tool_version)
             )
             active_from = int(row["active_from_turn_id"])
+            group_context_cursor = int(row["group_context_cursor_id"])
             if changed:
                 latest = conn.execute(
                     "SELECT COALESCE(MAX(id), 0) AS id FROM chat_context_turns "
@@ -1226,11 +1250,13 @@ class TangtangDb:
                     (int(row["id"]),),
                 ).fetchone()
                 active_from = max(active_from, int(latest["id"]))
+                group_context_cursor = 0
             conn.execute(
                 "UPDATE chat_context_sessions SET layout_version = ?, persona_version = ?, "
-                "tool_version = ?, active_from_turn_id = ?, updated_at = ? WHERE id = ?",
+                "tool_version = ?, active_from_turn_id = ?, group_context_cursor_id = ?, "
+                "updated_at = ? WHERE id = ?",
                 (str(layout_version), str(persona_version), str(tool_version), active_from,
-                 str(now), int(row["id"])),
+                 group_context_cursor, str(now), int(row["id"])),
             )
         return int(row["id"])
 
@@ -1249,6 +1275,7 @@ class TangtangDb:
         *,
         now: str,
         delivery_status: str = "confirmed",
+        group_context_cursor_id: int | None = None,
     ) -> tuple[int, ...]:
         if delivery_status not in {"confirmed", "audit"}:
             raise ValueError("invalid context delivery status")
@@ -1288,15 +1315,20 @@ class TangtangDb:
             if delivery_status == "confirmed":
                 conn.execute(
                     "UPDATE chat_context_sessions SET last_confirmed_turn_id = MAX(last_confirmed_turn_id, ?), "
+                    "group_context_cursor_id = MAX(group_context_cursor_id, ?), "
                     "updated_at = ? WHERE id = ?",
-                    (max(inserted), str(now), int(session_id)),
+                    (
+                        max(inserted),
+                        max(0, int(group_context_cursor_id or 0)),
+                        str(now),
+                        int(session_id),
+                    ),
                 )
         return tuple(inserted)
 
     def context_window(
-        self, session_id: int, *, keep_recent: int = 16
+        self, session_id: int, *, keep_recent: int | None = None
     ) -> tuple[dict[str, Any] | None, tuple[dict[str, Any], ...]]:
-        limit = max(1, min(int(keep_recent), 100))
         with self._connect() as conn:
             session = conn.execute(
                 "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
@@ -1312,12 +1344,20 @@ class TangtangDb:
                 active_from,
                 int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0,
             )
-            rows = conn.execute(
-                "SELECT * FROM chat_context_turns WHERE session_id = ? AND delivery_status = 'confirmed' "
-                "AND id > ? ORDER BY id DESC LIMIT ?",
-                (int(session_id), cutoff, limit),
-            ).fetchall()
-        items = tuple(json.loads(row["payload_json"]) for row in reversed(rows))
+            if keep_recent is None:
+                rows = conn.execute(
+                    "SELECT * FROM chat_context_turns WHERE session_id = ? "
+                    "AND delivery_status = 'confirmed' AND id > ? ORDER BY id",
+                    (int(session_id), cutoff),
+                ).fetchall()
+            else:
+                limit = max(1, min(int(keep_recent), 100))
+                rows = list(reversed(conn.execute(
+                    "SELECT * FROM chat_context_turns WHERE session_id = ? "
+                    "AND delivery_status = 'confirmed' AND id > ? ORDER BY id DESC LIMIT ?",
+                    (int(session_id), cutoff, limit),
+                ).fetchall()))
+        items = tuple(json.loads(row["payload_json"]) for row in rows)
         snapshot_dict = dict(snapshot) if snapshot is not None else None
         if snapshot_dict is not None:
             snapshot_dict["summary"] = json.loads(snapshot_dict.pop("summary_json"))
@@ -1342,8 +1382,31 @@ class TangtangDb:
             ).fetchone()
         return int(count["count"])
 
+    def uncompacted_context_round_count(self, session_id: int) -> int:
+        with self._connect() as conn:
+            session = conn.execute(
+                "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            active_from = int(session["active_from_turn_id"]) if session is not None else 0
+            row = conn.execute(
+                "SELECT COALESCE(MAX(cutoff_turn_id), 0) AS cutoff FROM chat_context_snapshots "
+                "WHERE session_id = ? AND active = 1 AND cutoff_turn_id > ?",
+                (int(session_id), active_from),
+            ).fetchone()
+            count = conn.execute(
+                "SELECT COUNT(DISTINCT request_id) AS count FROM chat_context_turns "
+                "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ?",
+                (int(session_id), max(active_from, int(row["cutoff"]))),
+            ).fetchone()
+        return int(count["count"])
+
     def compaction_source(
-        self, session_id: int, *, keep_recent: int = 16
+        self,
+        session_id: int,
+        *,
+        keep_recent: int = 16,
+        keep_recent_rounds: int | None = None,
     ) -> dict[str, Any] | None:
         with self._connect() as conn:
             session = conn.execute(
@@ -1361,14 +1424,24 @@ class TangtangDb:
                 int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0,
             )
             rows = conn.execute(
-                "SELECT id, payload_json FROM chat_context_turns "
+                "SELECT id, request_id, payload_json FROM chat_context_turns "
                 "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ? ORDER BY id",
                 (int(session_id), cutoff),
             ).fetchall()
-        compact_count = len(rows) - max(1, int(keep_recent))
-        if compact_count <= 0:
-            return None
-        selected = rows[:compact_count]
+        if keep_recent_rounds is None:
+            compact_count = len(rows) - max(1, int(keep_recent))
+            if compact_count <= 0:
+                return None
+            selected = rows[:compact_count]
+        else:
+            retained_rounds = max(1, int(keep_recent_rounds))
+            request_ids = tuple(dict.fromkeys(str(row["request_id"]) for row in rows))
+            if len(request_ids) <= retained_rounds:
+                return None
+            retained = set(request_ids[-retained_rounds:])
+            selected = [row for row in rows if str(row["request_id"]) not in retained]
+            if not selected:
+                return None
         previous = json.loads(snapshot["summary_json"]) if snapshot is not None else None
         source = {
             "previous_snapshot": previous,

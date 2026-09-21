@@ -24,6 +24,28 @@ def test_full_start_orders_core_before_nonebot_and_qq_transport():
     assert core < nonebot < qq_transport
 
 
+def test_full_start_keeps_unicode_failure_in_transcript(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "start_all.ps1").write_text(source("scripts/start_all.ps1"), encoding="utf-8")
+    (scripts / "qq_transport.ps1").write_text(
+        "function Get-QqTransportSettings { param($Root) return @{Transport='snowluma'} }",
+        encoding="ascii",
+    )
+    (scripts / "start_gsuid_core.ps1").write_text(
+        "param([switch]$Background)\nthrow '启动探针错误'", encoding="utf-8-sig",
+    )
+    completed = subprocess.run(
+        [shutil.which("powershell.exe"), "-NoProfile", "-NonInteractive",
+         "-ExecutionPolicy", "Bypass", "-File", str(scripts / "start_all.ps1")],
+        capture_output=True, timeout=15,
+    )
+    assert completed.returncode != 0
+    transcript = (tmp_path / "logs/full-stack-startup.log").read_text(encoding="utf-8-sig")
+    assert "启动探针错误" in transcript
+    assert "Starting GsUID Core" in transcript
+
+
 def test_full_start_and_stop_include_every_project_web_tunnel():
     start = source("scripts/start_all.ps1")
     stop = source("scripts/stop_all.ps1")

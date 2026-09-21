@@ -95,9 +95,14 @@ function Ensure-ManagedWatchdog {
 }
 
 function Register-WatchdogSupervisor {
-    $engine = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $scriptPath = Join-Path $PSScriptRoot 'ensure_watchdog.ps1'
-    $action = New-ScheduledTaskAction -Execute $engine -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f $scriptPath) -WorkingDirectory $WatchdogRoot
+    # powershell.exe can flash a console before processing -WindowStyle Hidden.
+    # pythonw is a GUI-subsystem executable; its child uses CREATE_NO_WINDOW.
+    $engine = Join-Path $WatchdogRoot '.venv\Scripts\pythonw.exe'
+    $scriptPath = Join-Path $PSScriptRoot 'run_watchdog_check.py'
+    foreach ($required in @($engine, $scriptPath)) {
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing windowless watchdog launcher: $required" }
+    }
+    $action = New-ScheduledTaskAction -Execute $engine -Argument ('"{0}"' -f $scriptPath) -WorkingDirectory $WatchdogRoot
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $triggers = @(
         New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)

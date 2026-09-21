@@ -2,6 +2,16 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
+# The BAT uses code page 65001; native Python output must use the same encoding
+# even before the bot launcher runs (speech starts first).
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+$OutputEncoding = [Console]::OutputEncoding
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+$startupLog = Join-Path $root 'logs\full-stack-startup.log'
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $startupLog) | Out-Null
+Start-Transcript -Path $startupLog -Append | Out-Null
+try {
 . (Join-Path $PSScriptRoot 'qq_transport.ps1')
 $transport = Get-QqTransportSettings -Root $root
 
@@ -46,3 +56,10 @@ Write-Host '[9/10] Starting the QQ transport watchdog...'
 
 Write-Host '[10/10] Verifying SnowLuma, NoneBot, OneBot, watchdog, and speech health...'
 & (Join-Path $PSScriptRoot 'verify_full_stack.ps1') -WaitSeconds 90
+} catch {
+    # Render inside the transcript before rethrowing outside its lifetime.
+    Write-Host ($_ | Out-String)
+    throw
+} finally {
+    Stop-Transcript | Out-Null
+}

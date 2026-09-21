@@ -14,9 +14,11 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import websockets
 from dotenv import dotenv_values
@@ -27,6 +29,7 @@ SMOKE_DB = ROOT / "data" / "smoke_game_api.db"
 SMOKE_ENV = ROOT / "data" / "smoke_game_api.env"
 SMOKE_PORT = 18081
 SMOKE_BOT_ID = "SmokeGameApiBot"
+HTTPS_URL_RE = re.compile(r"https://[^\s]+")
 
 POSITIVE_COMMANDS = (
     ("#nte帮助", True, None, 45.0),
@@ -153,6 +156,15 @@ def _output_actions(actions: tuple[str, ...]) -> tuple[str, ...]:
             "send_private_forward_msg",
         }
     )
+
+
+def _has_https_login_link(texts: tuple[str, ...], path_prefix: str) -> bool:
+    for text in texts:
+        for raw_url in HTTPS_URL_RE.findall(text):
+            parsed = urlsplit(raw_url.rstrip(".,;:!?)]}，。；：！？）】"))
+            if parsed.scheme == "https" and parsed.netloc and parsed.path.startswith(path_prefix):
+                return True
+    return False
 
 
 async def _run_command(
@@ -294,32 +306,16 @@ async def _run_client() -> int:
             failures += 1
         status = "PASS" if ok else ("NO_OUTPUT" if expect_output else "UNEXPECTED_OUTPUT")
         print(f"{command}: {status}; output={','.join(outputs) or 'none'}", flush=True)
-    nte_login_link = next(
-        (
-            text
-            for text in captured_texts.get("#nte登录", ())
-            if "trycloudflare.com" in text or "/nte/i/" in text
-        ),
-        None,
-    )
-    if nte_login_link is None:
+    if not _has_https_login_link(captured_texts.get("#nte登录", ()), "/nte/i/"):
         failures += 1
         print("#nte登录: LOGIN_LINK_MISSING", flush=True)
     else:
-        print(f"#nte登录: LOGIN_LINK_OK {nte_login_link}", flush=True)
-    wuwa_login_link = next(
-        (
-            text
-            for text in captured_texts.get("#ww登录", ())
-            if "bot.example.invalid/waves/i/" in text
-        ),
-        None,
-    )
-    if wuwa_login_link is None:
+        print("#nte登录: LOGIN_LINK_OK", flush=True)
+    if not _has_https_login_link(captured_texts.get("#ww登录", ()), "/waves/i/"):
         failures += 1
         print("#ww登录: LOGIN_LINK_MISSING", flush=True)
     else:
-        print(f"#ww登录: LOGIN_LINK_OK {wuwa_login_link}", flush=True)
+        print("#ww登录: LOGIN_LINK_OK", flush=True)
     if not any(
         "鸣潮邮箱体力提醒功能已关闭" in text
         for text in captured_texts.get("#ww推送邮箱", ())

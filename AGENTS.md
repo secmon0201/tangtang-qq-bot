@@ -1,5 +1,7 @@
 # Repository Instructions
 
+For onboarding or work on chat, local skills, memory, or feature lifecycle, read [Agent engineering guide](docs/开发-Agent工程导航.md) and the canonical [maintenance skill](skills/qq-bot-maintainer/SKILL.md). The guide distinguishes startup plugin loading, conversational actions, and reversible disablement from hot unloading; verify current code and runtime state before claiming support.
+
 ## Supported Environment
 
 - This repository supports Windows-local deployment only: Python 3.13, NoneBot2, OneBot v11, SnowLuma/QQNT, PowerShell, and SQLite.
@@ -68,7 +70,7 @@ The architecture validator must remain free of plugin-to-plugin imports, reverse
 
 Do not restart SnowLuma or QQ for ordinary Python changes. Prefer `scripts\stop.ps1` followed by `scripts\start.ps1`, then verify the PID, port 8080, logs, and OneBot connection.
 
-Watchdog startup registers a current-user Windows scheduled check every minute and at logon. It restores missing watchdogs or completed heartbeats older than 180 seconds through a detached WMI launch. Lifecycle operations share a file lock; explicit watchdog/full-stack stop disables `data/watchdog_enabled.flag` before stopping the process, so scheduled checks must not undo operator shutdown. Verify watchdog termination recovery and the disabled gate after lifecycle changes.
+Watchdog startup registers a current-user Windows scheduled check every minute and at logon. Use the project `pythonw.exe` and `CREATE_NO_WINDOW` launcher, never directly scheduled PowerShell (even `-WindowStyle Hidden` can flash). Checks time out after 45 seconds and write UTF-8 failures to `logs/watchdog-supervisor-check.log`. It restores missing watchdogs or completed heartbeats older than 180 seconds through a detached WMI launch. Lifecycle operations share a file lock; explicit watchdog/full-stack stop disables `data/watchdog_enabled.flag` before stopping the process, so scheduled checks must not undo operator shutdown. Verify watchdog termination recovery and the disabled gate after lifecycle changes.
 
 ## Git Rules
 

@@ -219,6 +219,10 @@ def test_config_validation():
     assert config.context_layout == "v1"
     assert enabled_config(TANGTANG_CONTEXT_LAYOUT="shadow").context_layout == "shadow"
     assert enabled_config(TANGTANG_CONTEXT_LAYOUT="v2").context_layout == "v2"
+    assert enabled_config().context_compaction_enabled is False
+    assert enabled_config(
+        TANGTANG_CONTEXT_COMPACTION_ENABLED="true"
+    ).context_compaction_enabled is True
     disabled = TangtangConfig.from_values({"TANGTANG_ENABLED": "false"}, (1001,))
     assert not disabled.enabled
     assert disabled.ignore_probability == 0.05
@@ -1199,6 +1203,13 @@ def test_model_reply_records_history_and_usage(tmp_path, monkeypatch):
     assert rows[0]["reply_kind"] == "model"
     assert rows[0]["call_text"] == "糖糖 今天天气怎么样？"
     assert any(event["event"] == "reply" for event in usage_events(usage_dir))
+    with service.db._connect() as conn:
+        context_rows = conn.execute(
+            "SELECT role, delivery_status FROM chat_context_turns ORDER BY id"
+        ).fetchall()
+    assert [(row["role"], row["delivery_status"]) for row in context_rows] == [
+        ("user", "confirmed"), ("assistant", "confirmed")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1228,12 +1239,43 @@ def test_context_layout_switch_controls_provider_payload(
     assert events[-1]["shadow_payload_changed"] is (True if layout == "shadow" else None)
 
 
+def test_v2_next_request_appends_confirmed_previous_turn(tmp_path, monkeypatch):
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    config = enabled_config(TANGTANG_CONTEXT_LAYOUT="v2")
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=11, text="糖糖 第一轮"),
+        config,
+    ))
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=12, text="糖糖 第二轮"),
+        config,
+    ))
+    first, second = provider.envelopes
+    assert first is not None and second is not None
+    first_items = first.canonical_semantic_items()
+    second_items = second.canonical_semantic_items()
+    assert second_items[: len(first_items)] == first_items
+    assert second_items[len(first_items)]["role"] == "assistant"
+
+
 def test_model_silent_does_not_send(tmp_path, monkeypatch):
     service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch, response="[沉默]")
     asyncio.run(service.handle(SimpleNamespace(self_id=2), group_message(group_id=1001, text="糖糖 随便说说"), enabled_config()))
     assert provider.calls == 1
     assert sent == []
     assert any(event["event"] == "silent" for event in usage_events(usage_dir))
+    with service.db._connect() as conn:
+        audit_rows = conn.execute(
+            "SELECT delivery_status FROM chat_context_turns ORDER BY id"
+        ).fetchall()
+    assert [row["delivery_status"] for row in audit_rows] == ["audit", "audit"]
+    session_id = service.db.ensure_context_session(
+        group_id=1001, user_id=3, layout_version="v1", persona_version="test",
+        tool_version="test", now="now",
+    )
+    assert service.db.context_window(session_id)[1] == ()
 
 
 def test_c_mode_question_replies_and_casual_rolls(tmp_path, monkeypatch):

@@ -58,6 +58,11 @@ from bot.services.tangtang_reply import (
 )
 from bot.services.local_skill_contract import skill_prompt
 from bot.services.agent_context import ContextEnvelope, history_items, stable_hash
+from bot.services.context_compaction import (
+    COMPACTION_SYSTEM_PROMPT,
+    compaction_prompt,
+    parse_snapshot,
+)
 from bot.services.tangtang_humanize import humanize_messages
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
@@ -391,6 +396,7 @@ class TangtangConfig:
     tool_loop_max: int = 3
     humanize_enabled: bool = True
     context_layout: str = "v1"
+    context_compaction_enabled: bool = False
 
     @classmethod
     def disabled(cls, reason: str = "TANGTANG_ENABLED=false") -> "TangtangConfig":
@@ -534,6 +540,9 @@ class TangtangConfig:
         context_layout = _raw(values, "TANGTANG_CONTEXT_LAYOUT", "v1").lower()
         if context_layout not in {"v1", "shadow", "v2"}:
             raise ValueError("TANGTANG_CONTEXT_LAYOUT must be v1, shadow or v2")
+        context_compaction_enabled = _bool(
+            values, "TANGTANG_CONTEXT_COMPACTION_ENABLED", False
+        )
         vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
         vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "low").lower()
         if vision_detail not in VISION_DETAIL_LEVELS:
@@ -643,6 +652,7 @@ class TangtangConfig:
                 tool_loop_max=tool_loop_max,
                 humanize_enabled=humanize_enabled,
                 context_layout=context_layout,
+                context_compaction_enabled=context_compaction_enabled,
             )
         if not group_ids:
             raise ValueError("TANGTANG_GROUP_IDS is required when TANGTANG_ENABLED=true")
@@ -704,6 +714,7 @@ class TangtangConfig:
             tool_loop_max=tool_loop_max,
             humanize_enabled=humanize_enabled,
             context_layout=context_layout,
+            context_compaction_enabled=context_compaction_enabled,
         )
 
     def proactive_values_for(self, group_id: int) -> tuple[float, int, int]:
@@ -1468,6 +1479,13 @@ class TangtangService:
         self._turn: ContextVar[ChatContext | None] = ContextVar("persona_chat_turn", default=None)
         self._memory_revision: ContextVar[int | None] = ContextVar("chat_memory_revision", default=None)
         self._cognition_turn: ContextVar[PersonaTurn | None] = ContextVar('cognition_turn', default=None)
+        self._context_session: ContextVar[int | None] = ContextVar(
+            "agent_context_session", default=None
+        )
+        self._pending_context_items: ContextVar[tuple[dict[str, Any], ...]] = ContextVar(
+            "agent_pending_context_items", default=()
+        )
+        self._compaction_tasks: dict[int, asyncio.Task[Any]] = {}
         self.provider = provider or TangtangProvider()
         self.feature_router = feature_router
         self.media_resolver = media_resolver
@@ -1520,6 +1538,8 @@ class TangtangService:
         token = self._turn.set(context)
         memory_token = self._memory_revision.set(self.memory.people.revision())
         cognition_token = self._cognition_turn.set(None)
+        session_token = self._context_session.set(None)
+        pending_token = self._pending_context_items.set(())
         try:
             request_ids = tuple(f"{context.group_id}:{mid}" for mid in getattr(event, "source_message_ids", (event.message_id,))) if context else ()
             if context and (not self._turn_current() or not self.personas.store.claim_requests(request_ids, time.time())):
@@ -1542,6 +1562,8 @@ class TangtangService:
                 except Exception as exc:
                     logger.warning('Persona source lease release deferred: {}', type(exc).__name__)
             self._cognition_turn.reset(cognition_token)
+            self._pending_context_items.reset(pending_token)
+            self._context_session.reset(session_token)
             self._memory_revision.reset(memory_token)
             self._turn.reset(token)
 
@@ -2607,8 +2629,39 @@ class TangtangService:
             if continuation is not None and not continuation.admit():
                 return
             tools = TOOL_SCHEMAS if config.tools_enabled else ()
+            draft_envelope = ContextEnvelope.create(
+                persona=persona,
+                dynamic_status=prompt,
+                current_input=current_text,
+                images=media_resolution.images,
+                tools=tools,
+            )
+            persona_version = (
+                context.persona.version if context else stable_hash(persona)[:16]
+            )
+            session_id = self.db.ensure_context_session(
+                group_id=group_id,
+                user_id=user_id,
+                layout_version=config.context_layout,
+                persona_version=persona_version,
+                tool_version=draft_envelope.tool_schema_hash,
+                now=self._now(),
+            )
+            self._context_session.set(session_id)
+            snapshot, conversation_items = self.db.context_window(session_id, keep_recent=16)
+            snapshot_text = (
+                json.dumps(snapshot["summary"], ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"))
+                if snapshot else ""
+            )
             envelope = ContextEnvelope.create(
                 persona=persona,
+                conversation_items=(
+                    conversation_items if config.context_layout in {"shadow", "v2"} else ()
+                ),
+                compacted_snapshot=(
+                    snapshot_text if config.context_layout in {"shadow", "v2"} else ""
+                ),
                 dynamic_status=prompt,
                 current_input=current_text,
                 images=media_resolution.images,
@@ -2688,6 +2741,14 @@ class TangtangService:
             usage.update(telemetry)
             usage["model_calls"] = loops + 1
             usage["tool_rounds"] = loops
+            self._pending_context_items.set((
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": envelope.current_text if request_envelope else provider_prompt,
+                },
+                *history_items(tuple(history)),
+            ))
             answer_raw = result.text
             if cognition:
                 try:
@@ -2717,6 +2778,7 @@ class TangtangService:
                 if self.personas:
                     self.personas.choose_expression(context, call_text, plan, 0, blocked="invalid_structure")
                 self._write_usage(config, group_id, user_id, "invalid_reply_structure", mode=mode, tokens=usage)
+                self._audit_pending_context(event, reason="invalid_reply_structure")
                 return
             if plan.skill_calls:
                 if (plan.structured and plan.decided and not proactive and not (context and context.proactive)
@@ -2749,6 +2811,7 @@ class TangtangService:
                 self._write_usage(
                     config, group_id, user_id, "silent", mode=mode, tokens=usage
                 )
+                self._audit_pending_context(event, reason="silent")
                 return
             if black_meme_instruction and any(
                 term in message for message in messages for term in FORBIDDEN_LOCAL_TERMS
@@ -2776,6 +2839,7 @@ class TangtangService:
             self._write_usage(
                 config, group_id, user_id, "error", mode=mode, tokens={}, detail=type(exc).__name__
             )
+            self._audit_pending_context(event, reason=type(exc).__name__)
         finally:
             self._in_flight.discard(group_id)
 
@@ -2824,6 +2888,144 @@ class TangtangService:
             for key in ("cached_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"):
                 merged.pop(key, None)
         return merged
+
+    def _context_request_id(self, event: Any) -> str:
+        context = self._turn.get()
+        if context:
+            return context.request_id
+        return f"{int(event.group_id)}:{getattr(event, 'message_id', '')}"
+
+    def _audit_pending_context(self, event: Any, *, reason: str) -> None:
+        session_id = self._context_session.get()
+        items = self._pending_context_items.get()
+        if session_id is None or not items:
+            return
+        audit_item = {"type": "message", "role": "assistant", "content": f"[audit:{reason}]"}
+        try:
+            self.db.commit_context_items(
+                session_id,
+                self._context_request_id(event),
+                (*items, audit_item),
+                now=self._now(),
+                delivery_status="audit",
+            )
+        except Exception as exc:
+            logger.warning("Agent context audit failed: {}", type(exc).__name__)
+
+    def _commit_delivered_context(
+        self,
+        event: Any,
+        delivered_text: str,
+        config: TangtangConfig,
+        tokens: Mapping[str, Any],
+    ) -> None:
+        session_id = self._context_session.get()
+        items = self._pending_context_items.get()
+        if session_id is None or not items:
+            return
+        try:
+            self.db.commit_context_items(
+                session_id,
+                self._context_request_id(event),
+                (*items, {"type": "message", "role": "assistant", "content": delivered_text}),
+                now=self._now(),
+            )
+            self._maybe_schedule_compaction(self.db, session_id, config, tokens)
+        except Exception as exc:
+            logger.warning("Agent confirmed context commit failed: {}", type(exc).__name__)
+
+    def _maybe_schedule_compaction(
+        self,
+        db: TangtangDb,
+        session_id: int,
+        config: TangtangConfig,
+        tokens: Mapping[str, Any],
+    ) -> None:
+        if not config.context_compaction_enabled:
+            return
+        uncompacted = db.uncompacted_context_count(session_id)
+        serialized_chars = sum(
+            int(tokens.get(key) or 0)
+            for key in (
+                "static_prefix_chars", "conversation_chars", "snapshot_chars",
+                "dynamic_status_chars", "current_input_chars",
+            )
+        )
+        should_compact = (
+            int(tokens.get("prompt_tokens") or 0) >= 12_000
+            or uncompacted > 24
+            or (tokens.get("cache_status") == "unsupported" and serialized_chars >= 12_000)
+        )
+        if not should_compact:
+            return
+        source = db.compaction_source(session_id, keep_recent=16)
+        if source is None:
+            return
+        job_id = db.enqueue_compaction_job(
+            session_id, source["source_hash"], source["cutoff_turn_id"], now=self._now()
+        )
+        existing = self._compaction_tasks.get(session_id)
+        if existing is not None and not existing.done():
+            return
+        task = asyncio.create_task(self._run_compaction_job(db, config, job_id))
+        self._compaction_tasks[session_id] = task
+        task.add_done_callback(
+            lambda completed, sid=session_id: self._compaction_tasks.pop(sid, None)
+        )
+
+    async def _run_compaction_job(
+        self, db: TangtangDb, config: TangtangConfig, job_id: int
+    ) -> None:
+        owner = f"{id(self)}:{job_id}:{time.monotonic_ns()}"
+        now_epoch = time.time()
+        job = db.claim_compaction_job(
+            job_id, owner=owner, now_epoch=now_epoch, lease_seconds=60, now=self._now()
+        )
+        if job is None:
+            return
+        try:
+            source = db.compaction_job_source(job_id)
+            if source is None:
+                raise ValueError("compaction source is unavailable")
+            turn_ids = tuple(int(row["id"]) for row in source["turns"])
+            compact_config = replace(
+                config,
+                reasoning_effort="low",
+                timeout_seconds=45,
+                max_output_tokens=1600,
+                max_response_chars=24_000,
+            )
+            text, usage = await asyncio.wait_for(
+                self.provider.generate(
+                    compact_config,
+                    COMPACTION_SYSTEM_PROMPT,
+                    compaction_prompt(source, int(job["generation"])),
+                ),
+                timeout=45,
+            )
+            snapshot = parse_snapshot(
+                text, source_turn_ids=turn_ids, revision=int(job["generation"])
+            )
+            db.complete_compaction_job(job_id, owner=owner, summary=snapshot, now=self._now())
+            session = db.context_session(int(job["session_id"])) or {}
+            self._write_usage(
+                compact_config,
+                int(session.get("group_id") or 0),
+                int(session.get("user_id") or 0),
+                "context_compacted",
+                mode="background",
+                tokens=usage,
+                detail=f"revision={int(job['generation'])}; turns={len(turn_ids)}",
+            )
+        except Exception as exc:
+            db.fail_compaction_job(
+                job_id,
+                owner=owner,
+                reason=type(exc).__name__,
+                now_epoch=time.time(),
+                now=self._now(),
+            )
+            logger.warning("Agent context compaction failed: {}", type(exc).__name__)
 
     async def _run_skill_call(self, bot, event, config, plan, *, call_text, mode, usage):
         if self.feature_runner is None or not self._turn_current():
@@ -3034,6 +3236,7 @@ class TangtangService:
             if context and self.personas and expression_key:
                 self.personas.expressions.result(context, "cancelled", reason="text_not_delivered")
             self._write_usage(config, group_id, user_id, "error", mode=mode, tokens=tokens)
+            self._audit_pending_context(event, reason="delivery_unconfirmed")
             return
         delivered_text = "\n".join(delivered)
         created_at = self._now()
@@ -3051,6 +3254,7 @@ class TangtangService:
                 created_at=created_at,
             )
             self.db.insert_reply_parts(call_id, delivery_rows, created_at=created_at)
+            self._commit_delivered_context(event, delivered_text, config, tokens)
         except Exception as exc:
             logger.warning("Tangtang history record failed: {}", type(exc).__name__)
         if context and self.personas:

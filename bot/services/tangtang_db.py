@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from collections.abc import Iterable, Mapping
 from datetime import datetime
@@ -147,6 +148,72 @@ CREATE TABLE IF NOT EXISTS group_summary_cursors (
     source TEXT NOT NULL DEFAULT 'persona',
     updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_context_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    layout_version TEXT NOT NULL,
+    persona_version TEXT NOT NULL,
+    tool_version TEXT NOT NULL,
+    snapshot_version INTEGER NOT NULL DEFAULT 0,
+    last_confirmed_turn_id INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_context_sessions_scope
+    ON chat_context_sessions (group_id, user_id);
+CREATE TABLE IF NOT EXISTS chat_context_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool')),
+    item_type TEXT NOT NULL CHECK (item_type IN ('message', 'tool_call', 'tool_result')),
+    payload_json TEXT NOT NULL,
+    delivery_status TEXT NOT NULL CHECK (delivery_status IN ('confirmed', 'audit')),
+    source_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(session_id, request_id, sequence),
+    FOREIGN KEY(session_id) REFERENCES chat_context_sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_context_turns_session
+    ON chat_context_turns (session_id, id);
+CREATE TABLE IF NOT EXISTS chat_context_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    cutoff_turn_id INTEGER NOT NULL,
+    summary_json TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    UNIQUE(session_id, version),
+    UNIQUE(session_id, source_hash),
+    FOREIGN KEY(session_id) REFERENCES chat_context_sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_context_snapshots_active
+    ON chat_context_snapshots (session_id, active, version DESC);
+CREATE TABLE IF NOT EXISTS chat_context_compaction_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    cutoff_turn_id INTEGER NOT NULL,
+    source_hash TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'done', 'failed')),
+    lease_owner TEXT NOT NULL DEFAULT '',
+    lease_until REAL NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at REAL NOT NULL DEFAULT 0,
+    error_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(session_id, generation),
+    UNIQUE(session_id, source_hash),
+    FOREIGN KEY(session_id) REFERENCES chat_context_sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_chat_context_compaction_jobs_ready
+    ON chat_context_compaction_jobs (status, next_attempt_at, lease_until, id);
 """
 
 
@@ -1087,6 +1154,316 @@ class TangtangDb:
         if max_chars is None or max_chars <= 0 or len(text) <= max_chars:
             return text
         return "…" + text[-max_chars:]
+
+    @staticmethod
+    def _context_payload(item: Mapping[str, Any]) -> tuple[str, str, str, str]:
+        item_type = str(item.get("type") or "message")
+        role = str(item.get("role") or ("tool" if item_type == "tool_result" else "assistant"))
+        if role not in {"user", "assistant", "tool"}:
+            raise ValueError("invalid context item role")
+        if item_type not in {"message", "tool_call", "tool_result"}:
+            raise ValueError("invalid context item type")
+        payload = json.dumps(dict(item), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if len(payload) > 16_000:
+            raise ValueError("context item exceeds 16000 characters")
+        source_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        return role, item_type, payload, source_hash
+
+    def ensure_context_session(
+        self,
+        *,
+        group_id: int,
+        user_id: int,
+        layout_version: str,
+        persona_version: str,
+        tool_version: str,
+        now: str,
+    ) -> int:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO chat_context_sessions "
+                "(group_id, user_id, layout_version, persona_version, tool_version, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(group_id, user_id) DO UPDATE SET "
+                "layout_version=excluded.layout_version, persona_version=excluded.persona_version, "
+                "tool_version=excluded.tool_version, updated_at=excluded.updated_at",
+                (int(group_id), int(user_id), str(layout_version), str(persona_version),
+                 str(tool_version), str(now), str(now)),
+            )
+            row = conn.execute(
+                "SELECT id FROM chat_context_sessions WHERE group_id = ? AND user_id = ?",
+                (int(group_id), int(user_id)),
+            ).fetchone()
+        return int(row["id"])
+
+    def context_session(self, session_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM chat_context_sessions WHERE id = ?", (int(session_id),)
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def commit_context_items(
+        self,
+        session_id: int,
+        request_id: str,
+        items: Iterable[Mapping[str, Any]],
+        *,
+        now: str,
+        delivery_status: str = "confirmed",
+    ) -> tuple[int, ...]:
+        if delivery_status not in {"confirmed", "audit"}:
+            raise ValueError("invalid context delivery status")
+        prepared = [self._context_payload(item) for item in items]
+        if not prepared:
+            return ()
+        inserted: list[int] = []
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for sequence, (role, item_type, payload, source_hash) in enumerate(prepared):
+                if delivery_status == "confirmed":
+                    conn.execute(
+                        "INSERT INTO chat_context_turns "
+                        "(session_id, request_id, sequence, role, item_type, payload_json, "
+                        "delivery_status, source_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(session_id, request_id, sequence) DO UPDATE SET "
+                        "role=excluded.role, item_type=excluded.item_type, "
+                        "payload_json=excluded.payload_json, delivery_status='confirmed', "
+                        "source_hash=excluded.source_hash, created_at=excluded.created_at",
+                        (int(session_id), str(request_id), sequence, role, item_type, payload,
+                         delivery_status, source_hash, str(now)),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO chat_context_turns "
+                        "(session_id, request_id, sequence, role, item_type, payload_json, "
+                        "delivery_status, source_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (int(session_id), str(request_id), sequence, role, item_type, payload,
+                         delivery_status, source_hash, str(now)),
+                    )
+                row = conn.execute(
+                    "SELECT id FROM chat_context_turns "
+                    "WHERE session_id = ? AND request_id = ? AND sequence = ?",
+                    (int(session_id), str(request_id), sequence),
+                ).fetchone()
+                inserted.append(int(row["id"]))
+            if delivery_status == "confirmed":
+                conn.execute(
+                    "UPDATE chat_context_sessions SET last_confirmed_turn_id = MAX(last_confirmed_turn_id, ?), "
+                    "updated_at = ? WHERE id = ?",
+                    (max(inserted), str(now), int(session_id)),
+                )
+        return tuple(inserted)
+
+    def context_window(
+        self, session_id: int, *, keep_recent: int = 16
+    ) -> tuple[dict[str, Any] | None, tuple[dict[str, Any], ...]]:
+        limit = max(1, min(int(keep_recent), 100))
+        with self._connect() as conn:
+            snapshot = conn.execute(
+                "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND active = 1 "
+                "ORDER BY version DESC LIMIT 1", (int(session_id),)
+            ).fetchone()
+            cutoff = int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0
+            rows = conn.execute(
+                "SELECT * FROM chat_context_turns WHERE session_id = ? AND delivery_status = 'confirmed' "
+                "AND id > ? ORDER BY id DESC LIMIT ?",
+                (int(session_id), cutoff, limit),
+            ).fetchall()
+        items = tuple(json.loads(row["payload_json"]) for row in reversed(rows))
+        snapshot_dict = dict(snapshot) if snapshot is not None else None
+        if snapshot_dict is not None:
+            snapshot_dict["summary"] = json.loads(snapshot_dict.pop("summary_json"))
+        return snapshot_dict, items
+
+    def uncompacted_context_count(self, session_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(cutoff_turn_id), 0) AS cutoff FROM chat_context_snapshots "
+                "WHERE session_id = ? AND active = 1", (int(session_id),)
+            ).fetchone()
+            count = conn.execute(
+                "SELECT COUNT(*) AS count FROM chat_context_turns "
+                "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ?",
+                (int(session_id), int(row["cutoff"])),
+            ).fetchone()
+        return int(count["count"])
+
+    def compaction_source(
+        self, session_id: int, *, keep_recent: int = 16
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            snapshot = conn.execute(
+                "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND active = 1 "
+                "ORDER BY version DESC LIMIT 1", (int(session_id),)
+            ).fetchone()
+            cutoff = int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0
+            rows = conn.execute(
+                "SELECT id, payload_json FROM chat_context_turns "
+                "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ? ORDER BY id",
+                (int(session_id), cutoff),
+            ).fetchall()
+        compact_count = len(rows) - max(1, int(keep_recent))
+        if compact_count <= 0:
+            return None
+        selected = rows[:compact_count]
+        previous = json.loads(snapshot["summary_json"]) if snapshot is not None else None
+        source = {
+            "previous_snapshot": previous,
+            "turns": [{"id": int(row["id"]), "item": json.loads(row["payload_json"])}
+                      for row in selected],
+        }
+        source_json = json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return {
+            "source": source,
+            "source_hash": hashlib.sha256(source_json.encode("utf-8")).hexdigest(),
+            "cutoff_turn_id": int(selected[-1]["id"]),
+        }
+
+    def enqueue_compaction_job(
+        self, session_id: int, source_hash: str, cutoff_turn_id: int, *, now: str
+    ) -> int:
+        with self._connect() as conn:
+            session = conn.execute(
+                "SELECT snapshot_version FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            if session is None:
+                raise ValueError("unknown context session")
+            generation = int(session["snapshot_version"]) + 1
+            existing = conn.execute(
+                "SELECT id FROM chat_context_compaction_jobs "
+                "WHERE session_id = ? AND generation = ? AND status <> 'done'",
+                (int(session_id), generation),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["id"])
+            conn.execute(
+                "INSERT OR IGNORE INTO chat_context_compaction_jobs "
+                "(session_id, generation, cutoff_turn_id, source_hash, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+                (int(session_id), generation, int(cutoff_turn_id), str(source_hash), str(now), str(now)),
+            )
+            row = conn.execute(
+                "SELECT id FROM chat_context_compaction_jobs WHERE session_id = ? AND source_hash = ?",
+                (int(session_id), str(source_hash)),
+            ).fetchone()
+        return int(row["id"])
+
+    def claim_compaction_job(
+        self, job_id: int, *, owner: str, now_epoch: float, lease_seconds: int, now: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM chat_context_compaction_jobs WHERE id = ?", (int(job_id),)
+            ).fetchone()
+            if row is None or row["status"] == "done":
+                return None
+            if float(row["next_attempt_at"]) > float(now_epoch):
+                return None
+            if row["status"] == "running" and float(row["lease_until"]) > float(now_epoch):
+                return None
+            cursor = conn.execute(
+                "UPDATE chat_context_compaction_jobs SET status = 'running', lease_owner = ?, "
+                "lease_until = ?, attempts = attempts + 1, updated_at = ? WHERE id = ?",
+                (str(owner), float(now_epoch) + max(1, int(lease_seconds)), str(now), int(job_id)),
+            )
+            if cursor.rowcount != 1:
+                return None
+            claimed = conn.execute(
+                "SELECT * FROM chat_context_compaction_jobs WHERE id = ?", (int(job_id),)
+            ).fetchone()
+        return dict(claimed)
+
+    def compaction_job_source(self, job_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            job = conn.execute(
+                "SELECT * FROM chat_context_compaction_jobs WHERE id = ?", (int(job_id),)
+            ).fetchone()
+            if job is None:
+                return None
+            previous = conn.execute(
+                "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND version < ? "
+                "ORDER BY version DESC LIMIT 1",
+                (int(job["session_id"]), int(job["generation"])),
+            ).fetchone()
+            start = int(previous["cutoff_turn_id"]) if previous is not None else 0
+            rows = conn.execute(
+                "SELECT id, payload_json FROM chat_context_turns "
+                "WHERE session_id = ? AND delivery_status = 'confirmed' AND id > ? AND id <= ? "
+                "ORDER BY id",
+                (int(job["session_id"]), start, int(job["cutoff_turn_id"])),
+            ).fetchall()
+        source = {
+            "previous_snapshot": (
+                json.loads(previous["summary_json"]) if previous is not None else None
+            ),
+            "turns": [{"id": int(row["id"]), "item": json.loads(row["payload_json"])}
+                      for row in rows],
+        }
+        encoded = json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if hashlib.sha256(encoded.encode("utf-8")).hexdigest() != str(job["source_hash"]):
+            raise ValueError("compaction source hash mismatch")
+        return source
+
+    def complete_compaction_job(
+        self, job_id: int, *, owner: str, summary: Mapping[str, Any], now: str
+    ) -> int:
+        summary_json = json.dumps(dict(summary), ensure_ascii=False, sort_keys=True,
+                                  separators=(",", ":"))
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            job = conn.execute(
+                "SELECT * FROM chat_context_compaction_jobs WHERE id = ?", (int(job_id),)
+            ).fetchone()
+            if job is None or job["status"] != "running" or job["lease_owner"] != str(owner):
+                raise ValueError("compaction lease is not owned")
+            conn.execute(
+                "UPDATE chat_context_snapshots SET active = 0 WHERE session_id = ?",
+                (int(job["session_id"]),),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO chat_context_snapshots "
+                "(session_id, version, cutoff_turn_id, summary_json, source_hash, active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (int(job["session_id"]), int(job["generation"]), int(job["cutoff_turn_id"]),
+                 summary_json, str(job["source_hash"]), str(now)),
+            )
+            conn.execute(
+                "UPDATE chat_context_snapshots SET active = 1 "
+                "WHERE session_id = ? AND source_hash = ?",
+                (int(job["session_id"]), str(job["source_hash"])),
+            )
+            conn.execute(
+                "UPDATE chat_context_sessions SET snapshot_version = MAX(snapshot_version, ?), "
+                "updated_at = ? WHERE id = ?",
+                (int(job["generation"]), str(now), int(job["session_id"])),
+            )
+            conn.execute(
+                "UPDATE chat_context_compaction_jobs SET status = 'done', lease_until = 0, "
+                "error_reason = '', updated_at = ? WHERE id = ?",
+                (str(now), int(job_id)),
+            )
+        return int(job["generation"])
+
+    def fail_compaction_job(
+        self, job_id: int, *, owner: str, reason: str, now_epoch: float, now: str
+    ) -> None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT attempts FROM chat_context_compaction_jobs "
+                "WHERE id = ? AND status = 'running' AND lease_owner = ?",
+                (int(job_id), str(owner)),
+            ).fetchone()
+            if row is None:
+                return
+            delay = min(3600, 30 * (2 ** min(int(row["attempts"]), 7)))
+            conn.execute(
+                "UPDATE chat_context_compaction_jobs SET status = 'failed', lease_until = 0, "
+                "next_attempt_at = ?, error_reason = ?, updated_at = ? WHERE id = ?",
+                (float(now_epoch) + delay, str(reason)[:300], str(now), int(job_id)),
+            )
 
 
 def _local_hour(value: str) -> int | None:

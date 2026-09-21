@@ -11,6 +11,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.rule import Rule
 
 from bot.config import ROOT, settings
+from bot.integrations.game_workflow_adapter import build_nte_workflow
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
 from bot.services.nte_help_render import NTEHelpRenderer
@@ -72,11 +73,12 @@ async def _chat_nte_rank(
     request: FeatureRequest,
 ) -> None:
     del bot
-    await _send_rank_request(
-        matcher,
-        event,
-        RankRequest(None, True, "bot" if request.args == "总" else "group"),
+    workflow = build_nte_workflow(
+        request.action,
+        scope="bot" if request.args == "总" else "group",
     )
+    assert workflow.rank_request is not None
+    await _send_rank_request(matcher, event, workflow.rank_request)
 
 
 @register_local_feature("nte_help", "nte_mint_rank")
@@ -87,19 +89,18 @@ async def _chat_nte_read(
     request: FeatureRequest,
 ) -> None:
     del bot
-    if request.action == "nte_help":
+    workflow = build_nte_workflow(
+        request.action,
+        scope=None if request.action == "nte_help" else (
+            "bot" if request.args == "总" else "group"
+        ),
+        page=int(request.parameter("page", 1) or 1),
+    )
+    if workflow.help_variant is not None:
         await _send_help(matcher, "#nte帮助")
         return
-    await _send_rank_request(
-        matcher,
-        event,
-        RankRequest(
-            "薄荷",
-            False,
-            "bot" if request.args == "总" else "group",
-            int(request.parameter("page", 1) or 1),
-        ),
-    )
+    assert workflow.rank_request is not None
+    await _send_rank_request(matcher, event, workflow.rank_request)
 
 
 async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:

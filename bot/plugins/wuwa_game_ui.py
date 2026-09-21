@@ -10,6 +10,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.rule import Rule
 
 from bot.config import ROOT, settings
+from bot.integrations.game_workflow_adapter import build_wuwa_workflow
 from bot.services.avatars import AvatarService
 from bot.services.media import local_image_segment
 from bot.services.wuwa_command_policy import (
@@ -82,11 +83,12 @@ async def _chat_wuwa_rank(
     request: FeatureRequest,
 ) -> None:
     del bot
-    await _send_rank_request(
-        matcher,
-        event,
-        WuwaRankRequest("strongest", None, "bot" if request.args == "总" else "group"),
+    workflow = build_wuwa_workflow(
+        request.action,
+        scope="bot" if request.args == "总" else "group",
     )
+    assert workflow.rank_request is not None
+    await _send_rank_request(matcher, event, workflow.rank_request)
 
 
 @register_local_feature(
@@ -99,29 +101,23 @@ async def _chat_wuwa_read(
     request: FeatureRequest,
 ) -> None:
     del bot
-    if request.action == "wuwa_help":
-        await _send_help(matcher, "#ww帮助")
-        return
-    kind = {
-        "wuwa_character_rank": "role",
-        "wuwa_echo_rank": "phantom",
-        "wuwa_progress_rank": "practice",
-    }[request.action]
-    character = (
-        str(request.parameter("character", "") or "").strip()
-        if kind in {"role", "phantom"}
-        else None
-    )
-    await _send_rank_request(
-        matcher,
-        event,
-        WuwaRankRequest(
-            kind,
-            character,
-            "bot" if request.args == "总" else "group",
-            int(request.parameter("page", 1) or 1),
+    workflow = build_wuwa_workflow(
+        request.action,
+        scope=None if request.action == "wuwa_help" else (
+            "bot" if request.args == "总" else "group"
+        ),
+        page=int(request.parameter("page", 1) or 1),
+        character=(
+            str(request.parameter("character", "") or "").strip()
+            if request.action in {"wuwa_character_rank", "wuwa_echo_rank"}
+            else None
         ),
     )
+    if workflow.help_variant is not None:
+        await _send_help(matcher, "#ww帮助")
+        return
+    assert workflow.rank_request is not None
+    await _send_rank_request(matcher, event, workflow.rank_request)
 
 
 async def _send_rank(matcher: Any, event: GroupMessageEvent, text: str) -> None:

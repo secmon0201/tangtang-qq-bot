@@ -4,6 +4,7 @@ Chain: `SnowLuma -> OneBot v11 -> NoneBot2 -> GenshinUID connector -> GsUID.Core
 
 - NTEUID and XutheringWavesUID are enabled; GenshinUID stays disabled. `scripts/validate_nte_mode.py` enforces the mode and both force prefixes.
 - `bot/plugins/game_api.py` is the local gate. `bot/plugins/nte_game_ui.py` loads after it (registry `after=("game_api",)`) and intercepts rank/help at priority `-2`; other `#nte` commands continue upstream.
+- Agent access to project-owned NTE and Wuwa views uses `bot/integrations/game_workflow_adapter.py`. It accepts only reviewed action enums and bounded typed fields, produces local rank/help requests, and never accepts a command string. Unreviewed direct commands remain at the existing NoneBot forwarding boundary.
 - Takeover is an ingress boundary: match and stop only project-owned commands in NoneBot, then read/transform upstream data or resources. Never replace functions inside Core or a UID plugin; unmatched messages continue through the official connector.
 - `bot/integrations/genshinuid_connector_compat.py` keeps Core connect, reconnect, and ping work out of incoming-message handlers and application startup. When Core is offline, forwarding returns immediately while the connector's scheduled, single-flight reconnect continues in the background; incompatible connector APIs stop startup loudly.
 - Ranking reads `GsUID.Core\data\GsData.db` read-only through `bot/services/nte_rank_data.py`. Validate the schema; never write or repair upstream tables.

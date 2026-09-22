@@ -87,6 +87,7 @@ class PersonaEngine:
             return default
         if persona not in self._databases:
             self._databases[persona] = TangtangDb(self.store.path.parent / f"{persona}-history.db")
+        self._databases[persona].blocked_users = default.blocked_users
         return self._databases[persona]
 
     def evidence_allowed(self, persona: str, row: dict) -> bool:

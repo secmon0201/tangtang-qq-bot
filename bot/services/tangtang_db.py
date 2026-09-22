@@ -16,6 +16,10 @@ from bot.services.persona_inbox import SCHEMA as INBOX_SCHEMA, capture
 DEFAULT_DB_PATH = ROOT / "data" / "tangtang" / "tangtang.db"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS chat_context_images (
+    digest TEXT PRIMARY KEY,
+    data_url TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS tangtang_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
@@ -248,6 +252,7 @@ class TangtangDb:
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or DEFAULT_DB_PATH
+        self.blocked_users = lambda group_id: frozenset()
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -261,6 +266,9 @@ class TangtangDb:
 
     @staticmethod
     def _migrate_schema(conn: sqlite3.Connection) -> None:
+        message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tangtang_group_messages)")}
+        if "media_json" not in message_columns:
+            conn.execute("ALTER TABLE tangtang_group_messages ADD COLUMN media_json TEXT NOT NULL DEFAULT '[]'")
         cursor_columns = {
             row["name"]
             for row in conn.execute("PRAGMA table_info(group_summary_cursors)")
@@ -654,14 +662,15 @@ class TangtangDb:
         message_id: str | int,
         created_at: str,
         observation: dict | None = None,
+        media_references: tuple[dict[str, Any], ...] = (),
     ) -> None:
         """Persist one group message so chat history survives restarts."""
 
         with self._connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO tangtang_group_messages "
-                "(group_id, user_id, nickname, text, message_id, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(group_id, user_id, nickname, text, message_id, created_at, media_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     int(group_id),
                     int(user_id),
@@ -669,11 +678,28 @@ class TangtangDb:
                     str(text or ""),
                     str(message_id or ""),
                     created_at,
+                    json.dumps(media_references, ensure_ascii=False),
                 ),
             )
             if observation:
                 capture(conn, group_id=int(group_id), user_id=int(user_id),
                         message_id=str(message_id), text=text, **observation)
+
+    def previous_image_messages(self, group_id: int, user_id: int, message_id: str) -> list[dict[str, Any]]:
+        """Exactly one preceding group row and one preceding same-user row."""
+        with self._connect() as conn:
+            anchor = conn.execute("SELECT id FROM tangtang_group_messages WHERE group_id=? AND message_id=?",
+                                  (int(group_id), str(message_id))).fetchone()
+            before = int(anchor[0]) if anchor else 2**63 - 1
+            rows = []
+            for suffix, values in (("", ()), (" AND user_id=?", (int(user_id),))):
+                row = conn.execute(
+                    "SELECT * FROM tangtang_group_messages WHERE group_id=? AND id<?" + suffix + " ORDER BY id DESC LIMIT 1",
+                    (int(group_id), before, *values),
+                ).fetchone()
+                if row is not None and all(int(old["id"]) != int(row["id"]) for old in rows):
+                    rows.append(dict(row))
+        return sorted(rows, key=lambda row: int(row["id"]))
 
     def recent_group_messages(
         self,
@@ -851,6 +877,17 @@ class TangtangDb:
                 "ORDER BY updated_at DESC, topic_id DESC",
                 (int(group_id),),
             ).fetchall()
+            blocked = self.blocked_users(group_id)
+            if blocked:
+                # Old topics contain merged prose: exclude the entire topic if
+                # any original evidence author is now blacklisted.
+                evidence = conn.execute(
+                    "SELECT s.topic_id, m.user_id FROM group_summary_topic_sources s "
+                    "JOIN tangtang_group_messages m ON m.id=s.group_message_id WHERE m.group_id=?",
+                    (int(group_id),),
+                ).fetchall()
+                tainted = {int(row[0]) for row in evidence if int(row[1]) in blocked}
+                rows = [row for row in rows if int(row["topic_id"]) not in tainted]
         return [dict(row) for row in rows]
 
     def group_summary_matching(
@@ -1207,8 +1244,9 @@ class TangtangDb:
         if item_type not in {"message", "tool_call", "tool_result"}:
             raise ValueError("invalid context item type")
         payload = json.dumps(dict(item), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        if len(payload) > 16_000:
-            raise ValueError("context item exceeds 16000 characters")
+        maximum = 512_000 if isinstance(item.get("content"), list) else 16_000
+        if len(payload) > maximum:
+            raise ValueError("context item exceeds character limit")
         source_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         return role, item_type, payload, source_hash
 
@@ -1279,12 +1317,24 @@ class TangtangDb:
     ) -> tuple[int, ...]:
         if delivery_status not in {"confirmed", "audit"}:
             raise ValueError("invalid context delivery status")
-        prepared = [self._context_payload(item) for item in items]
+        prepared = []
+        media: dict[str, str] = {}
+        for item in items:
+            stored = json.loads(json.dumps(dict(item), ensure_ascii=False))
+            if isinstance(stored.get("content"), list):
+                for part in stored["content"]:
+                    if part.get("type") == "image_url":
+                        url = part["image_url"]["url"]
+                        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+                        media[digest] = url
+                        part["image_url"]["url"] = "vision:" + digest
+            prepared.append(self._context_payload(stored))
         if not prepared:
             return ()
         inserted: list[int] = []
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            conn.executemany("INSERT OR IGNORE INTO chat_context_images(digest,data_url) VALUES (?,?)", media.items())
             for sequence, (role, item_type, payload, source_hash) in enumerate(prepared):
                 if delivery_status == "confirmed":
                     conn.execute(
@@ -1357,7 +1407,19 @@ class TangtangDb:
                     "AND delivery_status = 'confirmed' AND id > ? ORDER BY id DESC LIMIT ?",
                     (int(session_id), cutoff, limit),
                 ).fetchall()))
-        items = tuple(json.loads(row["payload_json"]) for row in rows)
+            items = tuple(json.loads(row["payload_json"]) for row in rows)
+            for item in items:
+                if not isinstance(item.get("content"), list):
+                    continue
+                for part in item["content"]:
+                    if part.get("type") != "image_url":
+                        continue
+                    url = part["image_url"]["url"]
+                    if url.startswith("vision:"):
+                        media = conn.execute("SELECT data_url FROM chat_context_images WHERE digest=?", (url[7:],)).fetchone()
+                        if media is None:
+                            raise ValueError("retained context image is unavailable")
+                        part["image_url"]["url"] = str(media[0])
         snapshot_dict = dict(snapshot) if snapshot is not None else None
         if snapshot_dict is not None:
             snapshot_dict["summary"] = json.loads(snapshot_dict.pop("summary_json"))

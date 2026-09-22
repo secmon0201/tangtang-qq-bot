@@ -278,8 +278,8 @@ def test_proactive_config_defaults_and_validation():
     assert config.proactive_cooldown_seconds == 900
     assert config.proactive_message_interval == 30
     assert config.humanize_enabled is True
-    assert config.vision_detail == "low"
-    assert config.vision_max_dimension == 1000
+    assert config.vision_detail == "high"
+    assert config.vision_max_dimension == 8192
 
     config = enabled_config(TANGTANG_HUMANIZE_ENABLED="false")
     assert config.humanize_enabled is False
@@ -1988,7 +1988,7 @@ def test_provider_payloads_include_real_multimodal_image_parts():
         "type": "image_url",
         "image_url": {
             "url": image.data_url,
-            "detail": "low",
+            "detail": "high",
         },
     }
 
@@ -2196,6 +2196,7 @@ def test_context_images_keep_their_original_senders(tmp_path, monkeypatch):
         1001,
         exclude_message_id="call",
         limit=2,
+        user_id=11,
     )
     assert [(item.source, item.sender_id, item.sender_name) for item in references] == [
         ("context", 11, "甲"),
@@ -2228,7 +2229,7 @@ def test_context_images_keep_their_original_senders(tmp_path, monkeypatch):
     assert "不要把引用消息的发送者当成其他上下文图片的发送者" in prompt
 
 
-def test_context_images_only_use_the_ten_most_recent_messages(tmp_path, monkeypatch):
+def test_context_images_only_use_the_immediately_previous_message(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     service.record_group_message(
         1001,

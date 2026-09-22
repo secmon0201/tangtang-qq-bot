@@ -417,6 +417,7 @@ service = TangtangService(
     feature_runner=_run_skill_requests,
     feature_catalog=_available_model_skills,
     feature_state_provider=_feature_state_versions,
+    blocked_users=db.blocked_user_ids,
 )
 
 
@@ -591,12 +592,17 @@ async def _capture_group_context(bot: Bot, event: MessageEvent):
         return
     if str(event.user_id) == str(bot.self_id):
         return
+    if db.interaction_blocked(int(event.group_id), int(event.user_id)):
+        service.record_group_message(int(event.group_id), "", "",
+            user_id=int(event.user_id), message_id=str(event.message_id))
+        return
     engine = persona_engine()
     frozen = engine.snapshot(event, config.model, False)
     at_labels = await resolve_at_labels(bot, event, use_api=False)
     text = render_message_text(event.message, at_labels)
-    media_references = extract_image_references(event, config.vision_max_images)
-    if text or media_references:
+    media_references = extract_image_references(event, config.vision_max_images, include_reply=False)
+    # Empty/emoji-only messages still occupy the immediately preceding position.
+    if event.message is not None:
         sender = getattr(event, "sender", None)
         nickname = str(
             getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友"

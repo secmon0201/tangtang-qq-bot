@@ -8,7 +8,7 @@ from nonebot import logger
 
 from bot.application.personas import persona_engine
 from bot.services.group_summary import GroupSummaryService, GroupSummaryWorker
-from bot.services.runtime import group_domains
+from bot.services.runtime import database, group_domains
 from bot.services.tangtang_chat import TangtangProvider
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_runtime import config_loader
@@ -22,6 +22,7 @@ async def run_group_summaries() -> None:
     # Group topics read the shared raw group-message corpus, not the sparse
     # persona interaction log.
     history = TangtangDb()
+    history.blocked_users = database().blocked_user_ids
     prepared: dict[int, GroupSummaryWorker] = {}
     seeded: set[int] = set()
     while True:

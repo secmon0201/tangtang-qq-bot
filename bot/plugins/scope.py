@@ -18,16 +18,14 @@ from bot.services.pacing import passive_response_for
 from bot.services.group_domains import FEATURES, parse_named_cluster_ranking_command
 from bot.services.qq_platform import QQPlatform, QQPlatformError, call_qq_action
 from bot.services.replies import install_matcher_quote_replies
-from bot.services.roles import UserRole, is_super_admin, user_role
+from bot.services.roles import UserRole, user_role
 from bot.services.runtime import database, group_domains, passive_settings, zhijiang_live_guard
 from bot.services.zhijiang_live_reminders import render_live_game_reminder
+from bot.services.stats import StatsService
 
 
 install_matcher_quote_replies()
 
-FILTER_MANAGEMENT_COMMAND_RE = re.compile(
-    r"^#\s*(?:主动过滤|被动过滤|群过滤|移除主动过滤|移除被动过滤|移除群过滤|主动过滤列表|被动过滤列表|群过滤列表)(?:\s|$)"
-)
 driver = get_driver()
 zone = ZoneInfo(settings.timezone)
 disabled_notices: dict[tuple[int, str], float] = {}
@@ -146,19 +144,6 @@ def live_guard_mini_game_reminder(event: MessageEvent) -> MessageSegment | None:
     return MessageSegment.text(message)
 
 
-def is_active_filtered_command(event: MessageEvent) -> bool:
-    text = event.get_plaintext().lstrip()
-    if not text.startswith(settings.command_prefix):
-        return False
-    user_id = int(event.user_id)
-    if (
-        is_super_admin(user_id)
-        and FILTER_MANAGEMENT_COMMAND_RE.match(text)
-    ):
-        return False
-    return database().active_filter_contains(user_id)
-
-
 def disabled_feature_for(text: str, group_id: int) -> str | None:
     normalized = str(text).strip()
     for feature_key, pattern in FEATURE_COMMAND_PATTERNS:
@@ -229,7 +214,7 @@ async def _sync_joined_groups(bot: Bot) -> None:
 # Run before all matchers. A newly observed QQ group is registered as an
 # independent domain; old rows are reactivated without resetting their intent.
 @event_preprocessor
-async def _(bot: Bot, event: MessageEvent):
+async def guard_message_scope(bot: Bot, event: MessageEvent):
     if isinstance(event, GroupMessageEvent):
         group_id = int(event.group_id)
         if not database().is_managed_group(group_id):
@@ -240,20 +225,23 @@ async def _(bot: Bot, event: MessageEvent):
                 else datetime.now(zone).isoformat(timespec="seconds")
             )
             group_domains().ensure_group(group_id, joined_at=joined_at)
-        text = event.get_plaintext().lstrip()
-        management_command = bool(FILTER_MANAGEMENT_COMMAND_RE.match(text))
-        if database().group_filter_contains(group_id, int(event.user_id)) and not management_command:
+        if database().interaction_blocked(group_id, int(event.user_id)):
+            # Statistics are idempotent by platform message ID and must survive
+            # the event-wide interaction gate (before any matcher can run).
+            StatsService(database(), realtime_enabled=settings.stats_realtime_enabled,
+                         group_provider=group_domains().all_group_ids).record_inbound(event)
             raise IgnoredException(
-                f"user {event.user_id} is in the group filter list for {group_id}"
+                "identity blacklist: interaction disabled, statistics retained"
             )
+        text = event.get_plaintext().lstrip()
         disabled_feature = disabled_feature_for(text, group_id)
         if disabled_feature is not None:
             await _send_disabled_notice(bot, event, disabled_feature)
             raise IgnoredException(
                 f"feature {disabled_feature} is disabled for group {group_id}"
             )
-    if is_active_filtered_command(event):
-        raise IgnoredException(f"user {event.user_id} is in the active filter list")
+    elif database().interaction_blocked(0, int(event.user_id)):
+        raise IgnoredException("identity blacklist: private interaction disabled")
 
 
 @event_postprocessor
@@ -264,8 +252,7 @@ async def _(bot: Bot, event: MessageEvent):
     if not mention_chat_is_available(int(event.group_id)):
         return
     if (
-        database().passive_filter_contains(int(event.user_id))
-        or database().group_filter_contains(int(event.group_id), int(event.user_id))
+        database().interaction_blocked(int(event.group_id), int(event.user_id))
     ):
         return
     try:

@@ -64,16 +64,16 @@ def test_image_at_dimension_limit_keeps_original_bytes_and_mime_type():
     assert len(result.images[0].sha256) == 64
 
 
-def test_default_normalisation_scales_only_images_over_1000_pixels():
+def test_default_normalisation_scales_only_images_over_8192_pixels():
     resolver = TangtangMediaResolver(max_images=1)
     result = asyncio.run(
         resolver.resolve_references(
-            (ImageReference("current", 1, _data_url(2000, 1500)),)
+            (ImageReference("current", 1, _data_url(10000, 1000)),)
         )
     )
     encoded = result.images[0].data_url.split(",", 1)[1]
     with Image.open(io.BytesIO(base64.b64decode(encoded))) as image:
-        assert image.size == (1000, 750)
+        assert image.size == (8192, 819)
         assert image.format == "JPEG"
 
 

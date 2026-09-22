@@ -40,6 +40,10 @@ class StatsService:
         return datetime.now(self.zone)
 
     async def on_message(self, bot: Any, event: Any) -> bool:
+        return self.record_inbound(event)
+
+    def record_inbound(self, event: Any) -> bool:
+        """Count without network or suspension, including before an event gate."""
         if not self.realtime_enabled:
             return False
         group_id = int(event.group_id)

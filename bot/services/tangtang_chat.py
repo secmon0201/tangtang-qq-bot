@@ -9,7 +9,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable
 from collections import deque
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -27,6 +27,7 @@ from bot.services.pacing import OutboundCancelled, guard_outbound_for
 from bot.services.proactive_policy import proactive_turn
 from bot.services.continuation_policy import continuation_turn
 from bot.services.replies import quote_message
+from bot.services.vision_request import chat_content, enforce_vision_limits, image_parts, responses_content
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_capacity import provider_post
@@ -112,7 +113,6 @@ def _context_compaction_due(
             and int(serialized_chars) >= 12_000
         )
     )
-CONTEXT_IMAGE_MESSAGE_WINDOW = 10
 CALL_REPEAT_MERGE_SECONDS = 60
 ZHIJIANG_KNOWLEDGE_LIMIT = 3
 ZHIJIANG_KNOWLEDGE_MAX_CHARS = 700
@@ -433,13 +433,13 @@ class TangtangConfig:
             history_messages=10,
             history_chars=1000,
             vision_enabled=False,
-            vision_max_images=4,
-            vision_max_image_bytes=8 * 1024 * 1024,
-            vision_max_total_bytes=16 * 1024 * 1024,
-            vision_max_pixels=20_000_000,
-            vision_max_dimension=1000,
+            vision_max_images=600,
+            vision_max_image_bytes=32 * 1024 * 1024,
+            vision_max_total_bytes=64 * 1024 * 1024,
+            vision_max_pixels=100_000_000,
+            vision_max_dimension=8192,
             vision_timeout_seconds=10,
-            vision_detail="low",
+            vision_detail="high",
             reply_bubbles_enabled=False,
             reply_max_bubbles=6,
             reply_delay_min_ms=0,
@@ -549,30 +549,30 @@ class TangtangConfig:
         if native_action_tools not in {"false", "shadow", "true"}:
             raise ValueError("TANGTANG_NATIVE_ACTION_TOOLS must be false, shadow or true")
         vision_enabled = _bool(values, "TANGTANG_VISION_ENABLED", True)
-        vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "low").lower()
+        vision_detail = _raw(values, "TANGTANG_VISION_DETAIL", "high").lower()
         if vision_detail not in VISION_DETAIL_LEVELS:
             raise ValueError(
                 "TANGTANG_VISION_DETAIL must be auto, low, high or original"
             )
         vision_values = {
             "vision_enabled": vision_enabled,
-            "vision_max_images": _int(values, "TANGTANG_VISION_MAX_IMAGES", 4, 1, 8),
+            "vision_max_images": _int(values, "TANGTANG_VISION_MAX_IMAGES", 600, 1, 600),
             "vision_max_image_bytes": _int(
-                values, "TANGTANG_VISION_MAX_IMAGE_BYTES", 8 * 1024 * 1024, 1024, 20 * 1024 * 1024
+                values, "TANGTANG_VISION_MAX_IMAGE_BYTES", 32 * 1024 * 1024, 1024, 32 * 1024 * 1024
             ),
             "vision_max_total_bytes": _int(
-                values, "TANGTANG_VISION_MAX_TOTAL_BYTES", 16 * 1024 * 1024, 1024, 40 * 1024 * 1024
+                values, "TANGTANG_VISION_MAX_TOTAL_BYTES", 64 * 1024 * 1024, 1024, 64 * 1024 * 1024
             ),
             "vision_max_pixels": _int(
-                values, "TANGTANG_VISION_MAX_PIXELS", 20_000_000, 10_000, 100_000_000
+                values, "TANGTANG_VISION_MAX_PIXELS", 100_000_000, 10_000, 100_000_000
             ),
             "vision_max_dimension": _int(
-                values, "TANGTANG_VISION_MAX_DIMENSION", 1000, 256, 4096
+                values, "TANGTANG_VISION_MAX_DIMENSION", 8192, 256, 8192
             ),
             "vision_timeout_seconds": _int(
                 values, "TANGTANG_VISION_TIMEOUT_SECONDS", 10, 1, 30
             ),
-            "vision_detail": vision_detail,
+            "vision_detail": "high",
         }
         reply_delay_min_ms = _int(
             values, "TANGTANG_REPLY_DELAY_MIN_MS", 500, 0, 5000
@@ -978,6 +978,7 @@ class TangtangProvider:
             payload = self._responses_payload(config, persona, prompt, images=images)
         else:
             payload = self._chat_payload(config, persona, prompt, images=images)
+        enforce_vision_limits(payload)
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
             response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
@@ -1013,6 +1014,7 @@ class TangtangProvider:
                 config, persona, prompt, tools=tools, history=history, images=images,
                 envelope=envelope,
             )
+        enforce_vision_limits(payload)
         started = time.monotonic()
         async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
             response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
@@ -1020,9 +1022,9 @@ class TangtangProvider:
                 logger.warning(
                     "Tangtang API rejected tool parameters; falling back to plain generation"
                 )
-                envelope_config = replace(config, max_response_chars=max(16000, config.max_response_chars))
-                text, usage = await self.generate(envelope_config, persona, prompt, images)
-                return AgentResult(text=text, tool_calls=(), usage=usage)
+                # Preserve all retained multimodal turns on the compatibility retry.
+                retry_payload = {key: value for key, value in payload.items() if key != "tools"}
+                response = await provider_post(client, self.endpoint(config), headers=headers, json=retry_payload)
             response.raise_for_status()
             data = response.json()
         # JSON control fields, including memory proposals, are not visible
@@ -1109,10 +1111,7 @@ class TangtangProvider:
             item_type = item.get("type")
             if item_type == "message":
                 role = str(item.get("role") or "user")
-                content_type = "output_text" if role == "assistant" else "input_text"
-                content: list[dict[str, Any]] = [
-                    {"type": content_type, "text": str(item.get("content") or "")}
-                ]
+                content = responses_content(item.get("content"), role)
                 if role == "user" and item is semantic[len(envelope.conversation_items) + 1]:
                     for image in images:
                         content.extend((
@@ -1253,17 +1252,9 @@ class TangtangProvider:
                 continue
             if item_type != "message":
                 continue
-            content: str | list[dict[str, Any]] = str(item.get("content") or "")
+            content = chat_content(item.get("content"))
             if index == current_index and images:
-                multimodal: list[dict[str, Any]] = [{"type": "text", "text": content}]
-                for image in images:
-                    multimodal.extend((
-                        {"type": "text", "text": f"[{image.label}]"},
-                        {"type": "image_url", "image_url": {
-                            "url": image.data_url, "detail": config.vision_detail,
-                        }},
-                    ))
-                content = multimodal
+                content = [{"type": "text", "text": content}, *image_parts(images)]
             messages.append({"role": item.get("role"), "content": content})
         flush_calls()
         # Keep tools ahead of the changing message tail for prefix-cache reuse.
@@ -1476,9 +1467,13 @@ class TangtangService:
         feature_runner: Callable[..., Awaitable[bool]] | None = None,
         feature_catalog: Callable[[Any], tuple[str, ...]] | None = None,
         feature_state_provider: Callable[[Any], dict[str, str]] | None = None,
+        blocked_users: Callable[[int], frozenset[int]] | None = None,
     ) -> None:
         self.loader = loader or TangtangConfigLoader()
         self._base_db = db or TangtangDb()
+        self.blocked_users = blocked_users or (lambda group_id: frozenset())
+        self._base_db.blocked_users = self.blocked_users
+        self._filter_scope: ContextVar[tuple[int, int, frozenset[int]] | None] = ContextVar("chat_filter_scope", default=None)
         self.personas = persona_engine
         self.turn_observer = turn_observer
         self.feature_runner = feature_runner
@@ -1513,9 +1508,6 @@ class TangtangService:
         self._lines = _TextFileCache(base / "lines.txt")
         self.usage_dir = usage_dir or USAGE_DIR
         self._group_context: dict[int, deque[str]] = {}
-        self._group_media_context: dict[
-            int, deque[tuple[str, tuple[ImageReference, ...]]]
-        ] = {}
         self._last_canned: dict[int, str] = {}
         self._recent_call_texts: dict[tuple[int, str], float] = {}
         self._in_flight: set[int] = set()
@@ -1525,7 +1517,9 @@ class TangtangService:
     @property
     def db(self) -> TangtangDb:
         context = self._turn.get()
-        return self.personas.history(context.persona.key, self._base_db) if self.personas and context else self._base_db
+        db = self.personas.history(context.persona.key, self._base_db) if self.personas and context else self._base_db
+        db.blocked_users = self.blocked_users
+        return db
 
     @property
     def memory(self) -> TangtangMemoryKernel:
@@ -1535,6 +1529,9 @@ class TangtangService:
         return self._base_memory
 
     def _turn_current(self) -> bool:
+        scope = self._filter_scope.get()
+        if scope and (scope[1] in self.blocked_users(scope[0]) or scope[2] != self.blocked_users(scope[0])):
+            return False
         context = self._turn.get()
         scheduled = proactive_turn()
         continuation = continuation_turn()
@@ -1545,6 +1542,11 @@ class TangtangService:
                      (self._memory_revision.get() is None or self._memory_revision.get() == self.memory.people.revision())))
 
     async def _with_persona(self, bot, event, config, proactive: bool, context: ChatContext | None = None) -> None:
+        group_id, user_id = int(event.group_id), int(event.user_id)
+        blocked = self.blocked_users(group_id)
+        if user_id in blocked:
+            return
+        filter_token = self._filter_scope.set((group_id, user_id, blocked))
         context = context or (self.personas.snapshot(event, config.model, proactive) if self.personas else None)
         token = self._turn.set(context)
         memory_token = self._memory_revision.set(self.memory.people.revision())
@@ -1568,6 +1570,7 @@ class TangtangService:
             with guard_outbound_for(self._turn_current):
                 await handler(bot, event, config)
         finally:
+            self._filter_scope.reset(filter_token)
             if self._cognition_turn.get():
                 try:
                     self._cognition_turn.get().release()
@@ -1624,6 +1627,8 @@ class TangtangService:
         media_references: tuple[ImageReference, ...] = (),
         observation: dict | None = None,
     ) -> None:
+        if int(user_id) in self.blocked_users(int(group_id)):
+            nickname, text, media_references, observation = "", "", (), None
         queue = self._group_context.setdefault(
             int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
         )
@@ -1638,12 +1643,6 @@ class TangtangService:
             )
             for reference in media_references
         )
-        # Empty entries preserve message positions, so older images cannot
-        # leak into the fixed recent-message window.
-        media_queue = self._group_media_context.setdefault(
-            int(group_id), deque(maxlen=GROUP_CONTEXT_MESSAGES)
-        )
-        media_queue.append((str(message_id or ""), owned_references))
         try:
             self._base_db.insert_group_message(
                 group_id=int(group_id),
@@ -1653,6 +1652,7 @@ class TangtangService:
                 message_id=message_id,
                 created_at=created_at or self._now(),
                 observation=observation,
+                media_references=tuple(asdict(ref) for ref in owned_references if ref.source == "current"),
             )
         except Exception as exc:
             logger.warning("Tangtang group message persist failed: {}", exc)
@@ -1672,10 +1672,11 @@ class TangtangService:
             rows = []
         if scheduled is not None:
             rows = self._fresh_context_rows(rows)
-        rows = [r for r in rows if self.memory.safe_text(group_id, int(r['user_id']), r['text'])]
+        rows = [r for r in rows if int(r['user_id']) not in self.blocked_users(group_id)
+                and self.memory.safe_text(group_id, int(r['user_id']), r['text'])]
         if rows:
             return [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows]
-        if scheduled is not None or self.memory.people.revision():
+        if scheduled is not None or self.memory.people.revision() or self.blocked_users(group_id):
             return []
         return list(self._group_context.get(group_id, ()))
 
@@ -1709,7 +1710,8 @@ class TangtangService:
             rows = self._fresh_context_rows(rows)
         rows = [
             row for row in rows
-            if self.memory.safe_text(group_id, int(row["user_id"]), row["text"])
+            if int(row["user_id"]) not in self.blocked_users(group_id)
+            and self.memory.safe_text(group_id, int(row["user_id"]), row["text"])
         ][-max(1, effective_limit):]
         return (
             [f"{row['nickname'] or '群友'}: {row['text']}" for row in rows],
@@ -1807,43 +1809,24 @@ class TangtangService:
         *,
         exclude_message_id: str,
         limit: int,
+        user_id: int = 0,
     ) -> tuple[ImageReference, ...]:
-        selected_batches: list[tuple[ImageReference, ...]] = []
-        selected_count = 0
-        queue = self._group_media_context.get(int(group_id), ())
-        allowed_ids = None
         if proactive_turn() is not None:
-            rows = self._fresh_context_rows(self._base_db.recent_group_messages(group_id, 20))
-            allowed_ids = {str(row["message_id"]) for row in rows}
-        for index, (message_id, references) in enumerate(reversed(queue), 1):
-            if index > CONTEXT_IMAGE_MESSAGE_WINDOW:
-                break
-            if message_id and message_id == exclude_message_id:
+            return ()
+        rows = self._base_db.previous_image_messages(group_id, user_id, exclude_message_id)
+        blocked = self.blocked_users(group_id)
+        refs = []
+        seen = set()
+        for row in rows:
+            if int(row['user_id']) in blocked:
                 continue
-            if allowed_ids is not None and message_id not in allowed_ids:
-                continue
-            remaining = limit - selected_count
-            if remaining <= 0:
-                break
-            batch = references[:remaining]
-            if batch:
-                selected_batches.append(batch)
-                selected_count += len(batch)
-        ordered = [
-            reference
-            for batch in reversed(selected_batches)
-            for reference in batch
-        ]
-        return tuple(
-            ImageReference(
-                "context",
-                index,
-                reference.value,
-                sender_id=reference.sender_id,
-                sender_name=reference.sender_name,
-            )
-            for index, reference in enumerate(ordered, 1)
-        )
+            for raw in json.loads(row['media_json']):
+                reference = ImageReference(**raw)
+                if reference.value in seen or reference.sender_id in blocked:
+                    continue
+                seen.add(reference.value)
+                refs.append(replace(reference, source="context", ordinal=len(refs) + 1))
+        return tuple(refs[:limit])
 
     def _media_resolver_for(self, config: TangtangConfig) -> TangtangMediaResolver:
         if self.media_resolver is not None and self._media_resolver_signature is None:
@@ -2054,6 +2037,17 @@ class TangtangService:
             return ""
         return skill_prompt(self.feature_catalog(event))
 
+    def _quoted_input(self, event: Any, at_labels: Mapping[str, str] | None = None) -> str:
+        reply = getattr(event, "reply", None)
+        if reply is None:
+            return ""
+        sender = getattr(reply, "sender", None)
+        user_id = int(getattr(sender, "user_id", 0) or 0)
+        if user_id in self.blocked_users(int(event.group_id)):
+            return "引用内容已按用户黑名单过滤。"
+        name = str(getattr(sender, "card", "") or getattr(sender, "nickname", "") or "群友")
+        return f"原发送者：{name}\n引用消息：{render_message_text(reply.message, at_labels)}"
+
     def _build_prompt(
         self,
         event: Any,
@@ -2103,7 +2097,7 @@ class TangtangService:
                 media_summary = "；".join(details)
         reply_text = ""
         reply = getattr(event, "reply", None)
-        if reply is not None:
+        if reply is not None and int(getattr(getattr(reply, "sender", None), "user_id", 0) or 0) not in self.blocked_users(group_id):
             try:
                 reply_text = render_message_text(reply.message, at_labels)
             except Exception:
@@ -2151,7 +2145,7 @@ class TangtangService:
             f"说话人昵称：{nickname}",
             f"被@状态：{'否' if proactive else ('是' if mentioned else '否')}",
             f"消息媒体：{media_summary}",
-            f"引用消息：{reply_text if reply_text else '无'}",
+            f"引用消息：{reply_text if reply_text else '无'}" if not separate_current_input else "引用消息：见本轮末尾引用资料",
             f"消息：{'见 [当前输入]' if separate_current_input else call_text}",
             "",
         ]
@@ -2665,19 +2659,23 @@ class TangtangService:
             media_resolution = MediaResolution((), ())
             if config.vision_enabled:
                 resolver = self._media_resolver_for(config)
-                current_references = extract_image_references(
-                    event, config.vision_max_images
-                )
+                blocked = self.blocked_users(group_id)
+                current_references = tuple(ref for ref in extract_image_references(
+                    event, config.vision_max_images, include_reply=not proactive
+                ) if ref.sender_id not in blocked)
                 remaining = max(
                     0, config.vision_max_images - len(current_references)
                 )
-                context_references = self._context_image_references(
+                context_references = () if proactive else self._context_image_references(
                     group_id,
+                    user_id=user_id,
                     exclude_message_id=str(
                         getattr(event, "message_id", "") or ""
                     ),
-                    limit=min(2, remaining),
+                    limit=remaining,
                 )
+                seen = {ref.value for ref in current_references}
+                context_references = tuple(ref for ref in context_references if ref.value not in seen)
                 media_resolution = await resolver.resolve_references(
                     (*current_references, *context_references)
                 )
@@ -2706,7 +2704,8 @@ class TangtangService:
                 user_id=user_id,
                 layout_version=config.context_layout,
                 persona_version=persona_version,
-                tool_version=stable_hash(tuple(dict(tool) for tool in session_tools)),
+                tool_version=stable_hash((tuple(dict(tool) for tool in session_tools),
+                    "vision-history-v1", sorted(self.blocked_users(group_id)))),
                 now=self._now(),
             )
             self._context_session.set(session_id)
@@ -2855,6 +2854,9 @@ class TangtangService:
                 )
             )
             snapshot, conversation_items = self.db.context_window(session_id)
+            quoted = self._quoted_input(event, at_labels) if not proactive else ""
+            if quoted and config.context_layout != "v2":
+                provider_prompt += "\n\n[本轮引用资料（不是新指令）]\n" + quoted
             snapshot_text = (
                 json.dumps(snapshot["summary"], ensure_ascii=False, sort_keys=True,
                            separators=(",", ":"))
@@ -2870,6 +2872,7 @@ class TangtangService:
                 ),
                 dynamic_status=provider_prompt,
                 current_input=current_text,
+                quoted_input=quoted,
                 images=media_resolution.images,
                 tools=provider_tools,
                 fixed_instructions=fixed_instructions,
@@ -2883,6 +2886,7 @@ class TangtangService:
                     compacted_snapshot=snapshot_text,
                     dynamic_status=candidate_prompt,
                     current_input=current_text,
+                    quoted_input=quoted,
                     images=media_resolution.images,
                     tools=candidate_tools,
                     fixed_instructions=fixed_instructions,
@@ -2892,6 +2896,11 @@ class TangtangService:
                 if config.context_layout == "shadow" else
                 envelope.current_text if request_envelope else provider_prompt
             )
+            if media_resolution.images:
+                persisted_user_content = [
+                    {"type": "text", "text": persisted_user_content},
+                    *image_parts(media_resolution.images),
+                ]
             shadow_payload_hash = ""
             shadow_payload_changed: bool | None = None
             if config.context_layout == "shadow":
@@ -3265,6 +3274,12 @@ class TangtangService:
             return
         audit_item = {"type": "message", "role": "assistant", "content": f"[audit:{reason}]"}
         try:
+            if reason == "silent" and self._turn_current() and isinstance(items[0].get("content"), list):
+                # The model successfully perceived this user input. Preserve
+                # it without inventing a delivered assistant reply.
+                self.db.commit_context_items(session_id, self._context_request_id(event), items,
+                    now=self._now(), group_context_cursor_id=self._pending_group_context_cursor.get())
+                return
             self.db.commit_context_items(
                 session_id,
                 self._context_request_id(event),

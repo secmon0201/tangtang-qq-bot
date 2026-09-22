@@ -367,26 +367,3 @@ def test_live_guard_reminder_stays_silent_for_manual_game_closures(monkeypatch):
     monkeypatch.setattr(scope, "user_role", lambda _user_id: UserRole.SUPER_ADMIN)
 
     assert scope.live_guard_mini_game_reminder(GroupEvent()) is None
-
-
-def test_active_filter_silently_blocks_hash_commands_but_not_admin_filter_management(monkeypatch):
-    import bot.plugins.scope as scope
-
-    class Event:
-        user_id = 7
-
-        @staticmethod
-        def get_plaintext():
-            return "#装填"
-
-    monkeypatch.setattr(
-        scope,
-        "database",
-        lambda: SimpleNamespace(active_filter_contains=lambda user_id: user_id == 7),
-    )
-    monkeypatch.setattr(scope, "is_super_admin", lambda _user_id: False)
-    assert scope.is_active_filtered_command(Event())
-
-    Event.get_plaintext = staticmethod(lambda: "#主动过滤 列表")
-    monkeypatch.setattr(scope, "is_super_admin", lambda user_id: user_id == 7)
-    assert not scope.is_active_filtered_command(Event())

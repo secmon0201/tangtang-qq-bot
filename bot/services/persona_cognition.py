@@ -21,6 +21,7 @@ from bot.services.persona_impressions import impression_requested
 class CognitionStore:
     def __init__(self, db):
         self.people = PersonMemoryStore(db, global_personal=True)
+        self.blocked_users = lambda group_id: db.blocked_users(group_id)
 
     @contextmanager
     def connect(self):
@@ -32,6 +33,8 @@ class CognitionStore:
     def import_sources(self, sources) -> None:
         with self.connect() as conn:
             for row in sources:
+                if int(row['user_id']) in self.blocked_users(int(row['group_id'])):
+                    continue
                 if impression_requested(row['text']):
                     continue
                 changed = conn.execute("""INSERT INTO persona_sources VALUES(?,?,?,?,?,?,?,?,?,?)

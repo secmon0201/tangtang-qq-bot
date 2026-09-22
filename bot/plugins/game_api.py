@@ -21,11 +21,15 @@ from nonebot.message import event_preprocessor
 
 from bot.config import settings
 from bot.services.game_api_gate import game_message_disposition, game_prefix
-from bot.services.runtime import group_domains, passive_settings
+from bot.services.runtime import database, group_domains, passive_settings
 
 
 @event_preprocessor
 async def _(event: MessageEvent):
+    # Scope owns both counting and rejecting blacklisted events. Other parallel
+    # preprocessors must not cancel it before that idempotent count completes.
+    if database().interaction_blocked(int(getattr(event, "group_id", 0)), int(event.user_id)):
+        return
     text = event.get_plaintext().strip()
     store = passive_settings()
     prefix = game_prefix(text)

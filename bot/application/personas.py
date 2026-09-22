@@ -26,8 +26,10 @@ def chat_enabled(group_id: int, proactive: bool) -> bool:
 def persona_engine() -> PersonaEngine:
     store = PersonaStore(ROOT / "data" / "personas" / "state.db", settings.timezone)
     speech = SpeechService(store, SovitsBackend(), ROOT / "data" / "personas" / "audio")
+    history = TangtangDb()
+    history.blocked_users = database().blocked_user_ids
     return PersonaEngine(store, speech,
-        history_db=TangtangDb(),
+        history_db=history,
         locked_persona="denia",
         feature_enabled=lambda group, feature: group_domains().effective_feature_enabled(group, feature),
         chat_enabled=chat_enabled,

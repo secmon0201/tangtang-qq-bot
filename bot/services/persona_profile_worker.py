@@ -19,6 +19,7 @@ DRAFT_ESCALATED_RESPONSE_CHARS = 48000
 REVIEW_ESCALATED_OUTPUT_TOKENS = 9000
 REVIEW_ESCALATED_RESPONSE_CHARS = 36000
 _NON_TERMINAL_PROFILE_ERRORS = {
+    'profile_source_blacklisted',
     'profile_gate_changed',
     'profile_lease_changed',
     'profile_draft_missing',
@@ -58,6 +59,8 @@ class ProfileWorker:
             stage = batch.stage
             try:
                 async def generate(target, name, instruction, prompt):
+                    if any(int(source['user_id']) in self.profiles.cognition.blocked_users(int(source['group_id'])) for source in batch.sources):
+                        raise ValueError('profile_source_blacklisted')
                     raw, usage = await asyncio.wait_for(self.provider.generate(target, instruction, prompt), 45)
                     self.central.record_job('profile_' + name, 0, time.time(), usage, 'returned')
                     return decode(raw)
@@ -89,6 +92,8 @@ class ProfileWorker:
                     batch.prompt() + '\n待独立复核的draft：\n' + json.dumps(draft, ensure_ascii=False))
                 if not enabled():
                     raise ValueError('profile_gate_changed')
+                if any(int(source['user_id']) in self.profiles.cognition.blocked_users(int(source['group_id'])) for source in batch.sources):
+                    raise ValueError('profile_source_blacklisted')
                 stage = 'publish'
                 await asyncio.to_thread(self.profiles.publish, batch, draft, review)
                 self.retry.succeeded()

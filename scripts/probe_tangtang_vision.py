@@ -86,9 +86,7 @@ async def _run(env_path: Path, model_override: str) -> int:
     reasoning_effort = str(
         values.get("TANGTANG_REASONING_EFFORT") or "none"
     ).strip().lower()
-    vision_detail = str(
-        values.get("TANGTANG_VISION_DETAIL") or "low"
-    ).strip().lower()
+    vision_detail = "high"
     model = model_override or str(values.get("TANGTANG_MODEL") or DEFAULT_MODEL).strip()
     if not api_url or not api_key:
         print(json.dumps({"ok": False, "error": "missing Tangtang API configuration"}))

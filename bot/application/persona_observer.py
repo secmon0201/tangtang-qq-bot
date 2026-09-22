@@ -8,7 +8,7 @@ from bot.services.persona_actions import PersonaActions
 from bot.services.persona_observer import PersonaObserver
 from bot.services.persona_profile_history import rebuild_from_history
 from bot.services.persona_profile_worker import ProfileWorker
-from bot.services.runtime import group_domains
+from bot.services.runtime import database, group_domains
 from bot.services.tangtang_chat import TangtangProvider
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_runtime import config_loader
@@ -16,7 +16,9 @@ from bot.services.tangtang_runtime import config_loader
 
 async def run_personal_memory():
     engine = persona_engine()
-    worker = PersonaObserver(engine, TangtangDb(), TangtangProvider(), config_loader)
+    db = TangtangDb()
+    db.blocked_users = database().blocked_user_ids
+    worker = PersonaObserver(engine, db, TangtangProvider(), config_loader)
     if engine.v2_enabled('denia'):
         await asyncio.to_thread(PersonaActions(worker.cognition).recover)
         await asyncio.to_thread(worker.inbox.recover)
@@ -33,6 +35,7 @@ async def run_personal_memory():
 async def run_personal_profiles():
     engine = persona_engine()
     db = TangtangDb()
+    db.blocked_users = database().blocked_user_ids
     cognition = engine.cognition('denia', db)
     worker = ProfileWorker(cognition, engine.store, TangtangProvider(), config_loader)
     await asyncio.to_thread(worker.profiles.recover)

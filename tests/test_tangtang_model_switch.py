@@ -64,7 +64,7 @@ def test_loader_switches_to_any_configured_profile_and_persists_it(tmp_path: Pat
     assert "TANGTANG_MODEL_ACTIVE_PROFILE=模型1" in env_path.read_text(encoding="utf-8")
 
 
-def test_loader_switches_visual_detail_with_the_model_profile(tmp_path: Path):
+def test_loader_keeps_high_visual_detail_when_switching_reasoning_profile(tmp_path: Path):
     env_path = tmp_path / ".env"
     env_path.write_text(_profiled_env("模型1"), encoding="utf-8")
     loader = TangtangConfigLoader(env_path, managed_group_ids=(1001,))
@@ -73,7 +73,7 @@ def test_loader_switches_visual_detail_with_the_model_profile(tmp_path: Path):
 
     assert config.model == "deepseek-flash"
     assert config.reasoning_effort == "low"
-    assert config.vision_detail == "low"
+    assert config.vision_detail == "high"
 
 
 def test_loader_rejects_unknown_profile_without_changing_env(tmp_path: Path):

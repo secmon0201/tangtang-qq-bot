@@ -64,7 +64,9 @@ class MediaResolution:
     failures: tuple[str, ...]
 
 
-def extract_image_references(event: Any, max_images: int) -> tuple[ImageReference, ...]:
+def extract_image_references(
+    event: Any, max_images: int, *, include_reply: bool = True,
+) -> tuple[ImageReference, ...]:
     """Extract current and quoted OneBot image segments without trusting text URLs."""
 
     references: list[ImageReference] = []
@@ -74,7 +76,7 @@ def extract_image_references(event: Any, max_images: int) -> tuple[ImageReferenc
         ("current", getattr(event, "message", ()), _sender_identity(event)),
         (
             "reply",
-            getattr(reply, "message", ()),
+            getattr(reply, "message", ()) if include_reply else (),
             _sender_identity(reply),
         ),
     )
@@ -109,11 +111,11 @@ class TangtangMediaResolver:
     def __init__(
         self,
         *,
-        max_images: int = 4,
-        max_image_bytes: int = 8 * 1024 * 1024,
-        max_total_bytes: int = 16 * 1024 * 1024,
-        max_pixels: int = 20_000_000,
-        max_dimension: int = 1000,
+        max_images: int = 600,
+        max_image_bytes: int = 32 * 1024 * 1024,
+        max_total_bytes: int = 64 * 1024 * 1024,
+        max_pixels: int = 100_000_000,
+        max_dimension: int = 8192,
         timeout_seconds: int = 10,
     ) -> None:
         self.max_images = max_images
@@ -134,6 +136,7 @@ class TangtangMediaResolver:
         images: list[VisionImage] = []
         failures: list[str] = []
         total = 0
+        deadline = asyncio.get_running_loop().time() + self.timeout_seconds
         for reference in references:
             if len(images) >= self.max_images:
                 break
@@ -158,7 +161,10 @@ class TangtangMediaResolver:
                 total += cached.byte_count
                 continue
             try:
-                raw = await self._read_reference(reference.value)
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    raise TimeoutError("image batch deadline exceeded")
+                raw = await asyncio.wait_for(self._read_reference(reference.value), remaining)
                 if total + len(raw) > self.max_total_bytes:
                     raise ValueError("image total exceeds configured limit")
                 image = self._normalise(reference, raw)
@@ -167,11 +173,11 @@ class TangtangMediaResolver:
                     f"{_reference_label(reference)} 读取失败"
                 )
                 continue
-            total += len(raw)
+            total += image.byte_count
             images.append(image)
             self._cache[reference.value] = image
             self._cache.move_to_end(reference.value)
-            while len(self._cache) > 128:
+            while len(self._cache) > 128 or sum(item.byte_count for item in self._cache.values()) > self.max_total_bytes:
                 self._cache.popitem(last=False)
         return MediaResolution(tuple(images), tuple(failures))
 
@@ -230,6 +236,8 @@ class TangtangMediaResolver:
         raise ValueError("too many image redirects")
 
     async def _validate_public_url(self, value: str) -> None:
+        if len(value) > 8192:
+            raise ValueError("image URL exceeds 8192 characters")
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("invalid image URL")
@@ -282,7 +290,7 @@ class TangtangMediaResolver:
             + base64.b64encode(encoded).decode("ascii"),
             mime_type=mime_type,
             sha256=hashlib.sha256(raw).hexdigest(),
-            byte_count=len(raw),
+            byte_count=len(encoded),
             sender_id=reference.sender_id,
             sender_name=reference.sender_name,
         )

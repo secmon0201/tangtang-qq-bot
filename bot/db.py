@@ -1322,6 +1322,18 @@ class Database:
     def passive_filter_contains(self, user_id: int) -> bool:
         return self.filter_contains("passive", user_id)
 
+    def blocked_user_ids(self, group_id: int = 0) -> frozenset[int]:
+        """Identity blacklist shared by interaction and model-input gates."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT user_id FROM active_filters UNION SELECT user_id FROM passive_filters "
+                "UNION SELECT user_id FROM group_filters WHERE group_id=?", (int(group_id),)
+            ).fetchall()
+        return frozenset(int(row[0]) for row in rows)
+
+    def interaction_blocked(self, group_id: int, user_id: int) -> bool:
+        return int(user_id) in self.blocked_user_ids(group_id)
+
     def add_filter_members(self, kind: str, user_ids: Iterable[int], created_by: int) -> tuple[int, ...]:
         table = self._filter_table(kind)
         members = tuple(dict.fromkeys(int(user_id) for user_id in user_ids if int(user_id) > 0))

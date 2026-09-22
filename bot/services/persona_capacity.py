@@ -5,6 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from weakref import WeakKeyDictionary
+from bot.services.pacing import assert_outbound_current
 
 
 background_request = ContextVar('persona_background_request', default=False)
@@ -46,4 +47,5 @@ async def provider_post(client, endpoint, **kwargs):
     capacity = capacities.setdefault(endpoint, EndpointCapacity())
     async with asyncio.timeout(45):
         async with capacity.acquire(background_request.get()):
+            assert_outbound_current()
             return await client.post(endpoint, **kwargs)

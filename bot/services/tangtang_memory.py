@@ -276,7 +276,7 @@ class TangtangMemoryKernel:
 
     def safe_text(self, group_id: int, user_id: int, text: str) -> str:
         """Do not reintroduce a forgotten fact through history or cached context."""
-        return '' if self.people.blocked(user_id, group_id, text) else text
+        return '' if user_id in self.db.blocked_users(group_id) or self.people.blocked(user_id, group_id, text) else text
 
     def episode_prompt(self, group_id: int, user_id: int, query: str) -> str:
         recognition = recognition_prompt(self.people, group_id, user_id, query)

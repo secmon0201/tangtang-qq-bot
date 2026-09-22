@@ -80,6 +80,7 @@ from bot.services.agent_tools import (
     tool_schemas,
 )
 from bot.services.tangtang_humanize import humanize_messages
+from bot.services.reply_style import repetition_reminder
 from bot.services.knowledge_db import FORBIDDEN_LOCAL_TERMS
 from bot.services.mingchao_meme_culture import search as mingchao_meme_search
 from bot.services.zhijiang_knowledge import search as zhijiang_search
@@ -1871,6 +1872,15 @@ class TangtangService:
         self.memory.ensure_self_version("\n\n".join(parts[:3]) or text)
         return text
 
+    def _style_reminder(self, config: TangtangConfig, group_id: int) -> str:
+        if not config.humanize_enabled:
+            return ""
+        try:
+            return repetition_reminder(self.db.recent_style_replies(group_id, now=self._now()))
+        except Exception as exc:
+            logger.warning("Reply style history unavailable: {}", type(exc).__name__)
+            return ""
+
     def _hard_terms(self) -> frozenset[str]:
         return _term_set(self._hard.text())
 
@@ -2754,7 +2764,10 @@ class TangtangService:
                 )
             voice_candidate = False
             voice_status = "未绑定声线"
-            prompts = [provider_prompt, candidate_prompt]
+            # Compute once so legacy/shadow/v2 all see the same dynamic hint.
+            style_reminder = self._style_reminder(config, group_id)
+            prompts = [value + "\n" + style_reminder if style_reminder else value
+                       for value in (provider_prompt, candidate_prompt)]
             stable_persona_instructions: tuple[str, ...] = ()
             if context and self.personas:
                 if context.persona.key != "tangtang":
@@ -3046,11 +3059,15 @@ class TangtangService:
                         bot, event, config, plan, call_text=current_text, mode=mode, usage=usage,
                     )
                 return
+            remove_dashes = bool(context and context.persona.key == "denia")
             messages = (
-                humanize_messages(plan.messages)
-                if config.humanize_enabled and (not context or context.persona.key == "tangtang")
+                humanize_messages(plan.messages, remove_dashes=remove_dashes)
+                if config.humanize_enabled
                 else plan.messages
             )
+            if config.humanize_enabled:
+                plan = replace(plan, text_fallback=humanize_messages(
+                    plan.text_fallback, remove_dashes=remove_dashes))
             if not plan.decided or not messages:
                 if context and self.personas:
                     self.personas.choose_expression(context, call_text, plan, 0, blocked="silent")

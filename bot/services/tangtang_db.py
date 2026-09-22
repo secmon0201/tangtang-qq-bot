@@ -4,7 +4,7 @@ import json
 import hashlib
 import sqlite3
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -1182,6 +1182,35 @@ class TangtangDb:
                     (int(user_id), int(group_id), int(limit)),
                 ).fetchall()
         return [dict(row) for row in rows]
+
+    def recent_style_replies(self, group_id: int, *, now: str) -> tuple[str, ...]:
+        """Read up to eight confirmed replies in 24h without schema work.
+
+        Calls contain delivered text only. Explicit failed part ledgers are
+        excluded, while older confirmed calls without part ledgers still count.
+        A short read-only timeout lets the caller omit this optional hint.
+        """
+        end = datetime.fromisoformat(now)
+        since = (end - timedelta(hours=24)).isoformat()
+        blocked = tuple(sorted(self.blocked_users(int(group_id))))
+        exclusions = ""
+        if blocked:
+            exclusions = " AND c.user_id NOT IN (" + ",".join("?" for _ in blocked) + ")"
+        with sqlite3.connect(
+            self.path.resolve().as_uri() + "?mode=ro", uri=True,
+            timeout=0.05, factory=_ClosingConnection,
+        ) as conn:
+            rows = conn.execute(
+                "SELECT c.reply_text FROM tangtang_calls c WHERE c.group_id = ? "
+                "AND c.reply_kind IN ('model', 'proactive') AND trim(c.reply_text) <> '' "
+                "AND julianday(c.created_at) >= julianday(?) "
+                "AND julianday(c.created_at) <= julianday(?) "
+                "AND (NOT EXISTS (SELECT 1 FROM tangtang_reply_parts p WHERE p.call_id=c.id) "
+                "OR EXISTS (SELECT 1 FROM tangtang_reply_parts p WHERE p.call_id=c.id AND p.delivered=1))"
+                + exclusions + " ORDER BY c.id DESC LIMIT 8",
+                (int(group_id), since, now, *blocked),
+            ).fetchall()
+        return tuple(str(row[0]) for row in rows)
 
     def has_recent_group_reply_text(
         self, group_id: int, text: str, limit: int = 10

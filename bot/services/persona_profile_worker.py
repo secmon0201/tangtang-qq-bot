@@ -3,11 +3,13 @@ import asyncio
 from dataclasses import replace
 import json
 import time
+import sqlite3
 
 from bot.services.persona_background_retry import BackgroundRetry
 from bot.services.persona_capacity import background_request
 from bot.services.persona_profile_contract import DRAFT_INSTRUCTION, REVIEW_INSTRUCTION, decode, validate_draft
 from bot.services.persona_profile_store import ProfileStore
+from bot.services.background_work import BackgroundWork, WorkDeferred, batch_key
 
 
 DRAFT_MAX_OUTPUT_TOKENS = 8000
@@ -38,11 +40,12 @@ class ProfileWorker:
         self.central, self.provider, self.loader = central, provider, loader
         self.retry = BackgroundRetry(central, key='profile_provider_retry', base_delay=10, max_delay=21600)
         self.lock = asyncio.Lock()
+        self.work = BackgroundWork(central)
 
     async def tick(self):
         if self.lock.locked():
             return
-        config = replace(self.loader.load(), timeout_seconds=30, reasoning_effort='none')
+        config = replace(self.loader.load(), timeout_seconds=60, reasoning_effort='none')
         draft_config = replace(config, max_output_tokens=DRAFT_MAX_OUTPUT_TOKENS,
                                max_response_chars=DRAFT_MAX_RESPONSE_CHARS)
         review_config = replace(config, max_output_tokens=REVIEW_MAX_OUTPUT_TOKENS,
@@ -52,7 +55,7 @@ class ProfileWorker:
         if not config.enabled or not config.memory_enabled or not enabled() or self.retry.blocked_status(config, time.time()):
             return
         async with self.lock:
-            batch = await asyncio.to_thread(self.profiles.claim)
+            batch = await asyncio.to_thread(self.profiles.claim, cooldown=self.work.policy()['profile_cooldown_seconds'])
             if batch is None:
                 return
             token = background_request.set(True)
@@ -61,7 +64,10 @@ class ProfileWorker:
                 async def generate(target, name, instruction, prompt):
                     if any(int(source['user_id']) in self.profiles.cognition.blocked_users(int(source['group_id'])) for source in batch.sources):
                         raise ValueError('profile_source_blacklisted')
-                    raw, usage = await asyncio.wait_for(self.provider.generate(target, instruction, prompt), 45)
+                    fresh = [s for s in batch.sources if s.get('coverage_eligible', True)]
+                    raw, usage = await self.work.generate(self.provider, target, instruction, prompt,
+                        kind='profile', sources=batch.sources,
+                        historical=bool(fresh) and max(s['received_at'] for s in fresh) < time.time() - 86400)
                     self.central.record_job('profile_' + name, 0, time.time(), usage, 'returned')
                     return decode(raw)
                 truncated = _truncated_output(batch.previous_error)
@@ -75,6 +81,14 @@ class ProfileWorker:
                     )
                     draft = await generate(active_draft_config, 'draft', DRAFT_INSTRUCTION, batch.prompt())
                     validate_draft(draft, batch)
+                    if not enabled():
+                        raise ValueError('profile_gate_changed')
+                    if any(int(s['user_id']) in self.profiles.cognition.blocked_users(int(s['group_id'])) for s in batch.sources):
+                        raise ValueError('profile_source_blacklisted')
+                    if await asyncio.to_thread(self.profiles.acknowledge_unchanged, batch, draft):
+                        self.central.record_job('profile_publish', 0, time.time(), {'batch': batch_key(batch.sources)}, 'unchanged')
+                        self.retry.succeeded()
+                        return
                     await asyncio.to_thread(self.profiles.save_draft, batch, draft)
                 else:
                     draft = batch.draft
@@ -97,13 +111,15 @@ class ProfileWorker:
                 stage = 'publish'
                 await asyncio.to_thread(self.profiles.publish, batch, draft, review)
                 self.retry.succeeded()
-                self.central.record_job('profile_publish', 0, time.time(), {}, 'completed')
+                self.central.record_job('profile_publish', 0, time.time(), {'batch': batch_key(batch.sources)}, 'completed')
             except asyncio.CancelledError:
                 await asyncio.to_thread(self.profiles.fail, batch, 'CancelledError', None, terminal=False)
                 raise
+            except WorkDeferred:
+                await asyncio.to_thread(self.profiles.defer, batch)
             except Exception as exc:
                 detail = str(exc) if isinstance(exc, (ValueError, KeyError)) else type(exc).__name__
-                if not isinstance(exc, (ValueError, TypeError, KeyError)):
+                if not isinstance(exc, (ValueError, TypeError, KeyError, sqlite3.Error)):
                     self.retry.failed(config, exc, time.time())
                 terminal = (isinstance(exc, (ValueError, TypeError, KeyError))
                             and detail not in _NON_TERMINAL_PROFILE_ERRORS)

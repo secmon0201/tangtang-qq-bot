@@ -30,7 +30,7 @@ from bot.services.replies import quote_message
 from bot.services.vision_request import chat_content, enforce_vision_limits, image_parts, responses_content
 from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
-from bot.services.persona_capacity import provider_post
+from bot.services.persona_capacity import provider_post, request_timeout_seconds
 from bot.services.persona_turn import PersonaTurn
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
@@ -973,7 +973,7 @@ class TangtangProvider:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
-            "X-Request-Timeout-Ms": str(min(config.timeout_seconds, 30) * 1000),
+            "X-Request-Timeout-Ms": str(request_timeout_seconds(config.timeout_seconds) * 1000),
         }
         if config.api_style == "responses":
             payload = self._responses_payload(config, persona, prompt, images=images)
@@ -1003,7 +1003,7 @@ class TangtangProvider:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
-            "X-Request-Timeout-Ms": str(min(config.timeout_seconds, 30) * 1000),
+            "X-Request-Timeout-Ms": str(request_timeout_seconds(config.timeout_seconds) * 1000),
         }
         if config.api_style == "responses":
             payload = self._responses_payload(

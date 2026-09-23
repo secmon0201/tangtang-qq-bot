@@ -76,7 +76,7 @@ class ObservationInbox:
                 WHERE id=? AND revision=? AND owner=? AND state='processing'""",
                 [(r['id'], r['revision'], owner) for r in rows])
 
-    def claim(self, *, now: float | None = None, limit=12, lease=90, active_groups=()) -> list[dict]:
+    def claim(self, *, now: float | None = None, limit=12, lease=90, active_groups=(), wait_seconds=2) -> list[dict]:
         now = time.time() if now is None else now
         owner = uuid.uuid4().hex
         if not active_groups:
@@ -89,18 +89,22 @@ class ObservationInbox:
             head = conn.execute(f"""SELECT * FROM persona_observation_inbox AS q
                 WHERE persona='denia' AND state IN ('pending','retry') AND next_attempt<=?
                 AND group_id IN ({','.join('?' for _ in groups)})
-                AND received_at<=? AND NOT EXISTS(SELECT 1 FROM persona_observation_inbox p
+                AND received_at<=? AND (attribution='direct' OR received_at<=?)
+                AND NOT EXISTS(SELECT 1 FROM persona_observation_inbox p
                     WHERE p.persona=q.persona AND p.user_id=q.user_id AND p.state='processing')
-                ORDER BY COALESCE((SELECT last_served FROM persona_observation_service s
-                    WHERE s.persona=q.persona AND s.user_id=q.user_id),0),received_at,id LIMIT 1""", (now, *groups, now - 2)).fetchone()
+                ORDER BY (attribution='direct') DESC,(received_at>=?) DESC,
+                    COALESCE((SELECT last_served FROM persona_observation_service s
+                    WHERE s.persona=q.persona AND s.user_id=q.user_id),0),received_at,id LIMIT 1""",
+                (now, *groups, now - 2, now - wait_seconds, now - 86400)).fetchone()
             if not head:
                 return []
             conn.execute('INSERT OR REPLACE INTO persona_observation_service VALUES(?,?,?)',
                          (head['persona'], head['user_id'], now))
             rows = conn.execute(f"""SELECT *, (SELECT message_id FROM persona_observation_replies r WHERE r.event_key=q.event_key) AS reply_to FROM persona_observation_inbox q
                 WHERE persona=? AND user_id=? AND state IN ('pending','retry') AND next_attempt<=?
-                AND group_id IN ({','.join('?' for _ in groups)}) ORDER BY id LIMIT ?""",
-                (head['persona'], head['user_id'], now, *groups, min(12, max(1, limit)))).fetchall()
+                AND group_id=? AND received_at<=? AND (received_at>=?)=? ORDER BY id LIMIT ?""",
+                (head['persona'], head['user_id'], now, head['group_id'], now - 2,
+                 now - 86400, int(head['received_at'] >= now - 86400), min(96, max(1, limit)))).fetchall()
             selected, chars = [], 0
             for row in rows:
                 if selected and chars + len(row['text']) > 12000:
@@ -112,6 +116,15 @@ class ObservationInbox:
                     (owner, now + lease, row['id']))
                 selected[-1].update(owner=owner, epoch=row['epoch'] + 1, attempts=row['attempts'] + 1)
             return selected
+
+    def defer(self, rows, *, now=None):
+        """Budget denial is not an extraction failure and does not spend retries."""
+        now = time.time() if now is None else now
+        with self.db._connect() as conn:
+            for row in rows:
+                conn.execute("UPDATE persona_observation_inbox SET state='pending',owner='',lease_until=0,"
+                             "attempts=max(0,attempts-1),next_attempt=? WHERE id=? AND owner=? AND epoch=?",
+                             (now + 300, row['id'], row['owner'], row['epoch']))
 
     def acknowledge(self, rows, *, now=None, error='', permanent=False) -> None:
         now = time.time() if now is None else now

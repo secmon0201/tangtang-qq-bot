@@ -50,6 +50,8 @@ Maintenance contract for the current repository root. Resolve it from the active
 
 ## Common failure modes
 
+- Background memory/profile/summary work uses persisted rolling-hour request and token admission in `background_work.py`; historical work has an additional shared cap. Preserve raw evidence and versions. Group summaries use one Low request per complete batch with atomic cursor commit. Separate queue time from execution time, retain failed usage reservations, rebuild invalid profile drafts, and never classify local SQL errors as provider authentication failures. See `docs/后台整理成本控制.md` for defaults and the read-only report/configuration command.
+
 - New `bot/plugins/x.py` without a registry entry or `docs/全部#指令清单.md` rows: registry and command-catalog tests fail.
 - Writing to `GsData.db` outside the reviewed import tool or editing upstream assets: breaks game isolation and future upstream updates.
 - Reimplementing shared avatar/roles/media/report logic inside a plugin: the architecture validator rejects substantial duplicate bodies.

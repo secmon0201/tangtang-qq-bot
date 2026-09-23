@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import sqlite3
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -44,7 +45,10 @@ class CognitionStore:
                                           'occurred_at', 'received_at', 'attribution', 'revision', 'route_version'))).rowcount
                 if changed:
                     now = time.time()
-                    enqueue(conn, row['user_id'], now, priority=2 if row['received_at'] >= now-120 else 1)
+                    priority = 1
+                    if row['received_at'] >= now - 86400:
+                        priority = 3 if row['attribution'] == 'direct' else 2
+                    enqueue(conn, row['user_id'], now, priority=priority)
                 if row.get('reply_to'):
                     part = conn.execute("""SELECT p.action_id,p.part FROM persona_action_parts p
                         JOIN persona_actions a ON a.id=p.action_id
@@ -147,10 +151,11 @@ class CognitionStore:
                                 iid = accepted[7:]
                                 result.intent_versions[iid] = conn.execute('SELECT version FROM persona_intents WHERE id=?', (iid,)).fetchone()[0]
                         conn.execute('RELEASE patch')
-                    except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                    except (ValueError, TypeError, KeyError, OverflowError, sqlite3.IntegrityError) as exc:
                         conn.execute('ROLLBACK TO patch')
                         conn.execute('RELEASE patch')
-                        result.rejected.append(str(exc)[:100])
+                        result.rejected.append('memory_constraint_conflict' if isinstance(exc, sqlite3.IntegrityError)
+                                               else str(exc)[:100])
             for s in snapshot.sources:
                 if not result.rejected:
                     conn.execute('INSERT OR IGNORE INTO persona_processing_receipts VALUES(?,?,?,?)',

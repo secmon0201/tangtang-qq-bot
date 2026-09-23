@@ -116,7 +116,7 @@ _group_summary_background = None
 async def start_persona_background() -> None:
     from bot.application.persona_background import start_background
     from bot.application.persona_observer import run_personal_memory, run_personal_profiles
-    from bot.services.group_summary_worker import run_group_summaries
+    from bot.application.group_summary_worker import run_group_summaries
     global _background, _speech_background, _memory_background, _profile_background
     global _group_summary_background
     _background = asyncio.create_task(start_background())

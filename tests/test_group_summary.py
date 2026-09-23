@@ -11,7 +11,6 @@ nonebot.init()
 from bot.services.group_summary import (  # noqa: E402
     GroupSummaryService,
     GroupSummaryWorker,
-    SummaryMerge,
     SummaryTopic,
     parse_summary_json,
 )
@@ -35,7 +34,13 @@ class SummaryProvider:
 
     async def generate(self, config, persona, prompt, images=()):
         self.calls += 1
-        return json.dumps(self.payload, ensure_ascii=False), {
+        payload = self.payload
+        if '一批' in persona or '本批所有消息' in persona:
+            batch = json.loads(prompt)
+            payload = {'updates': [{**self.payload,
+                'topic_id': batch['topics'][0]['topic_id'] if batch['topics'] else 0,
+                'message_ids': [m['id'] for m in batch['messages']]}], 'ignored_message_ids': []}
+        return json.dumps(payload, ensure_ascii=False), {
             "prompt_tokens": 100,
             "completion_tokens": 50,
             "reasoning_tokens": 0,
@@ -78,7 +83,7 @@ def test_summary_merge_is_incremental_and_advances_cursor(tmp_path):
     provider = SummaryProvider()
     service = GroupSummaryService(
         db, provider, Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
-        chat_id=lambda: "2026-09-19T10:02:00+08:00",
+        chat_id=lambda: "2026-09-19T10:05:00+08:00",
     )
     worker = GroupSummaryWorker(service, batch_messages=50)
 
@@ -106,6 +111,7 @@ def test_summary_merge_is_incremental_and_advances_cursor(tmp_path):
         "participants": ["甲", "乙"],
         "unresolved": [],
     }
+    service._chat_id = lambda: "2026-09-19T10:10:00+08:00"
     assert asyncio.run(worker.tick((1001,))) == 1
     assert provider.calls == 2
     topic = db.group_summary_sources(1001)[0]
@@ -131,7 +137,7 @@ def test_summary_failure_does_not_advance_cursor(tmp_path):
     )
     service = GroupSummaryService(
         db, Broken(), Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
-        chat_id=lambda: "2026-09-19T10:02:00+08:00",
+        chat_id=lambda: "2026-09-19T10:05:00+08:00",
     )
     assert asyncio.run(GroupSummaryWorker(service).tick((1001,))) == 0
     assert [row["id"] for row in db.group_summary_pending(1001)] == [1]
@@ -223,41 +229,6 @@ def test_stale_messages_are_skipped_without_model_calls(tmp_path):
     assert topics and "聚会" in topics[0]["summary"]
 
 
-def test_topic_routing_reuses_existing_topic(tmp_path):
-    db = TangtangDb(tmp_path / "tangtang.db")
-    db.group_summary_merge(
-        1001,
-        topic_id=None,
-        title="聚会安排",
-        summary="周六下午三点聚会。",
-        keywords=("聚会", "周六"),
-        participants=("甲",),
-        unresolved=("地点未定",),
-        state="active",
-        message_ids=(1,),
-        now="2026-09-19T10:00:00+08:00",
-    )
-    service = GroupSummaryService(db, SummaryProvider(), Loader(enabled_config()), chat_id=lambda: "")
-    rows = [
-        {"id": 2, "nickname": "乙", "text": "聚会地点还没定吗？"},
-        {"id": 3, "nickname": "甲", "text": "周末天气不错。"},
-    ]
-    plan = service.merge_plan(1001, rows)
-    assert plan[0].topic.topic_id is not None
-    assert plan[1].topic.topic_id is None
-
-
-def test_unrelated_new_messages_do_not_share_a_topic(tmp_path):
-    db = TangtangDb(tmp_path / "tangtang.db")
-    service = GroupSummaryService(db, SummaryProvider(), Loader(enabled_config()), chat_id=lambda: "")
-    rows = [
-        {"id": 1, "nickname": "甲", "text": "今晚谁打游戏？"},
-        {"id": 2, "nickname": "乙", "text": "我妈今天做了红烧肉。"},
-    ]
-    plan = service.merge_plan(1001, rows)
-    assert [item.topic.topic_id for item in plan] == [None, None]
-
-
 def test_loose_reuse_routes_semantically_related_message_to_old_topic(tmp_path):
     db = TangtangDb(tmp_path / "tangtang.db")
     db.group_summary_merge(
@@ -269,7 +240,7 @@ def test_loose_reuse_routes_semantically_related_message_to_old_topic(tmp_path):
     provider = RoutingProvider({"topic_id": topic_id})
     service = GroupSummaryService(
         db, provider, Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
-        chat_id=lambda: "2026-09-19T10:05:00+08:00",
+        chat_id=lambda: "2026-09-19T10:10:00+08:00",
     )
     db.insert_group_message(
         group_id=1001, user_id=1, nickname="乙", text="那我们假期去哪里碰头？",
@@ -280,13 +251,7 @@ def test_loose_reuse_routes_semantically_related_message_to_old_topic(tmp_path):
     assert len(topics) == 1
     assert topics[0]["topic_id"] == topic_id
     assert topics[0]["version"] == 2
-    assert provider.route_prompts
-
-
-def test_route_parser_accepts_new_topic_and_rejects_unknown_ids():
-    assert GroupSummaryService.parse_route('{"topic_id": 0}', [1, 2]) is None
-    assert GroupSummaryService.parse_route('{"topic_id": 2}', [1, 2]) == 2
-    assert GroupSummaryService.parse_route('{"topic_id": 9}', [1, 2]) is None
+    assert not provider.route_prompts  # Routing and merging now share one call.
 
 
 def test_topic_cap_archives_oldest_beyond_limit(tmp_path):

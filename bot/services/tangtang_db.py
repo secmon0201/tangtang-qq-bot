@@ -922,11 +922,14 @@ class TangtangDb:
         state: str,
         message_ids: tuple[int, ...],
         now: str,
+        _conn=None,
     ) -> dict[str, Any]:
         """Atomically write one topic version and its source-message links."""
 
-        with self._connect() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+        from contextlib import nullcontext
+        with (nullcontext(_conn) if _conn is not None else self._connect()) as conn:
+            if _conn is None:
+                conn.execute("BEGIN IMMEDIATE")
             try:
                 if topic_id is None:
                     cursor = conn.execute(
@@ -1005,11 +1008,30 @@ class TangtangDb:
                     (int(topic_id),),
                 ).fetchone()
                 result = dict(row) if row else {}
-                conn.execute("COMMIT")
+                if _conn is None:
+                    conn.execute("COMMIT")
             except Exception:
-                conn.execute("ROLLBACK")
+                if _conn is None:
+                    conn.execute("ROLLBACK")
                 raise
         return result
+
+    def group_summary_commit_batch(self, group_id, updates, message_ids, *, now):
+        """Publish every topic and advance the batch cursor in one transaction."""
+        with self._connect() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            cursor = conn.execute('SELECT applied_message_id FROM group_summary_cursors WHERE group_id=?',
+                                  (group_id,)).fetchone()
+            if cursor and cursor[0] >= max(message_ids):
+                return False
+            if cursor and cursor[0] >= min(message_ids):
+                raise ValueError('summary_batch_cursor_changed')
+            for update in updates:
+                self.group_summary_merge(group_id, **update, now=now, _conn=conn)
+            conn.execute("INSERT INTO group_summary_cursors VALUES(?,?,'raw',?) "
+                         "ON CONFLICT(group_id) DO UPDATE SET applied_message_id=excluded.applied_message_id,"
+                         "source='raw',updated_at=excluded.updated_at", (group_id, max(message_ids), now))
+            return True
 
     def recent_user_messages(
         self,

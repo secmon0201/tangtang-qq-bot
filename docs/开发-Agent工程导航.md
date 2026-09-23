@@ -48,7 +48,7 @@ flowchart LR
 | 人格选择、冻结版本、表情、语音 | `bot/application/personas.py`、`bot/services/persona_engine.py`、`bot/services/persona_profiles.py`、`bot/plugins/persona_management.py` | [人格与语音](功能-人格与语音.md) |
 | 长期记忆 V2、证据、行动回执 | `bot/services/persona_inbox.py`、`persona_cognition.py`、`persona_actions.py`、`persona_turn.py` | `tests/test_persona_v2_runtime.py`、`scripts/report_persona_memory.py` |
 | 自动个人画像 | `bot/application/persona_observer.py`、`bot/services/persona_profile_worker.py`、`persona_profile_store.py` | `tests/test_persona_profiles.py`、`scripts/report_persona_memory.py` |
-| 增量群话题摘要 | `bot/services/group_summary.py`、`group_summary_worker.py`、`tangtang_db.py` | [群聊话题摘要](功能-糖糖聊天.md#群聊话题摘要) |
+| 增量群话题摘要及后台预算 | `bot/application/group_summary_worker.py`、`bot/services/group_summary.py`、`group_summary_batch.py`、`background_work.py` | [群聊话题摘要](功能-糖糖聊天.md#群聊话题摘要)、[后台整理成本控制](后台整理成本控制.md) |
 | 上游或图片功能 | 对应插件、现有服务/渲染器、`bot/integrations` | [上游维护](../skills/qq-bot-maintainer/references/nte-upstream.md)、[功能地图](README.md#功能地图) |
 | 启停、看门狗、部署核验 | `scripts/start_all.ps1`、`stop.ps1`、`start.ps1`、`verify_full_stack.ps1` | [维护操作](../skills/qq-bot-maintainer/references/operations.md) |
 
@@ -110,7 +110,7 @@ flowchart LR
 
 ## 已知结构缺口与后续模块化验收
 
-- [group_summary_worker.py](../bot/services/group_summary_worker.py) 当前从服务层引用 `bot.application.personas`，不符合仓库层级约束。当前 [架构校验器](../scripts/validate_architecture.py) 拦截插件互导、下层导入插件、环和重复实现，但尚未拦截全部 `services -> application` 引用。不能把此例当成允许的模式，也不能把校验通过表述为完整层级证明。
+- [群摘要调度](../bot/application/group_summary_worker.py) 位于 application 层，向服务注入人格状态、预算存储及群开关；服务不反向导入 application。架构校验通过仍不等同于完整的热卸载或运行时隔离证明。
 - 如用户要求真正可插拔，需单独实现并验收：依赖图与启用配置、统一 `start/stop` 所有权、停止接单与处理中任务收尾、matcher/预处理器/处理器注销、后台取消并等待退出、客户端关闭、数据保留与重载恢复。
 - 验收必须覆盖重复启停、任务/处理器不重复、旧会话停止发送、持久化数据可恢复、关闭聊天后其他直接功能仍可用。先界定“可恢复停用”“重启后不加载”还是“运行中热卸载”，不能用前两项测试替代第三项。
 

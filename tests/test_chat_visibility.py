@@ -145,7 +145,7 @@ def test_summary_excludes_blacklisted_sources_and_skips_only_blocked_batch(tmp_p
     from bot.services.group_summary import GroupSummaryService, GroupSummaryWorker
     from tests.test_group_summary import Loader, SummaryProvider
     db = TangtangDb(tmp_path / "summary.db")
-    db.insert_group_message(group_id=1001, user_id=22, nickname="member", text="topic", message_id="1", created_at="now")
+    db.insert_group_message(group_id=1001, user_id=22, nickname="member", text="topic", message_id="1", created_at="2026-09-19T10:00:00+08:00")
     topic = db.group_summary_merge(1001, topic_id=None, title="topic", summary="formerly-visible", keywords=(),
         participants=(), unresolved=(), state="active", message_ids=(1,), now="now")
     assert topic['topic_id']
@@ -153,7 +153,7 @@ def test_summary_excludes_blacklisted_sources_and_skips_only_blocked_batch(tmp_p
     assert db.group_summary_sources(1001) == []
     provider = SummaryProvider()
     worker = GroupSummaryWorker(GroupSummaryService(db, provider,
-        Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")), chat_id=lambda: "now"))
+        Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")), chat_id=lambda: "2026-09-19T10:05:00+08:00"))
     asyncio.run(worker.tick((1001,)))
     assert provider.calls == 0
     assert db.group_summary_pending(1001) == []

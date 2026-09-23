@@ -111,6 +111,7 @@ async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
 async def test_background_no_daily_budget_and_quarantines_invalid_evidence(tmp_path):
     engine, service, config, _ = runtime(tmp_path, output())
     engine.store.set_option('background_global_limit', 0)
+    engine.store.set_option('background_work_policy', {'memory_wait_seconds': 2})
     ev = event('我在修改画稿')
     capture(service, engine, config, ev, direct=False)
     class Extractor:
@@ -174,6 +175,7 @@ async def test_partial_rejection_keeps_source_for_worker_and_repairs_reply(tmp_p
 @async_test
 async def test_worker_partial_rejection_is_not_acknowledged(tmp_path):
     engine, service, config, _ = runtime(tmp_path, output())
+    engine.store.set_option('background_work_policy', {'memory_wait_seconds': 2})
     capture(service, engine, config, event('我在修改画稿'), direct=False)
     bad = output('observe')
     bad['states'] = [dict(topic='画稿', label='担心', evidence=[{'event_key': '1001:1', 'quote': '我在修改画稿'}])]

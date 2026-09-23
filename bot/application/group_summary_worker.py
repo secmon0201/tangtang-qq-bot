@@ -59,6 +59,8 @@ async def run_group_summaries() -> None:
                                 provider,
                                 config_loader,
                                 chat_id=lambda: _timestamp(),
+                                central=engine.store,
+                                enabled=lambda group_id: engine.chat_enabled(group_id, False) or engine.chat_enabled(group_id, True),
                             ),
                             batch_messages=config.group_summary_batch_messages,
                         )

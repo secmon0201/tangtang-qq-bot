@@ -15,14 +15,12 @@ LIMITS = {"denia_v2_enabled": (0, 1), "speech_probability": (0, 1), "speech_cool
           "background_group_limit": (0, 100), "background_global_limit": (0, 1000),
           "continuation_enabled": (0, 1), "continuation_idle_seconds": (10, 600),
           "continuation_hard_seconds": (30, 1800), "continuation_max_attempts": (0, 12),
-          "continuation_silence_limit": (1, 4), "continuation_group_daily_limit": (0, 200),
-          "continuation_global_daily_limit": (0, 1000), "continuation_debounce_seconds": (0, 3),
+          "continuation_silence_limit": (1, 4), "continuation_debounce_seconds": (0, 3),
           "continuation_max_debounce_seconds": (0, 6)}
 DEFAULTS = dict(denia_v2_enabled=0, speech_probability=0.10, speech_cooldown=600,
                 background_group_limit=2, background_global_limit=12,
-                continuation_enabled=1, continuation_idle_seconds=120, continuation_hard_seconds=600,
+                continuation_enabled=1, continuation_idle_seconds=30, continuation_hard_seconds=300,
                 continuation_max_attempts=4, continuation_silence_limit=2,
-                continuation_group_daily_limit=20, continuation_global_daily_limit=80,
                 continuation_debounce_seconds=1.5, continuation_max_debounce_seconds=3.0)
 
 

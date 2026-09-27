@@ -6,6 +6,7 @@ import time
 from dataclasses import replace
 from typing import Any
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from nonebot import on_message, get_driver, get_bots, logger
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from nonebot.message import event_preprocessor
@@ -13,7 +14,9 @@ from nonebot.message import event_preprocessor
 from bot.config import settings
 from bot.application.personas import persona_engine
 from bot.application.proactive_chat import ProactiveCoordinator, proactive_store
-from bot.application.chat_continuation import ContinuationCoordinator, continuation_config
+from bot.application.chat_continuation import (
+    ContinuationCoordinator, continuation_config, refresh_continuation_quotas,
+)
 from bot.application.local_features import (
     FeatureRequest,
     FeatureDelivery,
@@ -647,16 +650,38 @@ proactive_coordinator = ProactiveCoordinator(
     connected=lambda bot: get_bots().get(str(bot.self_id)) is bot,
     groups=lambda: tuple(group_domains().all_group_ids()))
 _proactive_task = None
+_continuation_quota_scheduler = AsyncIOScheduler(timezone=settings.timezone)
+
+
+async def refresh_daily_continuation_quotas() -> None:
+    bot = next(iter(get_bots().values()), None)
+    if bot is not None:
+        await refresh_continuation_quotas(bot)
+
+
+@get_driver().on_bot_connect
+async def schedule_continuation_quota_catchup(bot: Bot) -> None:
+    # Date job keeps transport/API work off the connection and message handlers.
+    _continuation_quota_scheduler.add_job(
+        refresh_daily_continuation_quotas, "date", id="continuation-quota-catchup",
+        replace_existing=True, max_instances=1, misfire_grace_time=60)
 
 
 @get_driver().on_startup
 async def start_proactive_timer() -> None:
     global _proactive_task
     _proactive_task = asyncio.create_task(proactive_coordinator.run())
+    _continuation_quota_scheduler.add_job(
+        refresh_daily_continuation_quotas, "cron", hour=0, minute=0,
+        id="continuation-daily-quotas", replace_existing=True,
+        max_instances=1, coalesce=True, misfire_grace_time=3600)
+    _continuation_quota_scheduler.start()
 
 
 @get_driver().on_shutdown
 async def stop_proactive_timer() -> None:
+    if _continuation_quota_scheduler.running:
+        _continuation_quota_scheduler.shutdown(wait=False)
     await continuation_coordinator.close()
     if _proactive_task:
         _proactive_task.cancel()

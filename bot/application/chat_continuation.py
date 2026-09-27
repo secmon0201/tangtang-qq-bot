@@ -16,6 +16,7 @@ from bot.services.continuation_policy import (
     continuation_turn, continuation_turn_for,
 )
 from bot.services.pacing import passive_response_for
+from bot.services.qq_platform import QQPlatform
 
 
 @lru_cache(maxsize=1)
@@ -28,7 +29,6 @@ def continuation_config(store) -> ContinuationConfig:
     fields = {
         "idle_seconds": "idle_seconds", "hard_seconds": "hard_seconds",
         "max_attempts": "max_attempts", "max_silences": "silence_limit",
-        "group_daily": "group_daily_limit", "global_daily": "global_daily_limit",
         "debounce_seconds": "debounce_seconds", "max_debounce_seconds": "max_debounce_seconds",
     }
     values = {}
@@ -39,6 +39,32 @@ def continuation_config(store) -> ContinuationConfig:
         except (TypeError, ValueError):
             values[field_name] = default
     return ContinuationConfig(**values)
+
+
+async def refresh_continuation_quotas(bot, *, store=None, clock=time.time) -> None:
+    """Background-only daily snapshot; reconnects cannot repeat a day's API call."""
+    store = store or continuation_store()
+    now = clock()
+    if not store.begin_quota_refresh(now):
+        return
+    try:
+        groups = await asyncio.wait_for(QQPlatform(bot).group_list(), timeout=15)
+        counts = {}
+        for group in groups:
+            try:
+                group_id, count = int(group["group_id"]), int(group["member_count"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if group_id > 0 and count >= 0:
+                counts[group_id] = count
+        store.finish_quota_refresh(now, counts)
+        logger.info("Continuation daily quotas refreshed: groups={}, global=unlimited", len(counts))
+    except asyncio.CancelledError:
+        store.finish_quota_refresh(now, None)
+        raise
+    except Exception as exc:
+        store.finish_quota_refresh(now, None)
+        logger.warning("Continuation daily quota refresh failed ({}); keeping saved limits", type(exc).__name__)
 
 
 def has_other_addressee(event: Any) -> bool:
@@ -233,7 +259,7 @@ class ContinuationCoordinator:
             config = self.config()
             if admitted or not self._burst_current(burst) or window.attempts >= config.max_attempts:
                 return False
-            if not self.store().claim(event.group_id, burst.context.request_id, self.clock(), config):
+            if not self.store().claim(event.group_id, burst.context.request_id, self.clock()):
                 return False
             admitted = True
             window.attempts += 1

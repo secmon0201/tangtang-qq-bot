@@ -73,7 +73,8 @@ def test_only_confirmed_delivery_opens_same_group_same_user_window(tmp_path):
 def test_idle_and_hard_cap_are_not_reset_by_automatic_delivery(tmp_path):
     async def scenario():
         c, now, _, _, calls, ctx = make_case(tmp_path,
-            config=ContinuationConfig(max_attempts=20, debounce_seconds=0, max_debounce_seconds=0))
+            config=ContinuationConfig(idle_seconds=120, hard_seconds=600, max_attempts=20,
+                                      debounce_seconds=0, max_debounce_seconds=0))
         opener = message(now[0]); c.outcome(ctx(opener), "reply")
         started = now[0]
         for mid in range(2, 8):
@@ -118,16 +119,41 @@ def test_four_attempts_and_two_silences_close_window(tmp_path):
 
 def test_daily_caps_are_shared_across_personas_and_survive_restart(tmp_path):
     path = tmp_path / "continuation.db"
-    config = ContinuationConfig(group_daily=2, global_daily=3)
     store = ContinuationStore(path)
     now = 1789617600
-    assert store.claim(1001, "denia:one", now, config)
-    assert not store.claim(1001, "denia:one", now, config)
-    assert ContinuationStore(path).claim(1001, "tangtang:two", now, config)
-    assert not store.claim(1001, "denia:three", now, config)
-    assert store.claim(1002, "other:four", now, config)
-    assert not store.claim(1003, "other:five", now, config)
-    assert store.claim(1001, "next:day", now + 86400, config)
+    assert store.claim(1001, "denia:one", now)
+    assert not store.claim(1001, "denia:one", now)
+    for n in range(19):
+        assert ContinuationStore(path).claim(1001, f"tangtang:{n}", now)
+    assert not store.claim(1001, "denia:over", now)
+    for group in range(1002, 1008):
+        for n in range(20):
+            assert store.claim(group, f"other:{group}:{n}", now)
+        assert not store.claim(group, f"over:{group}", now)
+    assert store.claim(1001, "next:day", now + 86400)
+
+
+def test_coordinator_uses_saved_group_quota_and_explicit_calls_bypass_it(tmp_path):
+    async def scenario():
+        c, now, _, _, calls, ctx = make_case(tmp_path)
+        store = c.store()
+        store.begin_quota_refresh(now[0])
+        store.finish_quota_refresh(now[0], {1001: 250})
+        for n in range(59):
+            assert store.claim(1001, f"previous:{n}", now[0])
+        first = message(now[0])
+        c.outcome(ctx(first), "reply")
+        for mid in (2, 3):
+            follow = message(now[0], mid=mid)
+            assert c.offer(object(), follow, object(), ctx(follow), explicit=False)
+            await drain(c)
+        assert [kind for kind, *_ in calls] == ["automatic"]
+        explicit = message(now[0], mid=4)
+        assert c.offer(object(), explicit, object(), ctx(explicit), explicit=True)
+        await drain(c)
+        assert [kind for kind, *_ in calls] == ["automatic", "explicit"]
+        await c.close()
+    asyncio.run(scenario())
 
 
 def test_same_user_burst_merges_before_first_reply_without_blocking_other_group(tmp_path):

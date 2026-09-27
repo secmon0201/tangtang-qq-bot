@@ -33,7 +33,7 @@ flowchart LR
 
 - `bot/plugins` 负责事件、命令和启动/关闭钩子；`bot/application` 负责跨功能编排；`bot/services` 负责业务、存储、协议和渲染；`bot/integrations` 负责外部运行时兼容。禁止插件互相导入，服务不得反向导入应用或插件。
 - [bot/__main__.py](../bot/__main__.py) 只从插件注册表加载本地插件。游戏上游是独立依赖，不可通过修改上游源码实现本项目功能。
-- 服务与处理器应复用原有统计、日程、小游戏、缘分和游戏排行实现。不要让模型现场生成程序或另建平行业务实现。
+- 服务与处理器应复用原有统计、日程、小游戏和缘分实现；NTE/鸣潮命令属于上游，不在本地重做排行、帮助或渲染，也不要让模型现场生成游戏结果。
 - 群域、权限、功能开关以 SQLite 为运行权威；`.env.example` 是配置说明，不代表实例当前值。不要输出 `.env` 全文或将真实身份、域名、路径写入文档和测试。
 
 ## 按问题定位
@@ -44,7 +44,7 @@ flowchart LR
 | 群范围、权限、总控 | `bot/plugins/group_settings.py`、`bot/services/group_domains.py`、`bot/services/passive_settings.py` | [权限与范围](功能-权限与范围.md) |
 | 呼叫、合并消息、续聊、主动发言 | `bot/plugins/tangtang_chat.py`、`bot/application/chat_continuation.py`、`bot/application/proactive_chat.py`、`bot/services/chat_dispatch.py` | [糖糖聊天](功能-糖糖聊天.md)、`tests/test_chat_continuation.py` |
 | 模型请求、提示词、回复解析 | `bot/services/tangtang_chat.py`、`bot/services/tangtang_reply.py`、`bot/services/tangtang_runtime.py` | `tests/test_tangtang_chat.py`、`tests/test_tangtang_reply.py` |
-| 口语调用本地功能 | `bot/services/tangtang_features.py`、`bot/services/agent_plan.py`、`bot/services/local_skill_contract.py`、`bot/application/local_features.py` | [技能注册表](功能-技能注册表.md)、`tests/test_conversational_skills.py` |
+| 本地功能调用 | `bot/services/tangtang_features.py`、`bot/services/local_skill_contract.py`、`bot/application/local_features.py` | 仅明确 `#` 指令；普通自然语言不执行本地功能，`tests/test_conversational_skills.py` |
 | 人格选择、冻结版本、表情、语音 | `bot/application/personas.py`、`bot/services/persona_engine.py`、`bot/services/persona_profiles.py`、`bot/plugins/persona_management.py` | [人格与语音](功能-人格与语音.md) |
 | 长期记忆 V2、证据、行动回执 | `bot/services/persona_inbox.py`、`persona_cognition.py`、`persona_actions.py`、`persona_turn.py` | `tests/test_persona_v2_runtime.py`、`scripts/report_persona_memory.py` |
 | 自动个人画像 | `bot/application/persona_observer.py`、`bot/services/persona_profile_worker.py`、`persona_profile_store.py` | `tests/test_persona_profiles.py`、`scripts/report_persona_memory.py` |
@@ -56,14 +56,14 @@ flowchart LR
 
 ## 聊天与技能执行合同
 
-1. 日常聊天保留人格和群聊语境。明确功能请求才进入本地技能分支；主动聊天不能发起这些调用。
+1. 日常聊天保留人格和当前群的有序群聊语境。普通自然语言不进入本地技能分支；本地功能只由明确 `#` 指令触发，主动聊天不能发起这些调用。
 2. 常见完整请求由本地解析或有界计划识别；无法完整解析的组合请求交给主模型理解，不执行残缺计划或丢掉半句请求。
-3. 主模型获得稳定的普通用户工具全集，以原生 tool calling 提出最多六个有序动作；群开关和依赖可用性只进动态状态。迁移期继续兼容 `feature_calls` / `feature_call`，但同一请求只执行一种协议。模型输出是请求，不是授权或执行结果。
+3. 普通自然语言模型请求不携带本地工具 Schema，也不执行 `feature_calls` / `feature_call` 或原生本地工具调用；这些接口仅保留兼容代码和显式命令路径。模型输出是文本请求，不是本地执行授权。
 4. 严格校验动作与参数、处理器注册、群/全局开关、角色、技能发布范围及依赖。整批预检后每步仍需复核；停用、切换人格或过期会话不能继续发旧结果。
 5. 处理器调用原有实现。合并消息须在调用边界还原为原始 OneBot 事件；不能仅凭对象有 `group_id` 就假定它是 `GroupMessageEvent`。
 6. `FeatureDelivery` 将发送绑定原事件并核验平台 `message_id`。只有实际确认的输出才记作送达；部分失败要如实反馈，多步执行不具有事务回滚能力。
 
-工具注册以 `agent_tools.py` 为准，动作参数与旧兼容读取还受 `ACTION_CONTRACTS` 约束。当前 44 个稳定工具包含两个知识检索、30 个只读 QQ 动作和 12 个显式状态动作。只读部分覆盖排行、日程、帮助、状态、本人印象、受限档案、缘分查询、美图及 NTE/鸣潮细分排行；写部分覆盖缘分抽取／强取／离婚和四类小游戏操作。档案和状态目标只能是本人或本轮消息唯一真实 `at`，原文和图片不回灌模型。写工具只走原生调用，每批最多一个，并使用模型请求前状态指纹、插件锁内复核和 `request_id + action + sequence` 幂等占位；主动聊天、历史、摘要和引用不能触发。NTE／鸣潮 Agent 动作还必须通过 `bot/integrations/game_workflow_adapter.py` 的审核枚举构造类型化请求，禁止命令字符串执行。公告发布仍未开放。
+工具注册以 `agent_tools.py` 为准，动作参数与旧兼容读取还受 `ACTION_CONTRACTS` 约束。当前稳定工具不包含 NTE/鸣潮动作；游戏命令只通过明确的 `#nte`/`#ww` 消息进入上游连接器。档案和状态目标只能是本人或本轮消息唯一真实 `at`，原文和图片不回灌模型。写工具只走原生调用，每批最多一个，并使用模型请求前状态指纹、插件锁内复核和 `request_id + action + sequence` 幂等占位；主动聊天、历史、摘要和引用不能触发。公告发布仍未开放。
 
 新增聊天动作需要一起更新：原功能处理器、动作合同、技能清单 `local_actions`、路由/执行边界测试及功能文档。确认旧直接命令仍复用相同业务结果，禁止模型编造榜单或伪称已经完成。
 
@@ -73,7 +73,7 @@ flowchart LR
 | --- | --- | --- |
 | 当前请求与近期互动 | 当前输入、被选入的历史与近期群消息 | 所有历史都已放入一次模型请求 |
 | 群聊话题摘要 | 原始群消息库；旧摘要加新增消息，按话题提交新版本后推进游标；当前只向达妮娅注入 | 个人性格画像或可全文检索的聊天档案 |
-| 个人长期记忆 V2 | 接收时持久化证据；有来源、修订、范围和遗忘限制；同一用户可跨群延续 | 原始群聊天记录跨群共享，或修改角色核心身份 |
+| 个人长期记忆 V2 | 接收时持久化证据；有来源、修订、当前群范围和遗忘限制；不同群互不继承 | 原始群聊天记录跨群共享，或修改角色核心身份 |
 | 自动个人画像 | 独立生成与复核任务；已审版本可用，失败保留上一有效版本和可恢复任务 | 模型随口猜测，或刚收到消息就全部整理完成 |
 | 公共成长与话题素材 | 独立来源、审核、开关和后台任务 | 个人记忆队列或群摘要队列 |
 
@@ -89,8 +89,8 @@ flowchart LR
 
 | 所有者 | 负责内容 |
 | --- | --- |
-| `tangtang_chat` 插件 | 呼叫与聊天入口、原始群消息/观察采集、续聊协调、主动计时任务、本地技能调用 |
-| `persona_management` 插件 | 人格管理命令；启动公共后台、个人记忆、画像、群摘要和语音监督；进程关闭时取消任务、关闭调度器和语音客户端 |
+| `tangtang_chat` 插件 | 呼叫与聊天入口、原始群消息/观察采集、续聊协调、每日凌晨群人数额度快照及断连后补刷调度、主动计时任务、本地技能调用 |
+| `persona_management` 插件 | 人格管理命令；启动公共后台、个人记忆、每日群摘要和语音监督；个人画像自动后台已停用；进程关闭时取消任务、关闭调度器和语音客户端 |
 | `tangtang_model_switch`、`tangtang_proactive` 插件 | 模型/主动策略配置，注册表含 `after=("tangtang_chat",)` |
 | `group_settings` 插件 | 总控和群开关，也直接使用共享 `persona_engine` |
 | 共享服务与运行数据 | 模型配置、人格引擎、数据库、表情与语音，不能仅按文件名前缀删除 |

@@ -61,8 +61,7 @@ def test_single_message_builds_specific_cross_group_profile(cognition):
     assert '认真修改画稿' in cognition.own_impression(201)
     assert '认真修改画稿' not in cognition.own_impression(202)
     snap = cognition.snapshot('cross', 201, 102, [])
-    assert snap.claims[0]['content'] == '这次在认真修改画稿'
-    assert '修改画稿' in snap.claims[0]['basis'][0]['quote']
+    assert not snap.claims
 
 
 def test_single_event_cannot_be_generalized_and_subjects_are_isolated(cognition):

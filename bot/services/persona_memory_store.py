@@ -169,6 +169,10 @@ class PersonMemoryStore:
         scope = fact_scope(content, group_id) if scope_group is None else scope_group
         if self.global_personal:
             scope, status = 0, 'active'
+        elif scope == 0 and int(group_id) > 0:
+            # Personal memory is group-local. Legacy scope-zero rows remain in
+            # storage for audit but are no longer created by new observations.
+            scope = int(group_id)
         clean = normalize(content)
         event = f"{group_id}:{message_id}" if message_id else "unknown:" + hashlib.sha256(clean.encode()).hexdigest()
         with self.connect() as conn:

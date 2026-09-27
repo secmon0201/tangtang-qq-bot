@@ -9,14 +9,14 @@ def _kernel(tmp_path):
     return db, TangtangMemoryKernel(db, lambda: "2026-09-06T12:00:00+08:00")
 
 
-def test_explicit_memory_is_shared_per_person_not_other_users(tmp_path):
+def test_explicit_memory_is_group_local_and_not_other_users(tmp_path):
     _db, kernel = _kernel(tmp_path)
     kernel.observe_user_message(
         group_id=1, user_id=2, message_id="m1", text="糖糖记住我喜欢草莓"
     )
     assert "喜欢草莓" in kernel.recall(1, 2, "草莓").prompt_text()
     assert kernel.recall(1, 3, "草莓").rows == ()
-    assert "喜欢草莓" in kernel.recall(9, 2, "草莓").prompt_text()
+    assert "喜欢草莓" not in kernel.recall(9, 2, "草莓").prompt_text()
 
 
 def test_stable_preference_needs_repeated_evidence(tmp_path):

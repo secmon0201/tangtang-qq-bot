@@ -115,18 +115,16 @@ class TangtangMemoryKernel:
                           impression_instruction(), self.impressions.prompt(user_id)))
         return '\n'.join(dict.fromkeys(part for part in parts if part))
 
-    def control_reply(self, user_id: int, text: str) -> str:
-        if not self.people.global_personal:
-            return ''
+    def control_reply(self, user_id: int, text: str, group_id: int = 0) -> str:
         if removal_requested(text):
             return '这里不提供遗忘、删除或清空资料的操作。你可以查看我对你的印象，也可以纠正记错的个人资料。'
         if impression_requested(text):
-            return self.impression_text(user_id)
+            return self.impression_text(user_id, group_id)
         return ''
 
-    def impression_text(self, user_id: int) -> str:
+    def impression_text(self, user_id: int, group_id: int = 0) -> str:
         text = self.impressions.view(user_id)
-        facts = self.recall(0, user_id, '', limit=6).rows
+        facts = self.recall(group_id, user_id, '', limit=6).rows
         if facts:
             text += '\n你曾告诉我的资料：\n' + '\n'.join(f"· {r['content']}" for r in facts)
         return text
@@ -308,8 +306,9 @@ class TangtangMemoryKernel:
         return self.people.restrict(user_id, 0, query, restore=True)
 
     def state_prompt(self, group_id: int, user_id: int) -> str:
-        relationship = (self.people.relationship(user_id) if self.people.enabled()
-                        else self.db.relationship_state(group_id, user_id))
+        # The legacy person_relations table is global. Chat state must use the
+        # current-group relation store even when legacy memory is enabled.
+        relationship = self.db.relationship_state(group_id, user_id)
         persona = self.db.persona_state(group_id)
         familiarity = float(relationship.get("familiarity") or 0.0)
         warmth = float(relationship.get("warmth") or 0.5)
@@ -325,7 +324,7 @@ class TangtangMemoryKernel:
         personal_label = "暂时有点别扭" if personal_mood < .49 else "愉快" if personal_mood > .51 else "自然"
         return (
             "[当前关系与状态（只影响语气，不要直接说出数值或标签）]\n"
-            f"跨群关系：{relation_label}，态度：{warmth_label}，对这位用户的短时情绪：{personal_label}；群内状态：{mood_label}。不要迁怒其他人。保持群友关系，不发展排他或恋爱关系。"
+            f"群内关系：{relation_label}，态度：{warmth_label}，对这位用户的短时情绪：{personal_label}；群内状态：{mood_label}。不要迁怒其他人。保持群友关系，不发展排他或恋爱关系。"
         )
 
     def update_states_after_reply(

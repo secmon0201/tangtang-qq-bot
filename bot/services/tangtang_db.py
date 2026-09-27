@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS tangtang_relationship_state (
     user_id INTEGER NOT NULL,
     familiarity REAL NOT NULL DEFAULT 0,
     warmth REAL NOT NULL DEFAULT 0.5,
+    mood REAL NOT NULL DEFAULT 0.5,
     interaction_count INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (group_id, user_id)
@@ -151,6 +152,27 @@ CREATE TABLE IF NOT EXISTS group_summary_cursors (
     applied_message_id INTEGER NOT NULL DEFAULT 0,
     source TEXT NOT NULL DEFAULT 'persona',
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS group_daily_digests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    batch_index INTEGER NOT NULL,
+    cutoff_message_id INTEGER NOT NULL,
+    summary TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(group_id, day, batch_index)
+);
+CREATE INDEX IF NOT EXISTS idx_group_daily_digests_scope
+    ON group_daily_digests(group_id, day, batch_index);
+CREATE TABLE IF NOT EXISTS group_daily_digest_runs (
+    group_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'started',
+    cutoff_message_id INTEGER NOT NULL DEFAULT 0,
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(group_id, day)
 );
 CREATE TABLE IF NOT EXISTS chat_context_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,6 +308,14 @@ class TangtangDb:
             conn.execute(
                 "ALTER TABLE tangtang_group_messages "
                 "ADD COLUMN consumed INTEGER NOT NULL DEFAULT 0"
+            )
+        relation_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(tangtang_relationship_state)")
+        }
+        if "mood" not in relation_columns:
+            conn.execute(
+                "ALTER TABLE tangtang_relationship_state "
+                "ADD COLUMN mood REAL NOT NULL DEFAULT 0.5"
             )
         call_columns = {
             row["name"]
@@ -542,7 +572,7 @@ class TangtangDb:
             ).fetchone()
         return dict(row) if row is not None else {
             "group_id": int(group_id), "user_id": int(user_id),
-            "familiarity": 0.0, "warmth": 0.5, "interaction_count": 0,
+            "familiarity": 0.0, "warmth": 0.5, "mood": 0.5, "interaction_count": 0,
         }
 
     def update_relationship_state(
@@ -563,9 +593,12 @@ class TangtangDb:
                 "UPDATE tangtang_relationship_state SET "
                 "interaction_count = interaction_count + 1, "
                 "familiarity = MIN(1.0, familiarity + 0.01), "
-                "warmth = MIN(1.0, MAX(0.0, warmth + ?)), updated_at = ? "
+                "warmth = MIN(1.0, MAX(0.0, warmth + ?)), "
+                "mood = MIN(1.0, MAX(0.0, mood + ?)), updated_at = ? "
                 "WHERE group_id = ? AND user_id = ?",
-                (max(-0.03, min(0.03, float(warmth_delta))), now, int(group_id), int(user_id)),
+                (max(-0.03, min(0.03, float(warmth_delta))),
+                 max(-0.03, min(0.03, float(warmth_delta))), now,
+                 int(group_id), int(user_id)),
             )
 
     def persona_state(self, group_id: int) -> dict[str, Any]:
@@ -753,6 +786,69 @@ class TangtangDb:
                 (int(group_id), cursor, max(1, int(limit))),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def latest_group_message_id(self, group_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(id), 0) FROM tangtang_group_messages WHERE group_id=?",
+                (int(group_id),),
+            ).fetchone()
+        return int(row[0] or 0)
+
+    def group_daily_digest_pending(self, group_id: int, *, after_id: int = 0,
+                                   cutoff_id: int = 0, limit: int = 2000) -> list[dict[str, Any]]:
+        upper = int(cutoff_id) if int(cutoff_id) > 0 else 2**63 - 1
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tangtang_group_messages WHERE group_id=? AND id>? AND id<=? "
+                "ORDER BY id ASC LIMIT ?",
+                (int(group_id), int(after_id), upper, max(1, int(limit))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def latest_group_daily_digest_cutoff(self, group_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(cutoff_message_id), 0) "
+                "FROM group_daily_digests WHERE group_id=?",
+                (int(group_id),),
+            ).fetchone()
+        return int(row[0] or 0)
+
+    def claim_group_daily_digest_run(self, group_id: int, day: str, cutoff_id: int, *, now: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO group_daily_digest_runs "
+                "(group_id,day,status,cutoff_message_id,started_at) VALUES(?,?, 'started', ?, ?)",
+                (int(group_id), str(day), int(cutoff_id), str(now)),
+            )
+        return cursor.rowcount == 1
+
+    def finish_group_daily_digest_run(self, group_id: int, day: str, *, now: str, status: str = 'completed') -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE group_daily_digest_runs SET status=?,finished_at=? WHERE group_id=? AND day=?",
+                (str(status), str(now), int(group_id), str(day)),
+            )
+
+    def insert_group_daily_digest(self, group_id: int, day: str, batch_index: int,
+                                  cutoff_id: int, summary: str, *, now: str) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO group_daily_digests "
+                "(group_id,day,batch_index,cutoff_message_id,summary,created_at) VALUES(?,?,?,?,?,?)",
+                (int(group_id), str(day), int(batch_index), int(cutoff_id), str(summary), str(now)),
+            )
+        return cursor.rowcount == 1
+
+    def group_daily_digest_lines(self, group_id: int, *, limit: int = 30) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT day,batch_index,summary FROM group_daily_digests "
+                "WHERE group_id=? ORDER BY day DESC,batch_index DESC LIMIT ?",
+                (int(group_id), max(1, int(limit))),
+            ).fetchall()
+        return [f"{row['day']} 第{int(row['batch_index']) + 1}段：{row['summary']}" for row in reversed(rows)]
 
     def group_summary_seed(
         self,

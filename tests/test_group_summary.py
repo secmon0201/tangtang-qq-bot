@@ -12,6 +12,7 @@ from bot.services.group_summary import (  # noqa: E402
     GroupSummaryService,
     GroupSummaryWorker,
     SummaryTopic,
+    parse_daily_digest,
     parse_summary_json,
 )
 from bot.services.persona_profiles import ChatContext, load_personas  # noqa: E402
@@ -68,6 +69,59 @@ class RoutingProvider(SummaryProvider):
             self.route_prompts.append(prompt)
             return json.dumps(self.route, ensure_ascii=False), {"total_tokens": 20}
         return await super().generate(config, persona, prompt, images)
+
+
+class DailyDigestProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.prompts: list[str] = []
+
+    async def generate(self, config, persona, prompt, images=()):
+        self.calls += 1
+        self.prompts.append(prompt)
+        return json.dumps({"summary": f"第{self.calls}段已归档"}, ensure_ascii=False), {
+            "total_tokens": 20,
+        }
+
+
+def test_daily_digest_parsing_and_group_isolation(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    with db._connect() as conn:
+        conn.executemany(
+            "INSERT INTO tangtang_group_messages "
+            "(group_id,user_id,nickname,text,message_id,created_at) VALUES(?,?,?,?,?,?)",
+            [
+                (1001, 1, "甲", f"消息{index}", str(index), "2026-09-19T10:00:00+08:00")
+                for index in range(6000)
+            ],
+        )
+    db.insert_group_message(
+        group_id=1002, user_id=2, nickname="乙", text="别群消息",
+        message_id="other", created_at="2026-09-19T10:00:00+08:00",
+    )
+    provider = DailyDigestProvider()
+    service = GroupSummaryService(
+        db, provider, Loader(enabled_config(TANGTANG_GROUP_SUMMARY_ENABLED="true")),
+        chat_id=lambda: "2026-09-20T00:00:05+08:00",
+    )
+    rows = db.group_daily_digest_pending(
+        1001, cutoff_id=db.latest_group_message_id(1001), limit=6000
+    )
+    for batch_index in range(3):
+        batch = rows[batch_index * 2000:(batch_index + 1) * 2000]
+        assert asyncio.run(service.apply_daily_digest(1001, "2026-09-20", batch_index, batch, rows[-1]["id"]))
+    assert provider.calls == 3
+    assert len(db.group_daily_digest_lines(1001, limit=10)) == 3
+    assert db.group_daily_digest_lines(1002, limit=10) == []
+    assert db.latest_group_daily_digest_cutoff(1001) == rows[-1]["id"]
+    assert parse_daily_digest('{"summary":"保留顺序"}') == "保留顺序"
+
+
+def test_daily_digest_claim_is_once_per_group_and_day(tmp_path):
+    db = TangtangDb(tmp_path / "tangtang.db")
+    assert db.claim_group_daily_digest_run(1001, "2026-09-20", 10, now="now")
+    assert not db.claim_group_daily_digest_run(1001, "2026-09-20", 20, now="later")
+    assert db.claim_group_daily_digest_run(1001, "2026-09-21", 20, now="next")
 
 
 def test_summary_merge_is_incremental_and_advances_cursor(tmp_path):
@@ -280,16 +334,8 @@ def test_summary_parse_rejects_invalid_json():
 
 def test_prompt_includes_summary_and_unlimited_history(tmp_path, monkeypatch):
     service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
-    service.db.group_summary_merge(
-        1001,
-        topic_id=None,
-        title="聚会安排",
-        summary="周六下午三点聚会，地点未定。",
-        keywords=("聚会",),
-        participants=("甲",),
-        unresolved=("地点未定",),
-        state="active",
-        message_ids=(1,),
+    service.db.insert_group_daily_digest(
+        1001, "2026-09-19", 0, 1, "周六下午三点聚会，地点未定。",
         now="2026-09-19T10:00:00+08:00",
     )
     config = enabled_config(
@@ -311,10 +357,9 @@ def test_prompt_includes_summary_and_unlimited_history(tmp_path, monkeypatch):
 
 def test_group_summary_is_not_injected_for_tangtang(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
-    service.db.group_summary_merge(
-        1001, topic_id=None, title="聚会安排", summary="周六下午三点聚会。",
-        keywords=("聚会",), participants=("甲",), unresolved=(),
-        state="active", message_ids=(1,), now="2026-09-19T10:00:00+08:00",
+    service.db.insert_group_daily_digest(
+        1001, "2026-09-19", 0, 1, "周六下午三点聚会。",
+        now="2026-09-19T10:00:00+08:00",
     )
     config = enabled_config(
         TANGTANG_GROUP_SUMMARY_ENABLED="true",
@@ -349,5 +394,5 @@ def test_unlimited_history_keeps_the_entire_oldest_message(tmp_path, monkeypatch
     history = service.db.model_reply_lines(3, 1001, 10, None)
     assert oldest in history
     config = enabled_config(TANGTANG_MAX_INPUT_CHARS="0", TANGTANG_HISTORY_CHARS="0")
-    prompt = service._build_prompt(group_message(group_id=1001, text="继续"), config)
+    prompt = service._build_prompt(group_message(group_id=1001, text="记得我吗"), config)
     assert "结尾标记" in prompt

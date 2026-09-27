@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS persona_claim_support(
  memory_id INTEGER NOT NULL, version INTEGER NOT NULL, event_key TEXT NOT NULL,
  quote TEXT NOT NULL, stance TEXT NOT NULL, PRIMARY KEY(memory_id,version,event_key,quote,stance));
 CREATE TABLE IF NOT EXISTS persona_state_factors(
- id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, topic TEXT NOT NULL,
+ id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, scope_group INTEGER NOT NULL DEFAULT 0,
+ topic TEXT NOT NULL,
  cause TEXT NOT NULL, label TEXT NOT NULL, strength REAL NOT NULL,
  half_life REAL NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS persona_episodes(

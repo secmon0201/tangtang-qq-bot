@@ -15,13 +15,13 @@ def remember(k, text, group=1001, event='one'):
     return k.observe_user_message(group_id=group, user_id=2001, message_id=event, text=text)
 
 
-def test_same_person_across_groups_but_local_alias_and_other_persona_are_separate(tmp_path):
+def test_same_person_isolated_by_group_and_other_persona_is_separate(tmp_path):
     k = kernel(tmp_path)
     remember(k, '记住我喜欢草莓')
     remember(k, '记住本群叫我团长', event='two')
     remember(k, '只在本群记住我喜欢西瓜', event='three')
     assert len(k.recall(1001, 2001, '').rows) == 3
-    assert len(k.recall(1002, 2001, '').rows) == 1
+    assert len(k.recall(1002, 2001, '').rows) == 0
     assert not k.recall(1002, 2002, '').rows
     assert not kernel(tmp_path, 'tangtang').recall(1002, 2001, '').rows
 
@@ -32,16 +32,17 @@ def test_independent_evidence_and_explicit_correction(tmp_path):
         remember(k, '我喜欢草莓')
     assert not k.recall(1001, 2001, '草莓').rows
     remember(k, '我喜欢草莓', group=1002, event='two')
-    assert k.recall(1002, 2001, '草莓').rows
+    assert not k.recall(1002, 2001, '草莓').rows
     remember(k, '我现在不喜欢草莓了', group=1002, event='three')
-    rows = k.recall(1001, 2001, '草莓').rows
+    rows = k.recall(1002, 2001, '草莓').rows
     assert len(rows) == 1 and '不喜欢' in rows[0]['content']
+    assert not k.recall(1001, 2001, '草莓').rows
 
 
-def test_profession_is_shared_while_conversation_history_stays_local(tmp_path):
+def test_profession_and_conversation_history_stay_local(tmp_path):
     k = kernel(tmp_path)
     remember(k, '记住我是教师')
-    assert '我是教师' in k.recall(1002, 2001, '我的职业').prompt_text()
+    assert '我是教师' not in k.recall(1002, 2001, '我的职业').prompt_text()
     assert not k.recall(1002, 2002, '我的职业').rows
     assert not kernel(tmp_path, 'tangtang').recall(1002, 2001, '我的职业').rows
     for group, text in ((1001, '抽卡五星先聊配队'), (1002, '抽卡五星先聊养成')):
@@ -74,7 +75,7 @@ def test_forgetting_blocks_history_relearning_and_rollback_until_explicit_restor
     assert k.recall(1001, 2001, '草莓').rows
     k.apply_forget_request(1001, 2001, '只在本群别提草莓')
     assert not k.recall(1001, 2001, '草莓').rows
-    assert k.recall(1002, 2001, '草莓').rows
+    assert not k.recall(1002, 2001, '草莓').rows
 
 
 def test_shared_relationship_concurrent_updates_dedup_and_mood_decay(tmp_path):
@@ -117,7 +118,7 @@ def test_additive_migration_is_idempotent_and_does_not_sum_familiarity(tmp_path)
     assert migrate_people(k.db)['people_processed'] == 1
     assert migrate_people(k.db) == {'already_applied': 1}
     assert k.people.relationship(2001)['familiarity'] == .01
-    assert k.recall(1002, 2001, '草莓').rows
+    assert not k.recall(1002, 2001, '草莓').rows
     assert k.db.active_memories(1001, 2001)  # legacy rows retained
 
 

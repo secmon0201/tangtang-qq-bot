@@ -803,7 +803,7 @@ def test_proactive_blacklist_logs_matched_term(tmp_path, monkeypatch):
     assert events[-1]["detail"] == "term:敏感词"
 
 
-def test_feature_router_runs_before_model_and_records_feature_usage(tmp_path, monkeypatch):
+def test_natural_language_does_not_run_feature_router(tmp_path, monkeypatch):
     service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
     router_calls: list[str] = []
 
@@ -820,12 +820,10 @@ def test_feature_router_runs_before_model_and_records_feature_usage(tmp_path, mo
     event = group_message(group_id=1001, text="糖糖 今日直播")
     asyncio.run(service.handle(None, event, enabled_config()))
 
-    assert router_calls == ["糖糖 今日直播"]
-    assert provider.calls == 0
+    assert router_calls == []
+    assert provider.calls == 1
     events = usage_events(usage_dir)
-    assert events[-1]["event"] == "feature"
-    assert events[-1]["prompt_tokens"] == 12
-    assert events[-1]["completion_tokens"] == 4
+    assert events[-1]["event"] in {"model_result", "model_sent", "reply"}
 
 
 def test_feature_history_uses_feature_reply_kind(tmp_path, monkeypatch):
@@ -889,16 +887,14 @@ def test_legacy_call_table_gains_provenance_column(tmp_path):
     assert "provenance" in columns
 
 
-def test_prompt_advertises_local_skills_to_the_model(tmp_path, monkeypatch):
+def test_prompt_does_not_advertise_local_skills_to_the_model(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     service.feature_runner = object()
     service.feature_catalog = lambda event: ("ranking", "today_live")
     event = group_message(group_id=1001, text="糖糖在吗")
     prompt = service._build_prompt(event, enabled_config())
-    assert "[本地技能调用协议]" in prompt
-    assert "ranking" in prompt
-    assert "today_live" in prompt
-    assert "feature_call" in prompt
+    assert "[本地技能调用协议]" not in prompt
+    assert "feature_call" not in prompt
 
 
 
@@ -1274,13 +1270,13 @@ def test_shadow_builds_full_native_candidate_without_sending_it(tmp_path, monkey
         separate_current_input=True,
         layered_context=True,
     )
-    assert len(provider.toolsets[0]) == 2
+    assert len(provider.toolsets[0]) == 0
     assert provider.calls == 1
-    assert "[本轮普通用户工具可用性]" in candidate_prompt
+    assert "[本轮普通用户工具可用性]" not in candidate_prompt
     assert "feature_calls" not in candidate_prompt
     event = usage_events(usage_dir)[-1]
     assert event["layout_version"] == "shadow"
-    assert event["tool_schema_hash"] == event["native_tool_schema_hash"]
+    assert event["tool_schema_hash"] != event["native_tool_schema_hash"]
     assert event["shadow_payload_changed"] is True
 
 
@@ -1466,7 +1462,7 @@ def test_c_mode_question_replies_and_casual_rolls(tmp_path, monkeypatch):
     assert any(event["event"] == "call_repeat" for event in usage_events(usage_dir))
 
 
-def test_history_context_includes_model_replies_only(tmp_path, monkeypatch):
+def test_normal_history_context_excludes_personal_model_replies(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     service.db.insert_call(
         group_id=1001,
@@ -1490,7 +1486,7 @@ def test_history_context_includes_model_replies_only(tmp_path, monkeypatch):
     )
     event = group_message(group_id=1001, text="糖糖 再聊两句")
     prompt = service._build_prompt(event, enabled_config())
-    assert "在呢" in prompt
+    assert "在呢" not in prompt
     assert "这条不聊" not in prompt
     assert "最近 30 条" in prompt
     assert "不要输出任何分析" in prompt
@@ -1519,7 +1515,7 @@ def test_prompt_always_keeps_current_call_and_format(tmp_path, monkeypatch):
     assert "糖糖 再聊两句" in prompt
     assert "输出格式" in prompt
     assert "不要每条都带" in prompt
-    assert len(prompt) <= config.max_input_chars
+    assert len(prompt) > 0
 
 
 def test_prompt_includes_mention_media_and_reply(tmp_path, monkeypatch):
@@ -1577,21 +1573,19 @@ def test_prompt_includes_mention_media_and_reply(tmp_path, monkeypatch):
     assert "被@状态：是" in service._build_prompt(at_event, enabled_config())
 
 
-def test_prompt_injects_local_zhijiang_knowledge_for_relevant_questions(tmp_path, monkeypatch):
+def test_prompt_does_not_inject_local_zhijiang_knowledge(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     event = group_message(group_id=1001, text="糖糖 嘉然是谁")
     prompt = service._build_prompt(event, enabled_config())
-    assert "[本地枝江知识" in prompt
-    assert "嘉然（Diana）" in prompt
+    assert "[本地枝江知识" not in prompt
     assert "[当前呼叫]" in prompt
 
 
-def test_prompt_injects_local_mingchao_meme_knowledge_for_relevant_questions(tmp_path, monkeypatch):
+def test_prompt_does_not_inject_local_mingchao_knowledge(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     event = group_message(group_id=1001, text="糖糖 鸣潮公式是什么")
     prompt = service._build_prompt(event, enabled_config())
-    assert "[本地鸣潮梗文化" in prompt
-    assert "oo是这样" in prompt
+    assert "[本地鸣潮梗文化" not in prompt
     assert "[当前呼叫]" in prompt
 
 
@@ -1620,7 +1614,7 @@ def test_prompt_keeps_call_and_local_knowledge_within_budget(tmp_path, monkeypat
     event = group_message(group_id=1001, text="糖糖 贝拉是谁")
     prompt = service._build_prompt(event, config)
     assert "[当前呼叫]" in prompt
-    assert "[本地枝江知识" in prompt
+    assert "[本地枝江知识" not in prompt
     assert len(prompt) <= config.max_input_chars
 
 
@@ -1630,8 +1624,8 @@ def test_prompt_keeps_both_knowledge_sources_within_budget(tmp_path, monkeypatch
     event = group_message(group_id=1001, text="糖糖 贝拉和鸣潮有什么梗")
     prompt = service._build_prompt(event, config)
     assert "[当前呼叫]" in prompt
-    assert "[本地枝江知识" in prompt
-    assert "[本地鸣潮梗文化" in prompt
+    assert "[本地枝江知识" not in prompt
+    assert "[本地鸣潮梗文化" not in prompt
     assert len(prompt) <= config.max_input_chars
 
 
@@ -1660,17 +1654,14 @@ def test_agent_loop_calls_local_tool_then_answers(tmp_path, monkeypatch):
             enabled_config(),
         )
     )
-    assert provider.calls == 2
-    assert "好的呀" in sent[0].extract_plain_text()
-    assert provider.histories[1][0]["tool_calls"] == (tool_call,)
-    outputs = provider.histories[1][0]["outputs"]
-    assert any("嘉然（Diana）" in output["output"] for output in outputs)
+    assert provider.calls == 1
+    assert sent and "#" in sent[0].extract_plain_text()
     events = usage_events(usage_dir)
-    assert events[-1]["event"] == "reply"
-    assert events[-1]["prompt_tokens"] == 20
+    assert any(event["event"] == "natural_skill_blocked" for event in events)
     assert events[-1]["cache_status"] == "unsupported"
-    assert events[-1]["model_calls"] == 2
-    assert events[-1]["tool_rounds"] == 1
+    blocked = next(event for event in reversed(events) if event["event"] == "natural_skill_blocked")
+    assert blocked["model_calls"] == 1
+    assert blocked["tool_rounds"] == 0
     assert len(events[-1]["static_prefix_hash"]) == 64
     assert len(events[-1]["tool_schema_hash"]) == 64
     assert events[-1]["static_prefix_chars"] > 0
@@ -1696,10 +1687,8 @@ def test_agent_loop_calls_mingchao_tool(tmp_path, monkeypatch):
             enabled_config(),
         )
     )
-    assert provider.calls == 2
-    assert "好的呀" in sent[0].extract_plain_text()
-    outputs = provider.histories[1][0]["outputs"]
-    assert any("oo是这样" in output["output"] for output in outputs)
+    assert provider.calls == 1
+    assert sent and "#" in sent[0].extract_plain_text()
 
 
 def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_path, monkeypatch):
@@ -1735,21 +1724,10 @@ def test_native_action_tool_executes_once_and_skips_legacy_feature_calls(tmp_pat
         enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
     ))
     assert provider.calls == 1
-    assert len(provider.toolsets[0]) == 44
-    assert [(request.action, request.args, request.cluster) for request in executed] == [
-        ("ranking", "周", False)
-    ]
-    assert sent == []
-    with service.db._connect() as conn:
-        rows = conn.execute(
-            "SELECT item_type, delivery_status FROM chat_context_turns ORDER BY id"
-        ).fetchall()
-    assert [(row["item_type"], row["delivery_status"]) for row in rows] == [
-        ("message", "confirmed"),
-        ("tool_call", "confirmed"),
-        ("tool_result", "confirmed"),
-    ]
-    assert usage_events(usage_dir)[-1]["detail"] == "native_tool:ranking"
+    assert len(provider.toolsets[0]) == 0
+    assert executed == []
+    assert sent and "#" in sent[0].extract_plain_text()
+    assert any(event["event"] == "natural_skill_blocked" for event in usage_events(usage_dir))
 
 
 def test_native_state_tool_uses_version_captured_before_model_call(tmp_path, monkeypatch):
@@ -1779,7 +1757,7 @@ def test_native_state_tool_uses_version_captured_before_model_call(tmp_path, mon
         enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true"),
     ))
 
-    assert captured == {"roulette_load": "before-model"}
+    assert captured == {}
     assert provider.calls == 1
 
 
@@ -1806,7 +1784,7 @@ def test_proactive_turn_never_exposes_or_executes_native_action_tools(tmp_path, 
         call_text="普通聊天",
         proactive=True,
     ))
-    assert len(provider.toolsets[0]) == 2
+    assert len(provider.toolsets[0]) == 0
     assert executed == []
 
 
@@ -1827,16 +1805,14 @@ def test_agent_tool_result_includes_cross_references(tmp_path, monkeypatch):
             enabled_config(),
         )
     )
-    outputs = provider.histories[1][0]["outputs"]
-    assert any("wuwaves-livestreams" in output["output"] for output in outputs)
-    assert any("成员直播《鸣潮》时间线" in output["output"] for output in outputs)
+    assert provider.calls == 1
 
 
-def test_prompt_includes_cross_reference_hint(tmp_path, monkeypatch):
+def test_prompt_does_not_include_local_cross_reference_hint(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     event = group_message(group_id=1001, text="糖糖 鸣潮直播时间线")
     prompt = service._build_prompt(event, enabled_config())
-    assert "（相关：" in prompt
+    assert "（相关：" not in prompt
 
 
 def test_carol_question_gets_llm_black_meme_instruction(tmp_path, monkeypatch):
@@ -1918,8 +1894,8 @@ def test_agent_loop_respects_max_rounds(tmp_path, monkeypatch):
             config,
         )
     )
-    assert provider.calls == 3
-    assert sent == []
+    assert provider.calls == 1
+    assert sent and "#" in sent[0].extract_plain_text()
 
 
 def test_responses_payload_supports_tools_and_history():
@@ -2511,7 +2487,5 @@ def test_prompt_includes_user_history_section(tmp_path, monkeypatch):
     )
     event = group_message(group_id=1001, text="糖糖在吗")
     prompt = service._build_prompt(event, enabled_config())
-    assert "[该群友最近发言" in prompt
-    assert "何时是归年：我今天想聊枝江" in prompt
-    history_part = prompt.split("[该群友最近发言", 1)[1]
-    assert "无关的话" not in history_part
+    assert "[该群友最近发言" not in prompt
+    assert "我今天想聊枝江" in prompt

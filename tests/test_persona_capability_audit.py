@@ -60,7 +60,7 @@ def test_failed_explicit_save_is_not_silently_retried_after_failure_receipt(tmp_
         monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
         await service.handle(None, event("娅娅，记住" + source), config)
         assert sent and "保存失败" in sent[0]
-        assert not memory.semantic.recall(1002, 2001, "创作经历"), "Sent failure receipt must remain true after delivery"
+        assert not memory.semantic.recall(1001, 2001, "创作经历"), "Sent failure receipt must remain true after delivery"
         assert len(attempts) == 1
     asyncio.run(run())
 
@@ -81,7 +81,7 @@ def test_growth_storage_failure_does_not_disable_delivered_personal_memory(tmp_p
             return {"message_id": 93}
         monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
         await service.handle(None, event("娅娅，" + source), config)
-        assert memory.semantic.recall(1002, 2001, "创作经历"), "Independent growth failure must not suppress acknowledged personal memory"
+        assert memory.semantic.recall(1001, 2001, "创作经历"), "Independent growth failure must not suppress acknowledged personal memory"
     asyncio.run(run())
 
 
@@ -102,7 +102,7 @@ def test_model_failure_has_no_memory_or_speech_side_effects(tmp_path, monkeypatc
         await service.handle(None, event("娅娅，记住我上周参加了绘画展，用语音回答"), config)
         memory = engine.memory("denia", service._base_db, service._now)
         assert not sent and not backend.calls
-        assert not memory.semantic.recall(1002, 2001, "创作经历")
+        assert not memory.semantic.recall(1001, 2001, "创作经历")
     asyncio.run(run())
 
 
@@ -161,7 +161,7 @@ def test_explicit_save_marks_exactly_one_source_after_ack(tmp_path, monkeypatch,
         if voice_choice == "accept":
             assert backend.calls and "已经保存" in backend.calls[0][0]
         memory = engine.memory("denia", service._base_db, service._now)
-        assert memory.semantic.recall(1002, 2001, "创作经历")
+        assert memory.semantic.recall(1001, 2001, "创作经历")
         with memory.people.connect() as conn:
             evidence = conn.execute("SELECT delivered FROM person_semantic_evidence").fetchall()
         assert len(evidence) == 1 and evidence[0][0] == int(acknowledged)

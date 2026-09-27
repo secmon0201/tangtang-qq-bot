@@ -98,7 +98,9 @@ class PersonaEngine:
 
     def memory(self, persona: str, default: TangtangDb, now) -> TangtangMemoryKernel:
         if persona not in self._memories:
-            self._memories[persona] = TangtangMemoryKernel(self.history(persona, default), now, global_personal=persona == 'denia')
+            self._memories[persona] = TangtangMemoryKernel(
+                self.history(persona, default), now, global_personal=False
+            )
         return self._memories[persona]
 
     def expression_ids(self, context: ChatContext) -> tuple[str, ...]:
@@ -113,7 +115,7 @@ class PersonaEngine:
         if self._default_history is None:
             return '个人记忆暂时不可用。'
         if self.v2_enabled(profile.key):
-            return self.cognition(profile.key, self._default_history).own_impression(user_id)
+            return self.cognition(profile.key, self._default_history).group_impression(user_id, group_id)
         memory = self.memory(profile.key, self._default_history,
                              lambda: datetime.now(self.store.timezone).isoformat())
         return memory.impression_text(user_id)
@@ -174,11 +176,9 @@ class PersonaEngine:
         return None
 
     def stable_extra_prompt(self, context: ChatContext) -> str:
-        parts = ["同一QQ用户在各群都是同一个人，认识、熟悉程度和对他的短时情绪跨群延续；不要迁怒其他人。个人资料与本人自述记忆跨群共享，不能因换群装作不认识。群聊上下文、话题与未完问题只使用本群记录，不能引用其他群聊天原文续聊。明确限定本群的约定和称呼仍只在本群使用。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
+        parts = ["普通聊天只使用当前群的有序消息和群内资料；不同群的上下文、话题、约定和用户个人资料互不继承。记忆或画像功能若被明确请求，也只能读取当前群范围。不要迁怒其他人，不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if context.persona.key == 'denia':
-            parts[0] = '个人资料、经历、称呼、约定、交流印象与熟悉程度按人格和用户全局共享，群号仅表示来源。只有聊天上下文、话题与未完问题限当前群，不引用其他群聊天原文续聊。不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。'
-            if self.v2_enabled('denia'):
-                parts[0] = '你在多个群里是同一个个体。个人认识、关系、经历和待办约定跨群延续，原始对话上下文只取本群。知道、推测、已告知和实际完成是不同状态，不把旁观当共同经历。'
+            parts[0] = '你在每个群里都只依据当前群的记录与群内资料交流。不同群的用户资料、关系、经历、称呼和待办约定互不继承；明确请求记忆或画像时也只查看当前群。知道、推测、已告知和实际完成是不同状态，不把旁观当共同经历。'
         scene_rules = context.persona.resource_dir / "scene-expression.md"
         if scene_rules.is_file():
             parts.append(scene_rules.read_text(encoding="utf-8"))

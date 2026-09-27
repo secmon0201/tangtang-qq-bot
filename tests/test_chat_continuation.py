@@ -444,7 +444,7 @@ def test_real_service_merged_call_then_ordinary_followup_uses_one_shared_model_p
     asyncio.run(scenario())
 
 
-def test_real_service_continuation_preserves_deterministic_local_feature_routing(tmp_path, monkeypatch):
+def test_real_service_continuation_does_not_route_natural_language_features(tmp_path, monkeypatch):
     from bot.application import local_features
     from bot.services.tangtang_features import classify_local_feature
     from tests.test_persona_integration import make_runtime, Provider, service_for, event
@@ -482,10 +482,10 @@ def test_real_service_continuation_preserves_deterministic_local_feature_routing
         followup.time = time.time()
         assert c.offer(object(), followup, config, engine.snapshot(followup, "synthetic", False), explicit=False)
         await drain(c)
-        assert executed == [(1001, 2001, "ranking", "日")]
-        assert provider.seen == []
+        assert executed == []
+        assert provider.seen
         with sqlite3.connect(c.store().path) as conn:
-            assert conn.execute("SELECT count(*) FROM continuation_attempts").fetchone()[0] == 0
+            assert conn.execute("SELECT count(*) FROM continuation_attempts").fetchone()[0] == 1
         await c.close()
     asyncio.run(scenario())
 

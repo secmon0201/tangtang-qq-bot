@@ -32,6 +32,8 @@ from bot.services.tangtang_db import TangtangDb
 from bot.services.persona_engine import PersonaEngine
 from bot.services.persona_capacity import provider_post, request_timeout_seconds
 from bot.services.persona_turn import PersonaTurn
+from bot.services.persona_impressions import impression_requested
+from bot.services.persona_recognition import identity_question
 from bot.services.persona_profiles import ChatContext
 from bot.services.speech_policy import choose_delivery, delivery_instruction, voice_request
 from bot.services.tangtang_media import (
@@ -95,6 +97,7 @@ SOFT_BLACKLIST_PATH = RESOURCE_DIR / "soft_blacklist.txt"
 LINES_PATH = RESOURCE_DIR / "lines.txt"
 
 GROUP_CONTEXT_MESSAGES = 30
+GROUP_DAILY_DIGEST_MESSAGES = 2000
 
 
 def _context_compaction_due(
@@ -292,6 +295,25 @@ def _bool(values: Mapping[str, Any], name: str, default: bool) -> bool:
     if value in {"0", "false", "no", "off"}:
         return False
     raise ValueError(f"{name} must be true or false")
+
+
+_PERSONAL_CONTEXT_RE = re.compile(
+    r"记忆|记住|记下|忘记|恢复.*记忆|印象|画像|个人资料|叫我|称呼我|"
+    r"经历|约定|你还记得我|我是谁|我叫什么",
+    re.IGNORECASE,
+)
+
+
+def personal_context_requested(text: str) -> bool:
+    """Only explicit memory/profile questions may read personal context."""
+
+    source = str(text or "")
+    return bool(
+        memory_requested(source)
+        or impression_requested(source)
+        or identity_question(source)
+        or _PERSONAL_CONTEXT_RE.search(source)
+    )
 
 
 def _float(values: Mapping[str, Any], name: str, default: float, minimum: float, maximum: float) -> float:
@@ -1559,7 +1581,8 @@ class TangtangService:
             request_ids = tuple(f"{context.group_id}:{mid}" for mid in getattr(event, "source_message_ids", (event.message_id,))) if context else ()
             if context and (not self._turn_current() or not self.personas.store.claim_requests(request_ids, time.time())):
                 return
-            if context and config.memory_enabled and self.personas.v2_enabled(context.persona.key):
+            personal_context = personal_context_requested(event.get_plaintext())
+            if context and personal_context and config.memory_enabled and self.personas.v2_enabled(context.persona.key):
                 self._cognition_turn.set(PersonaTurn(self.personas, self._base_db, context, event))
             if config.memory_enabled:
                 self.memory.apply_restore_request(int(event.group_id), int(event.user_id), event.get_plaintext())
@@ -1726,55 +1749,20 @@ class TangtangService:
         query: str,
         config: TangtangConfig,
     ) -> list[str]:
-        """Retrieve relevant group topics without importing personal memory."""
+        """Read stable, group-only daily digests in insertion order."""
 
         if not config.group_summary_enabled or config.group_summary_inject_topics <= 0:
             return []
-        # 群摘要只服务达妮娅；糖糖仍使用自己的近期上下文和互动历史。
         context = self._turn.get()
         if context is None or context.persona.key != "denia":
             return []
-        provenance = self._provenance.setdefault(
-            (int(context.group_id), int(context.user_id)), {}
-        )
         try:
-            rows = self._base_db.group_summary_sources(int(group_id))
+            return self._base_db.group_daily_digest_lines(
+                int(group_id), limit=config.group_summary_inject_topics
+            )
         except Exception as exc:
             logger.warning("Group summary read failed: {}", exc)
             return []
-        if not rows:
-            return []
-        query_terms = {
-            term for term in re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9_\-]{2,}", query or "")
-        }
-        scored: list[tuple[int, int, dict[str, Any]]] = []
-        for index, row in enumerate(rows):
-            haystack = (
-                f"{row.get('title') or ''}\n{row.get('summary') or ''}\n"
-                f"{row.get('keywords') or ''}\n{row.get('unresolved') or ''}"
-            )
-            score = sum(1 for term in query_terms if term in haystack)
-            if score or row.get("state") == "active":
-                scored.append((score, -index, row))
-        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        lines: list[str] = []
-        for _score, _index, row in scored[: config.group_summary_inject_topics]:
-            summary = str(row.get("summary") or "").strip()
-            if not summary:
-                continue
-            if not self.memory.safe_text(int(group_id), 0, summary):
-                continue
-            title = str(row.get("title") or "未命名话题").strip()
-            lines.append(f"· {title}：{summary}")
-            provenance.setdefault("summary_topics", []).append(
-                {"topic_id": int(row.get("topic_id") or 0), "version": int(row.get("version") or 0)}
-            )
-            unresolved = str(row.get("unresolved") or "").strip()
-            if unresolved:
-                lines.append(f"  未决：{'；'.join(unresolved.splitlines()[:4])}")
-        if provenance.get("summary_topics"):
-            self._provenance[(int(context.group_id), int(context.user_id))] = provenance
-        return lines
 
     @staticmethod
     def _fresh_context_rows(rows: list[dict]) -> list[dict]:
@@ -2074,6 +2062,7 @@ class TangtangService:
         group_context_is_delta: bool = False,
     ) -> str:
         group_id = int(event.group_id)
+        personal_context = personal_context_requested(call_text or event.get_plaintext())
         context_lines = (
             list(group_context_lines)
             if group_context_lines is not None
@@ -2081,7 +2070,7 @@ class TangtangService:
         )
         history = ""
         user_history = ""
-        if not layered_context:
+        if not layered_context and personal_context:
             history_limit = None if config.history_chars <= 0 else config.history_chars
             history = self.db.model_reply_lines(
                 int(event.user_id),
@@ -2159,6 +2148,11 @@ class TangtangService:
             f"消息：{'见 [当前输入]' if separate_current_input else call_text}",
             "",
         ]
+        fixed_parts[2:2] = [
+            "[群隔离标识]",
+            f"当前群号：{group_id}。任何群聊上下文、摘要和约定只属于这个群。",
+            "",
+        ]
         if media_resolution is not None and media_resolution.images:
             fixed_parts.extend(
                 (
@@ -2167,25 +2161,12 @@ class TangtangService:
                     "",
                 )
             )
-        if config.tools_enabled:
-            fixed_parts.append(
-                "如果回答需要查枝江或鸣潮的本地资料，可以调用查询工具获取，不要编造；"
-                "资料没覆盖就明说不知道。"
-            )
-            fixed_parts.append("")
-        skill_contract = ""
-        if not proactive:
-            if layered_context and config.native_action_tools in {"shadow", "true"}:
-                actions = self.feature_catalog(event) if self.feature_catalog is not None else ()
-                skill_contract = (
-                    "[本轮普通用户工具可用性]\n可用动作：" + "、".join(actions)
-                    if actions else "[本轮普通用户工具可用性]\n当前没有可执行的直送动作。"
-                )
-            else:
-                skill_contract = self._local_skill_contract(event)
-        if skill_contract:
-            fixed_parts.append(skill_contract)
-            fixed_parts.append("")
+        fixed_parts.append(
+            "普通自然语言不会执行本地功能、查询或状态操作；需要使用机器人功能时请发送明确的 # 指令。"
+        )
+        fixed_parts.append("")
+        # Local features are command-only. Do not advertise a skill contract
+        # in natural-language prompts, including shadow/v2 candidate prompts.
         if black_meme_instruction:
             fixed_parts.append(black_meme_instruction)
             fixed_parts.append("")
@@ -2246,7 +2227,7 @@ class TangtangService:
             group_context_title,
             "\n".join(context_lines) if context_lines else "（暂无）",
         ])
-        if not layered_context:
+        if not layered_context and personal_context:
             context_parts.extend([
                 "",
                 f"[你与该群友的成功互动历史（{config.history_messages} 条内，仅供参考延续）]",
@@ -2256,9 +2237,11 @@ class TangtangService:
                 user_history or "（暂无）",
             ])
         context_joined = "\n".join(context_parts)
-        knowledge = self._local_knowledge(call_text)
+        # Knowledge lookups are local functions too; natural-language turns
+        # must not invoke them. Explicit # commands retain their own adapters.
+        knowledge = ""
         memory_sections: list[str] = []
-        if config.memory_enabled and not self._cognition_turn.get():
+        if personal_context and config.memory_enabled and not self._cognition_turn.get():
             try:
                 recalled = self.memory.recall(
                     group_id,
@@ -2273,7 +2256,7 @@ class TangtangService:
                     memory_sections.append(episode)
             except Exception as exc:
                 logger.warning("Tangtang memory recall failed: {}", exc)
-        if config.persona_state_enabled and not self._cognition_turn.get():
+        if personal_context and config.persona_state_enabled and not self._cognition_turn.get():
             try:
                 memory_sections.append(
                     self.memory.state_prompt(group_id, int(event.user_id))
@@ -2417,7 +2400,7 @@ class TangtangService:
             return
         if continuation_turn() is not None and not self.proactive_text_allowed(text):
             return
-        memory_control = self.memory.control_reply(user_id, text)
+        memory_control = self.memory.control_reply(user_id, text, group_id)
         if memory_control:
             await self._send_and_record(bot, event, config, memory_control,
                 reply_kind='canned', mode='local', tokens={}, call_text=call_text,
@@ -2446,6 +2429,18 @@ class TangtangService:
                 call_text=call_text,
             )
             return
+        if (
+            impression_requested(text)
+            and context is not None
+            and self.personas is not None
+            and context.persona.key == "denia"
+        ):
+            answer = self.personas.personal_impression(group_id, user_id)
+            await self._send_and_record(
+                bot, event, config, answer, reply_kind="canned", mode="local",
+                tokens={}, call_text=call_text,
+            )
+            return
         black_meme_instruction = _black_meme_instruction(text)
         if black_meme_instruction:
             await self._model_reply(
@@ -2461,18 +2456,8 @@ class TangtangService:
         if memory_requested(text):
             await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
             return
-        if self.feature_router is not None:
-            handled, tokens = await self.feature_router(bot, event, config, text)
-            self._write_usage(
-                config,
-                group_id,
-                user_id,
-                "feature" if handled else "feature_router",
-                mode=config.mode,
-                tokens=tokens,
-            )
-            if handled:
-                return
+        # Natural-language feature routing is intentionally disabled. Explicit
+        # # commands are handled by their owning plugins before this matcher.
         if continuation_turn() is not None:
             await self._model_reply(bot, event, config, at_labels=at_labels, call_text=call_text)
             return
@@ -2691,27 +2676,19 @@ class TangtangService:
                 )
             persona = self._persona_text()
             context = self._turn.get()
-            provider_tools = (
-                NATIVE_ACTION_TOOL_SCHEMAS
-                if config.tools_enabled and config.native_action_tools == "true" and not proactive
-                else TOOL_SCHEMAS if config.tools_enabled else ()
-            )
-            candidate_tools = (
-                NATIVE_ACTION_TOOL_SCHEMAS
-                if config.tools_enabled
-                and config.native_action_tools in {"shadow", "true"}
-                and not proactive
-                else provider_tools
-            )
-            session_tools = (
-                candidate_tools if config.context_layout == "shadow" else provider_tools
-            )
+            # Local features are command-only. Ordinary natural-language turns
+            # must not expose knowledge, read, or state-changing tools to the
+            # model; explicit # commands use the existing plugin path.
+            provider_tools: tuple[dict[str, Any], ...] = ()
+            candidate_tools: tuple[dict[str, Any], ...] = ()
+            session_tools: tuple[dict[str, Any], ...] = ()
             persona_version = (
                 context.persona.version if context else stable_hash(persona)[:16]
             )
+            personal_context = personal_context_requested(current_text)
             session_id = self.db.ensure_context_session(
                 group_id=group_id,
-                user_id=user_id,
+                user_id=user_id if personal_context else 0,
                 layout_version=config.context_layout,
                 persona_version=persona_version,
                 tool_version=stable_hash((tuple(dict(tool) for tool in session_tools),
@@ -2966,6 +2943,24 @@ class TangtangService:
                     tuple(history), (), request_envelope
                 )
             usage = dict(result.usage)
+            if result.tool_calls:
+                # The model cannot invoke local functionality from natural
+                # language. Explicit # commands are handled by their plugins.
+                usage.update(telemetry)
+                usage["model_calls"] = 1
+                usage["tool_rounds"] = 0
+                self._write_usage(
+                    config, group_id, user_id, "natural_skill_blocked",
+                    mode=mode, tokens=usage,
+                )
+                if not proactive and self._turn_current():
+                    await self._send_and_record(
+                        bot, event, config,
+                        "本地功能请使用明确的 # 指令。",
+                        reply_kind="canned", mode=mode, tokens=usage,
+                        call_text=current_text,
+                    )
+                return
             loops = 0
             while result.tool_calls and loops < config.tool_loop_max:
                 if any(call.get("name") in ACTION_TOOL_NAMES for call in result.tool_calls):
@@ -3053,10 +3048,21 @@ class TangtangService:
                 self._audit_pending_context(event, reason="invalid_reply_structure")
                 return
             if plan.skill_calls:
-                if (plan.structured and plan.decided and not proactive and not (context and context.proactive)
-                        and (not cognition or cognition.proposal.get('decision') == 'reply')):
-                    await self._run_skill_call(
-                        bot, event, config, plan, call_text=current_text, mode=mode, usage=usage,
+                # A model-produced skill call is deliberately denied during the
+                # natural-language migration. The command matcher remains the
+                # sole entry point for local functionality.
+                usage["model_calls"] = 1
+                usage["tool_rounds"] = 0
+                self._write_usage(
+                    config, group_id, user_id, "natural_skill_blocked",
+                    mode=mode, tokens=usage,
+                )
+                if not proactive and self._turn_current():
+                    await self._send_and_record(
+                        bot, event, config,
+                        "本地功能请使用明确的 # 指令。",
+                        reply_kind="canned", mode=mode, tokens=usage,
+                        call_text=current_text,
                     )
                 return
             remove_dashes = bool(context and context.persona.key == "denia")
@@ -3460,7 +3466,7 @@ class TangtangService:
             return
         source_memory = event.get_plaintext().strip()
         cognition = self._cognition_turn.get()
-        memory_control = self.memory.control_reply(user_id, source_memory)
+        memory_control = self.memory.control_reply(user_id, source_memory, group_id)
         if cognition:
             memory_control = cognition.control_reply(user_id, source_memory, memory_control)
         if memory_control:

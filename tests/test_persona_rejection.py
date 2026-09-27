@@ -32,8 +32,6 @@ def test_unknown_skill_refusal_is_in_character():
 def test_extra_feature_openers_are_persona_aware():
     for text in (
         "看看转盘榜",
-        "看一下异环最强排行",
-        "看看鸣潮最强排行",
     ):
         extra = classify_extra_feature(text)
         assert extra is not None

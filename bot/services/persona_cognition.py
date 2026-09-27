@@ -21,13 +21,20 @@ from bot.services.persona_impressions import impression_requested
 
 class CognitionStore:
     def __init__(self, db):
-        self.people = PersonMemoryStore(db, global_personal=True)
+        # New Denia memory is group-local. Existing global rows remain for
+        # migration/audit but are not recalled for a real group.
+        self.people = PersonMemoryStore(db, global_personal=False)
         self.blocked_users = lambda group_id: db.blocked_users(group_id)
 
     @contextmanager
     def connect(self):
         with self.people.connect() as conn:
             conn.executescript(SCHEMA)
+            state_columns = {row[1] for row in conn.execute('PRAGMA table_info(persona_state_factors)')}
+            if 'scope_group' not in state_columns:
+                conn.execute(
+                    'ALTER TABLE persona_state_factors ADD COLUMN scope_group INTEGER NOT NULL DEFAULT 0'
+                )
             ensure_profile_schema(conn)
             yield conn
 
@@ -73,6 +80,7 @@ class CognitionStore:
                 m.updated_at,c.kind,c.topic,c.applicability,c.assertion_type,c.confidence,c.occurred_at
                 FROM person_semantic_memory m JOIN persona_claim_metadata c ON c.memory_id=m.id
                 WHERE m.user_id IN (?,0) AND m.status IN ('active','candidate')
+                AND ((m.user_id=0 AND m.scope_group=0) OR (m.user_id=? AND m.scope_group=?))
                 AND (c.kind<>'impression' OR EXISTS (SELECT 1 FROM persona_profile_approved p
                     WHERE p.memory_id=m.id AND p.version=m.version))
                 AND (c.valid_until=0 OR c.valid_until>?)"""
@@ -84,35 +92,35 @@ class CognitionStore:
             if terms:
                 score = '+'.join('(instr(m.content,?)>0 OR instr(c.topic,?)>0)' for _ in terms)
                 args = tuple(v for term in terms for v in (term, term))
-                rows.extend(dict(r) for r in conn.execute(base + f' ORDER BY ({score}) DESC,m.id DESC LIMIT 12', (user_id, now, *args)))
+                rows.extend(dict(r) for r in conn.execute(base + f' ORDER BY ({score}) DESC,m.id DESC LIMIT 12', (user_id, user_id, group_id, now, *args)))
             for kinds in (('fact',), ('impression', 'relationship'), ('self_belief',)):
                 rows.extend(dict(r) for r in conn.execute(base + f" AND c.kind IN ({','.join('?' for _ in kinds)}) ORDER BY m.id DESC LIMIT 4",
-                                                         (user_id, now, *kinds)))
+                                                         (user_id, user_id, group_id, now, *kinds)))
             claims = list({r['id']: r for r in rows}.values())[:24]
-            restrictions = [r[0] for r in conn.execute('SELECT needle FROM person_restrictions WHERE user_id=? AND active=1', (user_id,))]
+            restrictions = [r[0] for r in conn.execute(
+                'SELECT needle FROM person_restrictions WHERE user_id=? AND scope_group IN (0,?) AND active=1',
+                (user_id, group_id))]
             claims = [r for r in claims if not any(n in normalize(r['content']) for n in restrictions)]
             for r in claims:
                 r['basis'] = [dict(e) for e in conn.execute("""SELECT quote,stance FROM persona_claim_support
                     WHERE memory_id=? AND version=? LIMIT 3""", (r['id'], r['version']))]
             states = []
-            for row in conn.execute('SELECT * FROM persona_state_factors WHERE user_id IN (?,0) ORDER BY created_at DESC LIMIT 24', (user_id,)):
+            for row in conn.execute(
+                "SELECT * FROM persona_state_factors WHERE "
+                "(user_id=0 AND scope_group=0) OR (user_id=? AND scope_group=?) "
+                "ORDER BY created_at DESC LIMIT 24",
+                (user_id, group_id),
+            ):
                 strength = row['strength'] * 2 ** (-max(0, now - row['created_at']) / row['half_life'])
                 if abs(strength) >= .01:
                     states.append({'topic': row['topic'], 'cause': row['cause'], 'label': row['label'],
                                    'target': 'self' if row['user_id'] == 0 else 'person', 'strength': round(strength, 3)})
             episodes = [dict(r) for r in conn.execute("""SELECT summary,outcome,created_at,group_id,action_id FROM persona_episodes
-                WHERE user_id=? ORDER BY created_at DESC LIMIT 6""", (user_id,))]
+                WHERE user_id=? AND group_id=? ORDER BY created_at DESC LIMIT 6""", (user_id, group_id))]
             episodes = [r for r in episodes if not any(n in normalize(r['summary']) for n in restrictions)]
-            for episode in episodes:
-                if episode['group_id'] != group_id and episode['outcome'] == 'delivered_not_read':
-                    intent = conn.execute("""SELECT i.topic FROM persona_intents i JOIN persona_actions a
-                        ON a.intent_id=i.id WHERE a.id=?""", (episode['action_id'],)).fetchone()
-                    episode['summary'] = ('曾围绕「' + intent['topic'] + '」向对方发出回复' if intent
-                                          else '此前在另一场景向对方送达过回复，不能据此续接那里的原始对话')
-            intents = [dict(r) for r in conn.execute("""SELECT * FROM persona_intents
-                WHERE user_id=? AND state NOT IN ('withdrawn','fulfilled','expired_unknown')
-                AND (expires_at=0 OR expires_at>=? OR state='reserved')
-                ORDER BY updated_at DESC LIMIT 12""", (user_id, now))]
+            # Legacy intents have no group scope, so they cannot enter a
+            # group-local prompt until their table is migrated.
+            intents = []
             total_strength = sum(abs(s['strength']) for s in states)
             if total_strength > .6:
                 for state in states:
@@ -131,6 +139,20 @@ class CognitionStore:
     def current(self, expected) -> bool:
         with self.connect() as conn:
             return self.dependencies_current(conn, expected)
+
+    def group_impression(self, user_id: int, group_id: int) -> str:
+        """Return only confirmed facts written from this group."""
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT content FROM person_semantic_memory "
+                "WHERE user_id=? AND scope_group=? AND status='active' "
+                "ORDER BY updated_at DESC LIMIT 8",
+                (int(user_id), int(group_id)),
+            ).fetchall()
+        if not rows:
+            return "这个群里还没有可确认的个人资料。"
+        return "这个群里我记得的你：\n" + "\n".join(f"· {row[0]}" for row in rows)
 
     def merge(self, proposal: dict, snapshot: TurnSnapshot, now=None) -> MergeResult:
         now = time.time() if now is None else now
@@ -223,7 +245,9 @@ class CognitionStore:
             old = conn.execute("""SELECT m.*,c.occurred_at,c.kind,c.topic FROM person_semantic_memory m
                 JOIN persona_claim_metadata c ON c.memory_id=m.id
                 WHERE m.user_id=? AND c.kind=? AND c.topic=? AND c.applicability=?
-                AND m.status IN ('active','candidate') LIMIT 1""", (subject, kind, topic, applicability)).fetchone()
+                AND m.scope_group=?
+                AND m.status IN ('active','candidate') LIMIT 1""", (subject, kind, topic, applicability,
+                                                                        snapshot.group_id if subject else 0)).fetchone()
             if old and old['content'] != statement:
                 raise ValueError('existing_topic_requires_revision')
         if old and old['content'] == statement:
@@ -238,8 +262,9 @@ class CognitionStore:
             else:
                 memory_id = conn.execute("""INSERT INTO person_semantic_memory
                     (user_id,scope_group,category,content,normalized,tags,status,version,created_at,updated_at)
-                    VALUES(?,0,?,?,?,?, 'active',1,?,?)""",
-                    (subject, 'v2:' + kind + ':' + topic, statement, normalize(statement), json.dumps([topic], ensure_ascii=False), stamp, stamp)).lastrowid
+                    VALUES(?,?,?,?,?,?, 'active',1,?,?)""",
+                    (subject, snapshot.group_id if subject else 0, 'v2:' + kind + ':' + topic,
+                     statement, normalize(statement), json.dumps([topic], ensure_ascii=False), stamp, stamp)).lastrowid
             source, quote, _ = refs[0]
             conn.execute('INSERT INTO person_semantic_versions VALUES(?,?,?,?,?,?,?,?,?)',
                          (memory_id, version, statement, quote, json.dumps([topic]), source['group_id'],
@@ -282,8 +307,10 @@ class CognitionStore:
             subject, bound = 0, .15
             topic = 'self:' + dimension + ':' + topic
         key = f"{source['event_key']}:{topic}"
-        conn.execute('INSERT OR IGNORE INTO persona_state_factors VALUES(?,?,?,?,?,?,?,?)',
-                     (key, subject, topic, source['event_key'], label,
+        conn.execute('INSERT OR IGNORE INTO persona_state_factors '
+                     '(id,user_id,scope_group,topic,cause,label,strength,half_life,created_at) '
+                     'VALUES(?,?,?,?,?,?,?,?,?)',
+                     (key, subject, snapshot.group_id if subject else 0, topic, source['event_key'], label,
                       max(-bound, min(bound, strength)), max(60, min(21600, half_life)), source['occurred_at']))
         return 'state:' + key
 

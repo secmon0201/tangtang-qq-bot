@@ -45,7 +45,8 @@ def migrate_legacy(cognition, central=None) -> dict:
             key = 'fact:' + str(row['id'])
             if conn.execute('SELECT 1 FROM persona_migration_map WHERE source=?', (key,)).fetchone():
                 continue
-            mid = _adopt(conn, row['user_id'], 'fact', row['kind'], row['content'], row['status'], row['updated_at'])
+            mid = _adopt(conn, row['user_id'], 'fact', row['kind'], row['content'], row['status'], row['updated_at'],
+                         scope_group=int(row['scope_group'] or 0))
             conn.execute('INSERT OR IGNORE INTO persona_claim_metadata VALUES(?,?,?,?,?,?,?,?,?)',
                          (mid, 'fact', row['kind'], '', 'self_report', row['confidence'], timestamp(row['updated_at']), 'legacy', 0))
             conn.execute('INSERT INTO persona_migration_map VALUES(?,?,?)', (key, mid, now))
@@ -94,13 +95,13 @@ def migrate_legacy(cognition, central=None) -> dict:
     return counts
 
 
-def _adopt(conn, user_id, kind, topic, content, status, created_at):
+def _adopt(conn, user_id, kind, topic, content, status, created_at, scope_group=0):
     category = 'v2:' + kind + ':' + topic
     conn.execute("""INSERT OR IGNORE INTO person_semantic_memory
         (user_id,scope_group,category,content,normalized,tags,status,version,created_at,updated_at)
-        VALUES(?,0,?,?,?,?,?,1,?,?)""", (user_id, category, content, normalize(content), json.dumps([topic]), status, created_at, created_at))
-    mid = conn.execute('SELECT id FROM person_semantic_memory WHERE user_id=? AND scope_group=0 AND category=? AND normalized=?',
-                       (user_id, category, normalize(content))).fetchone()[0]
+        VALUES(?,?,?,?,?,?,?,1,?,?)""", (user_id, int(scope_group), category, content, normalize(content), json.dumps([topic]), status, created_at, created_at))
+    mid = conn.execute('SELECT id FROM person_semantic_memory WHERE user_id=? AND scope_group=? AND category=? AND normalized=?',
+                       (user_id, int(scope_group), category, normalize(content))).fetchone()[0]
     conn.execute('INSERT OR IGNORE INTO person_semantic_versions VALUES(?,?,?,?,?,?,?,?,?)',
                  (mid, 1, content, '', json.dumps([topic]), 0, '', 'legacy_adoption', created_at))
     return mid

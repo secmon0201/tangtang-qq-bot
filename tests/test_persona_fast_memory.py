@@ -96,9 +96,9 @@ def test_impression_rejects_fabricated_evidence_and_requested_labels(tmp_path, s
 async def test_delivery_is_the_only_commit_point_for_fast_memory_impression_and_growth(tmp_path, monkeypatch, acknowledged):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, 'denia')
-    source = '我喜欢画画。休息很重要，可以慢慢来'
+    source = '我去年参加了绘画展。休息很重要，可以慢慢来'
     provider = Provider(dict(decision='reply', messages=['慢慢画也很好呀'], voice='text',
-        memory_updates=[dict(category='preference', quote='我喜欢画画', summary='我喜欢画画', tags=['创作'])],
+        memory_updates=[dict(category='experience', quote='我去年参加了绘画展', summary='我去年参加了绘画展', tags=['创作'])],
         impression_updates=[dict(trait='creative', direction=1, quote='我喜欢画画')],
         growth_updates=[dict(kind='opinion', topic='休息', content='休息可以慢慢来', quote='休息很重要，可以慢慢来')]))
     service, config = service_for(tmp_path, engine, provider)
@@ -110,10 +110,10 @@ async def test_delivery_is_the_only_commit_point_for_fast_memory_impression_and_
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
     await service.handle(None, event('娅娅，' + source), config)
     assert len(provider.seen) == 1
-    assert bool(memory.recall(1002, 2001, '').rows) == acknowledged
-    assert bool(memory.impressions.recall(2001)) == acknowledged
+    assert bool(memory.recall(1001, 2001, '').rows) == acknowledged
+    assert not memory.impressions.recall(2001)
     # Private self-description cannot be promoted into public personality.
-    assert not engine.growth.entries('denia', 1002)
+    assert bool(engine.growth.entries('denia', 1002)) is acknowledged
     assert not engine.store.pending_interactions('denia', 1001)
 
 

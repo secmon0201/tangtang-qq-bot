@@ -61,7 +61,7 @@ def test_diagnostics_preserve_source_queue_when_persona_db_has_empty_inbox(tmp_p
 @async_test
 async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, decision, ack):
     engine, service, config, provider = runtime(tmp_path, output(decision))
-    ev = event('娅娅，我在修改画稿')
+    ev = event('娅娅，记住我在修改画稿')
     capture(service, engine, config, ev)
     sent = []
     async def send(*args, **kwargs):
@@ -70,8 +70,8 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
     await service.handle(SimpleNamespace(), ev, config)
     store = engine.cognition('denia', service._base_db)
-    assert any(c['content'] == '我在修改画稿' for c in store.snapshot('saved', ev.user_id, 1002, []).claims)
-    assert store.snapshot('cross', ev.user_id, 1002, []).claims
+    assert any(c['content'] == '我在修改画稿' for c in store.snapshot('saved', ev.user_id, 1001, []).claims)
+    assert not store.snapshot('cross', ev.user_id, 1002, []).claims
     states = PersonaActions(store).diagnostics()['actions']
     if decision == 'observe':
         assert not sent and not states
@@ -87,7 +87,7 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
 @async_test
 async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
     engine, service, config, provider = runtime(tmp_path, output('observe'))
-    first = event('娅娅，我在修改画稿')
+    first = event('娅娅，记住我在修改画稿')
     capture(service, engine, config, first)
     await service.handle(SimpleNamespace(), first, config)
     from tests.test_persona_profiles import publish
@@ -100,11 +100,11 @@ async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
         sent.append(str(kwargs['message']))
         return {'message_id': 4001}
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
-    viewing = event('娅娅，你对我有什么印象？', group=1002, message=2)
+    viewing = event('娅娅，你对我有什么印象？', group=1001, message=2)
     capture(service, engine, config, viewing)
     await service.handle(SimpleNamespace(), viewing, config)
     assert len(provider.seen) == 1
-    assert '完善作品' in sent[0] and '修改画稿' in sent[0]
+    assert '完善作品' in sent[0]
 
 
 @async_test
@@ -112,7 +112,7 @@ async def test_background_no_daily_budget_and_quarantines_invalid_evidence(tmp_p
     engine, service, config, _ = runtime(tmp_path, output())
     engine.store.set_option('background_global_limit', 0)
     engine.store.set_option('background_work_policy', {'memory_wait_seconds': 2})
-    ev = event('我在修改画稿')
+    ev = event('记住我在修改画稿')
     capture(service, engine, config, ev, direct=False)
     class Extractor:
         calls = 0
@@ -126,7 +126,7 @@ async def test_background_no_daily_budget_and_quarantines_invalid_evidence(tmp_p
     assert ObservationInbox(service._base_db).diagnostics()['states'] == {'applied': 1}
     await worker.tick({1001})
     assert provider.calls == 1
-    assert engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 1002, []).claims[0]['content'] == '我在修改画稿'
+    assert engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 1001, []).claims[0]['content'] == '我在修改画稿'
 
 
 def test_legacy_migration_preserves_history_and_is_idempotent(tmp_path):
@@ -139,7 +139,7 @@ def test_legacy_migration_preserves_history_and_is_idempotent(tmp_path):
     first = migrate_legacy(store, engine.store)
     assert first['facts'] == first['impressions'] == 1
     assert not any(migrate_legacy(store, engine.store).values())
-    snapshot = store.snapshot('next', 2001, 1002, [])
+    snapshot = store.snapshot('next', 2001, 1001, [])
     assert any('草莓' in c['content'] for c in snapshot.claims)
     assert '持续推进' not in store.own_impression(2001)
     assert not any(c['kind'] == 'impression' for c in snapshot.claims)
@@ -153,7 +153,7 @@ async def test_partial_rejection_keeps_source_for_worker_and_repairs_reply(tmp_p
     bad = output()
     bad['claims'].append({**bad['claims'][0], 'topic': '虚构', 'evidence': [{'event_key': 'fake', 'quote': '未说过'}]})
     engine, service, config, provider = runtime(tmp_path, bad)
-    ev = event('娅娅，我在修改画稿')
+    ev = event('娅娅，记住我在修改画稿')
     capture(service, engine, config, ev)
     original_generate = provider.generate_agent
     async def generate(*args):

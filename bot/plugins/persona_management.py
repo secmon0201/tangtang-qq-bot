@@ -108,20 +108,18 @@ async def _run_local_persona_read(
 _background = None
 _speech_background = None
 _memory_background = None
-_profile_background = None
 _group_summary_background = None
 
 
 @get_driver().on_startup
 async def start_persona_background() -> None:
     from bot.application.persona_background import start_background
-    from bot.application.persona_observer import run_personal_memory, run_personal_profiles
+    from bot.application.persona_observer import run_personal_memory
     from bot.application.group_summary_worker import run_group_summaries
-    global _background, _speech_background, _memory_background, _profile_background
+    global _background, _speech_background, _memory_background
     global _group_summary_background
     _background = asyncio.create_task(start_background())
     _memory_background = asyncio.create_task(run_personal_memory())
-    _profile_background = asyncio.create_task(run_personal_profiles())
     _group_summary_background = asyncio.create_task(run_group_summaries())
     _speech_background = asyncio.create_task(SpeechSupervisor(ROOT, persona_engine().speech, SpeechRuntime(ROOT)).run())
 
@@ -129,9 +127,6 @@ async def start_persona_background() -> None:
 @get_driver().on_shutdown
 async def stop_persona_background() -> None:
     await dispatcher.close()
-    if _profile_background:
-        _profile_background.cancel()
-        await asyncio.gather(_profile_background, return_exceptions=True)
     if _memory_background:
         _memory_background.cancel()
         await asyncio.gather(_memory_background, return_exceptions=True)

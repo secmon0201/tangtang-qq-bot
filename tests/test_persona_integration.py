@@ -149,7 +149,7 @@ async def test_memory_confirmation_follows_actual_persistence_before_send(tmp_pa
     memory = engine.memory("denia", service._base_db, service._now)
     sent = []
     async def send(bot, action, **params):
-        rows = memory.semantic.recall(1002, 2001, "创作经历")
+        rows = memory.semantic.recall(1001, 2001, "创作经历")
         assert bool(rows) is memory_enabled
         sent.append(str(params["message"]))
         return {"message_id": 91}
@@ -171,11 +171,11 @@ async def test_automatic_personal_episode_requires_delivery_ack(tmp_path, monkey
     service, config = service_for(tmp_path, engine, provider)
     memory = engine.memory("denia", service._base_db, service._now)
     async def send(bot, action, **params):
-        assert not memory.semantic.recall(1002, 2001, "创作经历")
+        assert not memory.semantic.recall(1001, 2001, "创作经历")
         return {"message_id": 92} if acknowledged else {}
     monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
     await service.handle(None, event("娅娅，" + statement), config)
-    assert bool(memory.semantic.recall(1002, 2001, "创作经历")) is acknowledged
+    assert bool(memory.semantic.recall(1001, 2001, "创作经历")) is acknowledged
 
 
 @async_test
@@ -458,7 +458,7 @@ async def test_shared_person_prompt_keeps_each_groups_current_topic(tmp_path, mo
     service._base_db.insert_group_message(group_id=1002, user_id=2001, nickname='小明', text='今天晚饭话题', message_id='b', created_at=service._now())
     await service.handle(None, event('娅娅，你觉得呢', group=1002), config)
     prompt = provider.seen[0][1]
-    assert '喜欢草莓' in prompt and '今天晚饭话题' in prompt
+    assert '喜欢草莓' not in prompt and '今天晚饭话题' in prompt
     assert '游戏配队话题' not in prompt
 
 
@@ -696,5 +696,6 @@ async def test_matching_topic_never_imports_another_groups_conversation(tmp_path
         call_text='今天抽卡五星先聊养成',reply_text='继续聊养成',reply_kind='model',mode='d',created_at=service._now())
     await service.handle(None,event('娅娅，抽卡五星你觉得呢',group=1002,message=31),config)
     prompt=provider.seen[0][1]
-    assert '我是教师' in prompt and '先聊养成' in prompt
+    assert '我是教师' not in prompt
     assert '先聊配队' not in prompt and '配队还没解决' not in prompt
+    assert '先聊养成' not in prompt

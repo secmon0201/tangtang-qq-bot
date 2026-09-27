@@ -35,8 +35,7 @@ def test_impression_global_with_evidence_and_other_user_isolated(store):
     s = source(attribution='ambient')
     publish(store, s, '愿意分享创作过程')
     cross = store.snapshot('next', 201, 102, [], '画稿', 120)
-    assert cross.claims[0]['content'] == '愿意分享创作过程'
-    assert cross.claims[0]['confidence'] == .3
+    assert not cross.claims
     assert not store.snapshot('stranger', 202, 102, []).claims
     assert '我在修改画稿' in store.own_impression(201)
     assert '我在修改画稿' not in store.own_impression(202)
@@ -45,10 +44,10 @@ def test_impression_global_with_evidence_and_other_user_isolated(store):
 def test_correction_versions_opposing_evidence_and_late_message(store):
     s = source(text='我喜欢画画')
     store.merge({'claims': [claim(s, s['text'], 'fact')]}, store.snapshot('one', 201, 101, [s]), 100)
-    later = source('102:2', text='我现在不喜欢画画了', occurred=200)
+    later = source('101:2', text='我现在不喜欢画画了', occurred=200)
     raw = claim(later, later['text'], 'fact', id=1, expected_version=1, operation='revise')
     raw['evidence'][0]['stance'] = 'opposes'
-    result = store.merge({'claims': [raw]}, store.snapshot('two', 201, 102, [later]), 201)
+    result = store.merge({'claims': [raw]}, store.snapshot('two', 201, 101, [later]), 201)
     assert not result.rejected
     assert result.expected['1'] == 2
     with store.connect() as c:
@@ -85,7 +84,7 @@ def test_caused_state_targets_person_decays_and_no_silence_inference(store):
     patch = dict(topic='玩笑', label='谨慎一些', strength=-.3, half_life=60,
                  evidence=[dict(event_key=s['event_key'], quote=s['text'])])
     store.merge({'states': [patch]}, store.snapshot('one', 201, 101, [s]), 100)
-    assert store.snapshot('two', 201, 102, [], now=160).states[0]['strength'] == -.15
+    assert not store.snapshot('two', 201, 102, [], now=160).states
     assert not store.snapshot('three', 202, 101, [], now=160).states
     assert not store.snapshot('late', 201, 101, [], now=10000).states
     assert store.merge({'states': [{**patch, 'evidence': []}]}, store.snapshot('silent', 201, 101, [])).rejected

@@ -83,9 +83,16 @@ def event(text="娅娅，今天过得怎么样", *, group=1001, message=1):
         is_tome=lambda: False, sender=SimpleNamespace(card="", nickname="群友"), reply=None)
 
 
-def private_event(text="今天过得怎么样", *, message=1):
-    value = event(text, group=0, message=message)
+def private_event(
+    text="今天过得怎么样",
+    *,
+    message=1,
+    sub_type="friend",
+    source_group=0,
+):
+    value = event(text, group=source_group, message=message)
     value.message_type = "private"
+    value.sub_type = sub_type
     return value
 
 
@@ -331,6 +338,36 @@ async def test_private_requested_expression_uses_private_delivery(tmp_path, monk
 
 
 @async_test
+async def test_group_temporary_private_delivery_includes_source_group(tmp_path, monkeypatch):
+    engine, _ = make_locked_runtime(tmp_path)
+    provider = Provider({"decision": "silent", "messages": []})
+    service, config = service_for(tmp_path, engine, provider)
+    sent = []
+
+    async def send(_bot, action, **params):
+        sent.append((action, params))
+        return {"message_id": 77}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(
+        None,
+        private_event(
+            "发一个大笑表情包",
+            sub_type="group",
+            source_group=1001,
+        ),
+        config,
+    )
+
+    assert not provider.seen
+    assert len(sent) == 1
+    assert sent[0][0] == "send_private_msg"
+    assert sent[0][1]["user_id"] == 2001
+    assert sent[0][1]["group_id"] == 1001
+    assert [segment.type for segment in sent[0][1]["message"]] == ["text", "image"]
+
+
+@async_test
 async def test_private_invalid_model_structure_gets_safe_fallback(tmp_path, monkeypatch):
     engine, _ = make_locked_runtime(tmp_path)
 
@@ -343,6 +380,7 @@ async def test_private_invalid_model_structure_gets_safe_fallback(tmp_path, monk
 
     provider = InvalidProvider()
     service, config = service_for(tmp_path, engine, provider)
+    monkeypatch.setattr(service, "_turn_current", lambda: True)
     sent = []
 
     async def send(_bot, action, **params):

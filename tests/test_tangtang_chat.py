@@ -84,13 +84,14 @@ def private_message(
     timestamp: int | None = None,
     user_id: int = 3,
     message_id: int = 4,
+    sub_type: str = "friend",
+    source_group: int | None = None,
 ) -> PrivateMessageEvent:
-    return PrivateMessageEvent.model_validate(
-        {
+    payload = {
             "time": int(time()) if timestamp is None else timestamp,
             "self_id": 2,
             "post_type": "message",
-            "sub_type": "friend",
+            "sub_type": sub_type,
             "user_id": user_id,
             "message_type": "private",
             "message_id": message_id,
@@ -106,7 +107,9 @@ def private_message(
             },
             "to_me": True,
         }
-    )
+    if source_group is not None:
+        payload["group_id"] = source_group
+    return PrivateMessageEvent.model_validate(payload)
 
 
 def enabled_config(**overrides) -> TangtangConfig:
@@ -2801,7 +2804,7 @@ def test_group_prompt_never_stitches_private_or_other_group_personal_context(
     assert "[个人上下文" not in prompt
 
 
-def test_private_model_uses_personal_session_and_private_delivery(
+def test_group_temporary_private_model_uses_personal_session_and_source_group_delivery(
     tmp_path, monkeypatch
 ):
     service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
@@ -2818,7 +2821,12 @@ def test_private_model_uses_personal_session_and_private_delivery(
     asyncio.run(
         service.handle(
             SimpleNamespace(self_id=2),
-            private_message(text="私聊继续", message_id=88),
+            private_message(
+                text="私聊继续",
+                message_id=88,
+                sub_type="group",
+                source_group=1001,
+            ),
             enabled_config(TANGTANG_CONTEXT_LAYOUT="v2"),
         )
     )
@@ -2827,7 +2835,7 @@ def test_private_model_uses_personal_session_and_private_delivery(
     assert "群里留下的本人发言" in provider.envelopes[-1].current_text
     assert calls[0][0] == "send_private_msg"
     assert calls[0][1]["user_id"] == 3
-    assert "group_id" not in calls[0][1]
+    assert calls[0][1]["group_id"] == 1001
     with service.db._connect() as conn:
         session = conn.execute(
             "SELECT group_id,user_id,session_scope FROM chat_context_sessions"

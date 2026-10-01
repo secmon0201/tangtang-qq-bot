@@ -123,6 +123,18 @@ def _context_compaction_due(
             and int(serialized_chars) >= 12_000
         )
     )
+
+
+def _private_reply_params(event: Any, *, user_id: int, message: Any) -> dict[str, Any]:
+    params: dict[str, Any] = {"user_id": user_id, "message": message}
+    if str(getattr(event, "sub_type", "") or "") != "group":
+        return params
+    source_group_id = int(getattr(event, "group_id", 0) or 0)
+    if source_group_id > 0:
+        params["group_id"] = source_group_id
+    return params
+
+
 CALL_REPEAT_MERGE_SECONDS = 60
 ZHIJIANG_KNOWLEDGE_LIMIT = 3
 ZHIJIANG_KNOWLEDGE_MAX_CHARS = 700
@@ -3404,6 +3416,13 @@ class TangtangService:
                         mode="local",
                         tokens=usage,
                         call_text=call_text,
+                        reply_plan=ReplyPlan(
+                            True,
+                            ("刚刚没组织好，再说一次吧。",),
+                            voice="text",
+                            structured=True,
+                        ),
+                        voice_candidate=False,
                     )
                     return
                 self._audit_pending_context(event, reason="invalid_reply_structure")
@@ -3980,8 +3999,9 @@ class TangtangService:
                         result = await call_qq_action(
                             bot,
                             "send_private_msg",
-                            user_id=user_id,
-                            message=outgoing,
+                            **_private_reply_params(
+                                event, user_id=user_id, message=outgoing
+                            ),
                         )
                     else:
                         result = await call_qq_action(

@@ -94,10 +94,13 @@ def private_event(
     message=1,
     sub_type="friend",
     source_group=0,
+    sender_group_only=False,
 ):
-    value = event(text, group=source_group, message=message)
+    value = event(text, group=0 if sender_group_only else source_group, message=message)
     value.message_type = "private"
     value.sub_type = sub_type
+    if sender_group_only:
+        value.sender.group_id = source_group
     return value
 
 
@@ -360,6 +363,7 @@ async def test_group_temporary_private_delivery_includes_source_group(tmp_path, 
             "发一个大笑表情包",
             sub_type="group",
             source_group=1001,
+            sender_group_only=True,
         ),
         config,
     )

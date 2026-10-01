@@ -137,7 +137,13 @@ def _private_reply_params(event: Any, *, user_id: int, message: Any) -> dict[str
     params: dict[str, Any] = {"user_id": user_id, "message": message}
     if str(getattr(event, "sub_type", "") or "") != "group":
         return params
-    source_group_id = int(getattr(event, "group_id", 0) or 0)
+    # SnowLuma follows OneBot's temp-message shape and puts the source group
+    # on sender.group_id, while some adapters expose it at the event level.
+    source_group_id = int(
+        getattr(event, "group_id", 0)
+        or getattr(getattr(event, "sender", None), "group_id", 0)
+        or 0
+    )
     if source_group_id > 0:
         params["group_id"] = source_group_id
     return params

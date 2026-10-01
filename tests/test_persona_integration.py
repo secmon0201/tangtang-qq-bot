@@ -20,7 +20,12 @@ from bot.services.persona_profiles import VoiceProfile
 from bot.services.persona_store import PersonaStore
 from bot.services.speech import SpeechService
 from bot.services.speech_policy import choose_delivery
-from bot.services.tangtang_chat import AgentResult, TangtangConfig, TangtangService
+from bot.services.tangtang_chat import (
+    AgentResult,
+    PRIVATE_CONTINUATION_REPLY,
+    TangtangConfig,
+    TangtangService,
+)
 from bot.services.tangtang_db import TangtangDb
 from bot.services.tangtang_reply import ReplyPlan, parse_reply_plan
 
@@ -394,6 +399,26 @@ async def test_private_invalid_model_structure_gets_safe_fallback(tmp_path, monk
     assert len(sent) == 1
     assert sent[0][0] == "send_private_msg"
     assert sent[0][1]["message"] == "刚刚没组织好，再说一次吧。"
+
+
+@async_test
+async def test_private_persona_model_silence_gets_text_fallback(tmp_path, monkeypatch):
+    engine, _ = make_locked_runtime(tmp_path)
+    provider = Provider({"decision": "silent", "messages": []})
+    service, config = service_for(tmp_path, engine, provider)
+    sent = []
+
+    async def send(_bot, action, **params):
+        sent.append((action, params))
+        return {"message_id": 79}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, private_event("陪我聊聊"), config)
+
+    assert len(provider.seen) == 1
+    assert len(sent) == 1
+    assert sent[0][0] == "send_private_msg"
+    assert sent[0][1]["message"] == PRIVATE_CONTINUATION_REPLY
 
 
 @async_test

@@ -95,7 +95,9 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
     assert not store.snapshot('cross', ev.user_id, 1001, []).claims
     states = PersonaActions(store).diagnostics()['actions']
     if decision == 'observe':
-        assert not sent and not states
+        assert len(sent) == 1
+        assert sent[0]['message'].strip()
+        assert states == {'confirmed': 1}
     else:
         assert len(sent) == 1
         assert states == {'confirmed' if ack else 'unknown': 1}

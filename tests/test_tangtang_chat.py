@@ -20,6 +20,10 @@ from bot.plugins.tangtang_chat import is_call_event, is_proactive_event
 from bot.services.replies import has_reply_segment
 from bot.services.tangtang_chat import (
     AgentResult,
+    PRIVATE_CONTINUATION_REPLY,
+    PRIVATE_ERROR_REPLY,
+    PRIVATE_REQUIRED_REPLY_INSTRUCTION,
+    PRIVATE_TOPIC_PIVOT_REPLY,
     RESOURCE_DIR,
     TOOL_SCHEMAS,
     TangtangConfig,
@@ -1109,6 +1113,24 @@ def test_hard_blacklist_blocks_model_and_reply(tmp_path, monkeypatch):
     assert any(event["event"] == "hard_block" for event in events)
 
 
+def test_private_hard_blacklist_pivots_without_model_input(tmp_path, monkeypatch):
+    service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
+    resource_dir = tmp_path / "resources"
+    (resource_dir / "hard_blacklist.txt").write_text("违禁词\n", encoding="utf-8")
+
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            private_message(text="聊聊违禁词", message_id=41),
+            enabled_config(),
+        )
+    )
+
+    assert provider.calls == 0
+    assert sent == [PRIVATE_TOPIC_PIVOT_REPLY]
+    assert any(event["event"] == "hard_block" for event in usage_events(usage_dir))
+
+
 def test_ignore_probability_skips_everything(tmp_path, monkeypatch):
     service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
     monkeypatch.setattr("bot.services.tangtang_chat.random.random", lambda: 0.0)
@@ -1214,6 +1236,24 @@ def test_same_called_text_is_merged_for_one_minute(tmp_path, monkeypatch):
     assert provider.calls == 1
     assert len(sent) == 1
     assert any(event["event"] == "call_repeat" for event in usage_events(usage_dir))
+
+
+def test_same_private_text_is_answered_each_time(tmp_path, monkeypatch):
+    service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
+    config = enabled_config(TANGTANG_IGNORE_PROBABILITY="0.0")
+
+    for message_id in (51, 52):
+        asyncio.run(
+            service.handle(
+                SimpleNamespace(self_id=2),
+                private_message(text="你在吗", message_id=message_id),
+                config,
+            )
+        )
+
+    assert provider.calls == 2
+    assert len(sent) == 2
+    assert not any(event["event"] == "call_repeat" for event in usage_events(usage_dir))
 
 
 def test_exact_tangtang_reply_echo_is_skipped(tmp_path, monkeypatch):
@@ -1578,6 +1618,58 @@ def test_model_silent_does_not_send(tmp_path, monkeypatch):
         tool_version="test", now="now",
     )
     assert service.db.context_window(session_id)[1] == ()
+
+
+def test_private_model_silent_gets_natural_fallback(tmp_path, monkeypatch):
+    service, sent, provider, usage_dir = make_service(
+        tmp_path, monkeypatch, response="[沉默]"
+    )
+
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            private_message(text="陪我聊聊", message_id=61),
+            enabled_config(TANGTANG_CONTEXT_LAYOUT="v2"),
+        )
+    )
+
+    assert provider.calls == 1
+    assert sent == [PRIVATE_CONTINUATION_REPLY]
+    assert PRIVATE_REQUIRED_REPLY_INSTRUCTION in provider.envelopes[-1].current_text
+    events = usage_events(usage_dir)
+    assert any(
+        event["event"] == "forced_reply" and event["detail"] == "model_silent"
+        for event in events
+    )
+    assert not any(event["event"] == "silent" for event in events)
+
+
+def test_private_model_error_gets_natural_fallback(tmp_path, monkeypatch):
+    class FailingProvider(FakeProvider):
+        async def generate_agent(self, *args, **kwargs):
+            self.calls += 1
+            raise TimeoutError("test-only")
+
+    provider = FailingProvider()
+    service, sent, _, usage_dir = make_service(
+        tmp_path, monkeypatch, provider=provider
+    )
+
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            private_message(text="还在吗", message_id=62),
+            enabled_config(TANGTANG_CONTEXT_LAYOUT="v2"),
+        )
+    )
+
+    assert provider.calls == 1
+    assert sent == [PRIVATE_ERROR_REPLY]
+    assert any(
+        event["event"] == "forced_reply"
+        and event["detail"] == "model_error:TimeoutError"
+        for event in usage_events(usage_dir)
+    )
 
 
 def test_cache_cohort_uses_group_spine_and_does_not_persist_request_tail(tmp_path, monkeypatch):
@@ -2833,6 +2925,7 @@ def test_group_temporary_private_model_uses_personal_session_and_source_group_de
 
     assert provider.calls == 1
     assert "群里留下的本人发言" in provider.envelopes[-1].current_text
+    assert PRIVATE_REQUIRED_REPLY_INSTRUCTION in provider.envelopes[-1].current_text
     assert calls[0][0] == "send_private_msg"
     assert calls[0][1]["user_id"] == 3
     assert calls[0][1]["group_id"] == 1001

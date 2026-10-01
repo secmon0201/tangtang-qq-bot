@@ -104,6 +104,14 @@ LINES_PATH = RESOURCE_DIR / "lines.txt"
 
 GROUP_CONTEXT_MESSAGES = 30
 GROUP_DAILY_DIGEST_MESSAGES = 2000
+PRIVATE_CONTINUATION_REPLY = "我在听呢。你继续说，或者聊聊今天发生的事？"
+PRIVATE_TOPIC_PIVOT_REPLY = "这个先放一放吧。换个轻松点的，你今天过得怎么样？"
+PRIVATE_ERROR_REPLY = "刚才有点走神了。你再说一遍，我会认真听。"
+PRIVATE_REQUIRED_REPLY_INSTRUCTION = (
+    "这是一对一私聊，本轮必须回应，不得选择 [沉默] 或只给空消息。"
+    "如果当前内容不适合正面回答，不要生硬拒绝或假装离开；保持当前人格，"
+    "简短含蓄地带过，并自然转到安全的相邻话题，继续接住用户。"
+)
 
 
 def _context_compaction_due(
@@ -2314,7 +2322,10 @@ class TangtangService:
             event.message, at_labels
         )
         header = (
-            "这是当前用户与你的一对一私聊。正常回应当前消息，并结合只属于该用户的个人上下文。"
+            (
+                "这是当前用户与你的一对一私聊。正常回应当前消息，并结合只属于该用户的个人上下文。"
+                + PRIVATE_REQUIRED_REPLY_INSTRUCTION
+            )
             if private
             else (
                 "你在群里看到一条群友发言，没有人呼叫你。判断这条发言值不值得主动接话，"
@@ -2629,7 +2640,7 @@ class TangtangService:
         if not private and self._is_bot_reply_echo(group_id, text):
             self._write_usage(config, group_id, user_id, "bot_reply_echo", mode=None, tokens={})
             return
-        if not self._claim_call_text(scope_id, text):
+        if not private and not self._claim_call_text(scope_id, text):
             self._write_usage(config, group_id, user_id, "call_repeat", mode=None, tokens={})
             return
         at_labels = await resolve_at_labels(bot, event)
@@ -2637,6 +2648,24 @@ class TangtangService:
         lowered = text.lower()
         if _matches(self._hard_terms(), self._hard_patterns(), text):
             self._write_usage(config, group_id, user_id, "hard_block", mode=None, tokens={})
+            if private:
+                await self._send_and_record(
+                    bot,
+                    event,
+                    config,
+                    PRIVATE_TOPIC_PIVOT_REPLY,
+                    reply_kind="canned",
+                    mode="local",
+                    tokens={},
+                    call_text=call_text,
+                    reply_plan=ReplyPlan(
+                        True,
+                        (PRIVATE_TOPIC_PIVOT_REPLY,),
+                        voice="text",
+                        structured=True,
+                    ),
+                    voice_candidate=False,
+                )
             return
         if continuation_turn() is not None and not self.proactive_text_allowed(text):
             return
@@ -2903,10 +2932,12 @@ class TangtangService:
             return
         self._in_flight.add(scope_id)
         mode = "continuation" if continuation_turn() is not None else "proactive" if proactive else config.mode
+        persisted_user_content: str | list[dict[str, Any]] = call_text or ""
         try:
             current_text = (
                 call_text if call_text is not None else event.get_plaintext().strip()
             )
+            persisted_user_content = current_text
             media_resolution = MediaResolution((), ())
             if config.vision_enabled:
                 resolver = self._media_resolver_for(config)
@@ -3231,7 +3262,7 @@ class TangtangService:
             if cache_cohort_enabled:
                 # The public message was delivered to this group. All recall,
                 # quote, visual, and profile material remains request-local.
-                persisted_user_content: str | list[dict[str, Any]] = current_text
+                persisted_user_content = current_text
             else:
                 persisted_user_content = (
                     candidate_envelope.current_text
@@ -3457,8 +3488,21 @@ class TangtangService:
             if not plan.decided or not messages:
                 if context and self.personas:
                     self.personas.choose_expression(context, call_text, plan, 0, blocked="silent")
-                if force_reply and not (context and self.personas):
-                    line = self._pick_canned(group_id) or "我在，怎么啦？"
+                if force_reply:
+                    line = (
+                        PRIVATE_CONTINUATION_REPLY
+                        if private
+                        else self._pick_canned(group_id) or "我在，怎么啦？"
+                    )
+                    self._write_usage(
+                        config,
+                        group_id,
+                        user_id,
+                        "forced_reply",
+                        mode=mode,
+                        tokens=usage,
+                        detail="model_silent",
+                    )
                     await self._send_and_record(
                         bot,
                         event,
@@ -3468,6 +3512,13 @@ class TangtangService:
                         mode="local",
                         tokens=usage,
                         call_text=call_text,
+                        reply_plan=ReplyPlan(
+                            True,
+                            (line,),
+                            voice="text",
+                            structured=True,
+                        ),
+                        voice_candidate=False,
                     )
                     return
                 self._write_usage(
@@ -3495,13 +3546,58 @@ class TangtangService:
             )
         except Exception as exc:
             logger.warning(
-                "Tangtang model request failed; response suppressed: "
+                "Tangtang model request failed: "
                 f"{type(exc).__name__}: {exc}"
             )
             self._write_usage(
                 config, group_id, user_id, "error", mode=mode, tokens={}, detail=type(exc).__name__
             )
-            self._audit_pending_context(event, reason=type(exc).__name__)
+            if private and self._turn_current():
+                if not self._pending_context_items.get():
+                    self._pending_context_items.set((
+                        {
+                            "type": "message",
+                            "role": "user",
+                            "content": persisted_user_content,
+                        },
+                    ))
+                self._write_usage(
+                    config,
+                    group_id,
+                    user_id,
+                    "forced_reply",
+                    mode=mode,
+                    tokens={},
+                    detail=f"model_error:{type(exc).__name__}",
+                )
+                try:
+                    await self._send_and_record(
+                        bot,
+                        event,
+                        config,
+                        PRIVATE_ERROR_REPLY,
+                        reply_kind="canned",
+                        mode="local",
+                        tokens={},
+                        call_text=call_text,
+                        reply_plan=ReplyPlan(
+                            True,
+                            (PRIVATE_ERROR_REPLY,),
+                            voice="text",
+                            structured=True,
+                        ),
+                        voice_candidate=False,
+                    )
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "Tangtang private fallback failed: {}",
+                        type(fallback_exc).__name__,
+                    )
+                    self._audit_pending_context(
+                        event, reason=type(fallback_exc).__name__
+                    )
+            else:
+                self._audit_pending_context(event, reason=type(exc).__name__)
         finally:
             self._in_flight.discard(scope_id)
 

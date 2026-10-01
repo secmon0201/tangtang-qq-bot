@@ -8,7 +8,12 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from nonebot import on_message, get_driver, get_bots, logger
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    MessageEvent,
+    PrivateMessageEvent,
+)
 from nonebot.message import event_preprocessor
 
 from bot.config import settings
@@ -53,6 +58,7 @@ from bot.services.local_skill_contract import ACTION_CONTRACTS, MAX_SKILL_CALLS,
 from bot.services.tangtang_media import extract_image_references
 from bot.services.agent_tools import ToolExecutionResult
 from bot.services.action_state import STATE_ACTIONS, action_state_versions
+from bot.services.chat_scope import dispatch_scope_id, is_private_message
 
 
 PASSIVE_EVENT_MAX_AGE_SECONDS = 120
@@ -428,7 +434,7 @@ def runtime_config() -> TangtangConfig:
     return loader.load().with_group_ids(group_domains().all_group_ids())
 
 
-def _is_stale(event: GroupMessageEvent) -> bool:
+def _is_stale(event: MessageEvent) -> bool:
     timestamp = int(getattr(event, "time", 0) or 0)
     return timestamp > 0 and time.time() - timestamp > PASSIVE_EVENT_MAX_AGE_SECONDS
 
@@ -441,15 +447,12 @@ def automation_is_paused() -> bool:
 
 
 def is_call_event(event: MessageEvent) -> bool:
-    """Called messages only: @ bot, or text containing the call keyword."""
+    """All private chat, or called group messages."""
 
-    if not isinstance(event, GroupMessageEvent):
-        return False
     config = runtime_config()
     if (
         not config.enabled
         or not passive_settings().is_chat_globally_enabled("mention_chat")
-        or not group_domains().feature_enabled(int(event.group_id), "mention_chat")
     ):
         return False
     if _is_stale(event):
@@ -458,10 +461,16 @@ def is_call_event(event: MessageEvent) -> bool:
     text = original.extract_plain_text().strip()
     mentioned = any(segment.type == "at" and str(segment.data.get("qq")) == str(event.self_id) for segment in original)
     if not text:
-        return mentioned
+        return bool(event.message) if isinstance(event, PrivateMessageEvent) else mentioned
     if text.startswith(settings.command_prefix) or _CODEX_COMMAND_RE.match(text):
         return False
     if _GAME_CODE_RE.match(text) or GAME_COMMAND_RE.match(text):
+        return False
+    if isinstance(event, PrivateMessageEvent):
+        return bool(text or event.message)
+    if not isinstance(event, GroupMessageEvent):
+        return False
+    if not group_domains().feature_enabled(int(event.group_id), "mention_chat"):
         return False
     if mentioned:
         return True
@@ -521,7 +530,7 @@ tangtang_call = on_message(rule=is_call_event, priority=-1, block=False)
 
 
 @tangtang_call.handle()
-async def _(bot: Bot, event: GroupMessageEvent):
+async def _(bot: Bot, event: MessageEvent):
     if str(event.user_id) == str(bot.self_id):
         return
     if not passive_settings().is_chat_globally_enabled("mention_chat"):
@@ -530,6 +539,14 @@ async def _(bot: Bot, event: GroupMessageEvent):
         return
     config = runtime_config()
     context = persona_engine().snapshot(event, config.model, False)
+    if is_private_message(event):
+        dispatcher.submit(
+            dispatch_scope_id(event),
+            lambda: service.handle(bot, event, config, context=context),
+            request_id=context.request_id,
+            current=lambda: persona_engine().current(context),
+        )
+        return
     if continuation_coordinator.offer(bot, event, config, context, explicit=True):
         proactive_coordinator.pending.pop(int(event.group_id), None)
 
@@ -586,14 +603,48 @@ async def _record_group_context(bot: Bot, event: MessageEvent):
 
 
 async def _capture_group_context(bot: Bot, event: MessageEvent):
-    """Keep the latest group texts in memory for call-time atmosphere context."""
+    """Persist raw group/private text for the appropriate context scope."""
 
-    if not isinstance(event, GroupMessageEvent):
+    if not isinstance(event, (GroupMessageEvent, PrivateMessageEvent)):
         return
     config = runtime_config()
-    if not config.enabled or int(event.group_id) not in group_domains().all_group_ids():
+    if not config.enabled:
         return
     if str(event.user_id) == str(bot.self_id):
+        return
+    if isinstance(event, PrivateMessageEvent):
+        if db.interaction_blocked(0, int(event.user_id)):
+            service.record_private_message(
+                "", "", user_id=int(event.user_id), message_id=str(event.message_id)
+            )
+            return
+        engine = persona_engine()
+        frozen = engine.snapshot(event, config.model, False)
+        text = render_message_text(event.message, {})
+        media_references = extract_image_references(
+            event, config.vision_max_images, include_reply=False
+        )
+        sender = getattr(event, "sender", None)
+        nickname = str(getattr(sender, "nickname", "") or "用户")
+        service.record_private_message(
+            nickname,
+            text or "[图片]",
+            user_id=int(event.user_id),
+            message_id=str(getattr(event, "message_id", "") or ""),
+            media_references=media_references,
+            observation={
+                "persona": frozen.persona.key,
+                "route_version": f"{frozen.selection_revision}:{frozen.persona.version}",
+                "occurred_at": float(getattr(event, "time", time.time())),
+                "received_at": time.time(),
+                "reply_to": str(
+                    getattr(getattr(event, "reply", None), "message_id", "") or ""
+                ),
+                "attribution": "direct",
+            },
+        )
+        return
+    if int(event.group_id) not in group_domains().all_group_ids():
         return
     if db.interaction_blocked(int(event.group_id), int(event.user_id)):
         service.record_group_message(int(event.group_id), "", "",

@@ -378,7 +378,9 @@ def test_group_summary_is_not_injected_for_tangtang(tmp_path, monkeypatch):
     assert "[当前群聊话题摘要" not in prompt
 
 
-def test_unlimited_history_keeps_the_entire_oldest_message(tmp_path, monkeypatch):
+def test_group_prompt_does_not_inject_personal_history_even_when_unlimited(
+    tmp_path, monkeypatch
+):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     oldest = "开头" + "甲" * 12000 + "结尾标记"
     service.db.insert_call(
@@ -395,4 +397,4 @@ def test_unlimited_history_keeps_the_entire_oldest_message(tmp_path, monkeypatch
     assert oldest in history
     config = enabled_config(TANGTANG_MAX_INPUT_CHARS="0", TANGTANG_HISTORY_CHARS="0")
     prompt = service._build_prompt(group_message(group_id=1001, text="记得我吗"), config)
-    assert "结尾标记" in prompt
+    assert "结尾标记" not in prompt

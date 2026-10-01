@@ -83,6 +83,12 @@ def event(text="娅娅，今天过得怎么样", *, group=1001, message=1):
         is_tome=lambda: False, sender=SimpleNamespace(card="", nickname="群友"), reply=None)
 
 
+def private_event(text="今天过得怎么样", *, message=1):
+    value = event(text, group=0, message=message)
+    value.message_type = "private"
+    return value
+
+
 class Provider:
     def __init__(self, response, after=None):
         self.response, self.after, self.seen = response, after, []
@@ -300,6 +306,56 @@ async def test_requested_expression_bypasses_random_ignore_and_model(tmp_path, m
         assert "没有可用" in str(sent[0])
     assert engine.history("denia", service.db).list_calls(2001, 1001)[0]["reply_text"] == (
         "给你。" if enabled else "现在没有可用的角色表情。")
+
+
+@async_test
+async def test_private_requested_expression_uses_private_delivery(tmp_path, monkeypatch):
+    engine, _ = make_locked_runtime(tmp_path)
+    provider = Provider({"decision": "silent", "messages": []})
+    service, config = service_for(tmp_path, engine, provider)
+    sent = []
+
+    async def send(_bot, action, **params):
+        sent.append((action, params))
+        return {"message_id": 77}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, private_event("发一个大笑表情包"), config)
+
+    assert not provider.seen
+    assert len(sent) == 1
+    assert sent[0][0] == "send_private_msg"
+    assert sent[0][1]["user_id"] == 2001
+    assert "group_id" not in sent[0][1]
+    assert [segment.type for segment in sent[0][1]["message"]] == ["text", "image"]
+
+
+@async_test
+async def test_private_invalid_model_structure_gets_safe_fallback(tmp_path, monkeypatch):
+    engine, _ = make_locked_runtime(tmp_path)
+
+    class InvalidProvider:
+        calls = 0
+
+        async def generate_agent(self, *_args, **_kwargs):
+            self.calls += 1
+            return AgentResult("这不是结构化回复", (), {})
+
+    provider = InvalidProvider()
+    service, config = service_for(tmp_path, engine, provider)
+    sent = []
+
+    async def send(_bot, action, **params):
+        sent.append((action, params))
+        return {"message_id": 78}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    await service.handle(None, private_event("来一张美图"), config)
+
+    assert provider.calls == 1
+    assert len(sent) == 1
+    assert sent[0][0] == "send_private_msg"
+    assert sent[0][1]["message"] == "刚刚没组织好，再说一次吧。"
 
 
 @async_test
@@ -665,7 +721,7 @@ async def test_dispatch_does_not_hold_event_path_and_limits_groups():
 
 
 @async_test
-async def test_recognition_prompt_reaches_chat_after_switching_groups(tmp_path, monkeypatch):
+async def test_recognition_prompt_does_not_cross_groups(tmp_path, monkeypatch):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, 'denia')
     engine.store.switch(1002, 'denia')
@@ -678,7 +734,9 @@ async def test_recognition_prompt_reaches_chat_after_switching_groups(tmp_path, 
         return {'message_id':123}
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action',send)
     await service.handle(None,event('娅娅，还记得我是谁吗',group=1002,message=20),config)
-    assert provider.seen and '用户本人曾说：我是鸣潮高手' in provider.seen[0][1]
+    assert provider.seen
+    assert '用户本人曾说：我是鸣潮高手' not in provider.seen[0][1]
+    assert '我是鸣潮高手' not in provider.seen[0][1]
 
 
 @async_test

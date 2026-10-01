@@ -106,7 +106,7 @@ def test_model_failure_has_no_memory_or_speech_side_effects(tmp_path, monkeypatc
     asyncio.run(run())
 
 
-def test_actual_generation_prompt_contains_scene_and_memory_contracts(tmp_path):
+def test_group_generation_prompt_contains_scene_but_no_personal_memory_contract(tmp_path):
     async def run():
         engine, _ = make_runtime(tmp_path)
         engine.store.switch(1001, "denia")
@@ -116,7 +116,8 @@ def test_actual_generation_prompt_contains_scene_and_memory_contracts(tmp_path):
         assert provider.seen
         actual_prompt = "\n".join(provider.seen[0])
         assert "真实失落、疲惫或严肃求助" in actual_prompt
-        assert "[个人记忆提取合同]" in actual_prompt
+        assert "[个人记忆提取合同]" not in actual_prompt
+        assert "不得拼接私聊、个人会话或其他群" in actual_prompt
         assert "未完成问题只使用当前群记录" in actual_prompt or "未完问题只使用本群记录" in actual_prompt
     asyncio.run(run())
 

@@ -76,6 +76,21 @@ def test_layer_sizes_contain_counts_not_content():
     assert all(isinstance(value, int) for value in sizes.values())
 
 
+def test_private_tail_is_after_current_input_and_excluded_from_replay_sizes():
+    envelope = ContextEnvelope.create(
+        persona="persona",
+        conversation_items=({"type": "message", "role": "user", "content": "old"},),
+        compacted_snapshot="facts",
+        dynamic_status="dynamic",
+        current_input="current",
+        private_tail="private recall",
+    )
+
+    assert envelope.current_text.endswith("private recall")
+    assert envelope.layer_sizes()["private_tail_chars"] == len("private recall")
+    assert envelope.layer_sizes()["replay_chars"] > len("facts")
+
+
 def test_stable_prefix_contains_the_output_protocol():
     envelope = ContextEnvelope.create(persona="persona", tools=TOOLS)
     assert AGENT_REPLY_INSTRUCTIONS in envelope.static_text
@@ -99,6 +114,36 @@ def test_layered_payload_places_tools_before_the_changing_conversation():
         )
         keys = tuple(payload)
         assert keys.index("tools") < keys.index(conversation_key)
+
+
+def test_cache_affinity_key_is_opt_in_and_does_not_change_static_hash():
+    plain = ContextEnvelope.create(persona="persona", current_input="current", tools=TOOLS)
+    affinity = ContextEnvelope.create(
+        persona="persona",
+        current_input="current",
+        tools=TOOLS,
+        cache_affinity_key="tangtang-group-spine-0123456789abcdef",
+    )
+    base = TangtangConfig.disabled("test")
+
+    assert plain.static_prefix_hash == affinity.static_prefix_hash
+    for style, builder in (
+        ("responses", TangtangProvider._responses_payload),
+        ("chat_completions", TangtangProvider._chat_payload),
+    ):
+        config = replace(base, api_style=style, model="model", max_output_tokens=32)
+        plain_payload = builder(
+            config, plain.static_text, plain.current_text, tools=TOOLS, envelope=plain
+        )
+        affinity_payload = builder(
+            config,
+            affinity.static_text,
+            affinity.current_text,
+            tools=TOOLS,
+            envelope=affinity,
+        )
+        assert "prompt_cache_key" not in plain_payload
+        assert affinity_payload["prompt_cache_key"] == affinity.cache_affinity_key
 
 
 def test_cognition_snapshot_can_separate_the_stable_contract_from_dynamic_data():

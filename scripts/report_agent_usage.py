@@ -77,6 +77,24 @@ def _bounded_label(value: Any) -> str:
     return text if 1 <= len(text) <= 128 and all(char.isalnum() or char in "-_.:/" for char in text) else "unknown"
 
 
+def _counter(records: Iterable[Mapping[str, Any]], field: str) -> dict[str, int]:
+    return dict(sorted(Counter(_bounded_label(row.get(field)) for row in records).items()))
+
+
+def _warm_rows(rows: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Rows with a prior confirmed delivery in the same redacted cache cohort."""
+
+    seen_delivered: set[str] = set()
+    warm: list[Mapping[str, Any]] = []
+    for row in sorted(rows, key=lambda item: str(item.get("ts") or "")):
+        cohort = _bounded_hash(row.get("cache_cohort_hash"))
+        if cohort and cohort in seen_delivered:
+            warm.append(row)
+        if cohort and str(row.get("event") or "") in {"reply", "proactive_reply"}:
+            seen_delivered.add(cohort)
+    return warm
+
+
 def select_requests(
     records: Iterable[Mapping[str, Any]],
     *,
@@ -125,7 +143,9 @@ def _median(values: list[float | int]) -> float | None:
     return round(float(statistics.median(values)), 4) if values else None
 
 
-def summarize(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+def summarize(
+    records: Iterable[Mapping[str, Any]], *, include_warm: bool = True
+) -> dict[str, Any]:
     rows = list(records)
     prompt_tokens = [_integer(row.get("prompt_tokens")) or 0 for row in rows]
     cache_claimed = [row for row in rows if row.get("cache_status") == "reported"]
@@ -182,6 +202,9 @@ def summarize(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             "cache_read_tokens_total": cache_read_total if cache_numeric_records else None,
             "cache_write_tokens_total": cache_write_total if cache_numeric_records else None,
             "non_cached_input_tokens_total": cache_miss_total if cache_numeric_records else None,
+            "inferred_zero_records": sum(
+                1 for row in cache_reported if row.get("cache_zero_inferred") is True
+            ),
             "weighted_cache_ratio": (
                 round(cache_read_total / reported_prompt, 4) if reported_prompt > 0 else None
             ),
@@ -194,6 +217,29 @@ def summarize(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         "native_tool_modes": dict(sorted(tool_modes.items())),
         "static_prefix_hashes": static_hashes,
         "tool_schema_hashes": schema_hashes,
+        "cache_cohort_modes": _counter(rows, "cache_cohort_mode"),
+        "session_scopes": _counter(rows, "session_scope"),
+        "budget_actions": _counter(rows, "budget_action"),
+        "cache_affinity_modes": _counter(rows, "cache_affinity_mode"),
+        "context_epochs": _counter(rows, "context_epoch"),
+        "warm_group_spine": (
+            summarize(
+                [row for row in _warm_rows(rows) if row.get("session_scope") == "group_spine"],
+                include_warm=False,
+            )
+            if include_warm else None
+        ),
+        "warm_active_group_spine": (
+            summarize(
+                _warm_rows([
+                    row for row in rows
+                    if row.get("session_scope") == "group_spine"
+                    and row.get("cache_affinity_mode") == "active"
+                ]),
+                include_warm=False,
+            )
+            if include_warm else None
+        ),
     }
 
 
@@ -234,6 +280,18 @@ def summarize_payload_builds(records: Iterable[Mapping[str, Any]]) -> dict[str, 
             value for row in rows
             if (value := _integer(row.get("conversation_chars"))) is not None
         ]),
+        "replay_chars_median": _median([
+            value for row in rows
+            if (value := _integer(row.get("replay_chars"))) is not None
+        ]),
+        "private_tail_chars_median": _median([
+            value for row in rows
+            if (value := _integer(row.get("private_tail_chars"))) is not None
+        ]),
+        "cache_cohort_modes": _counter(rows, "cache_cohort_mode"),
+        "session_scopes": _counter(rows, "session_scope"),
+        "budget_actions": _counter(rows, "budget_action"),
+        "cache_affinity_modes": _counter(rows, "cache_affinity_mode"),
     }
 
 

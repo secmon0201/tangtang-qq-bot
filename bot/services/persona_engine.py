@@ -20,6 +20,7 @@ from bot.services.persona_memory_store import PersonMemoryStore
 from bot.services.expression_selection import ExpressionSelection
 from bot.services.persona_expressions import expression_request
 from bot.services.persona_cognition import CognitionStore
+from bot.services.chat_scope import context_group_id, is_private_message
 
 
 class PersonaEngine:
@@ -66,12 +67,19 @@ class PersonaEngine:
         return self._cognition[persona]
 
     def snapshot(self, event, model: str, proactive: bool) -> ChatContext:
-        group_id = int(event.group_id)
+        group_id = context_group_id(event)
         persona, revision = self._selection(group_id)
         message_id = str(getattr(event, "message_id", "") or uuid.uuid4().hex)
-        return ChatContext(self.profiles[persona], group_id, int(event.user_id),
-                           f"{group_id}:{message_id}", revision, self.store.revision(), model, proactive,
-                           self.configuration_version(), self.gate_revision(group_id))
+        private = is_private_message(event)
+        request_id = (
+            f"private:{int(event.user_id)}:{message_id}"
+            if private else f"{group_id}:{message_id}"
+        )
+        return ChatContext(
+            self.profiles[persona], group_id, int(event.user_id), request_id,
+            revision, self.store.revision(), model, proactive,
+            self.configuration_version(), self.gate_revision(group_id), private,
+        )
 
     def current(self, context: ChatContext) -> bool:
         return (self._selection(context.group_id) == (context.persona.key, context.selection_revision)
@@ -176,9 +184,18 @@ class PersonaEngine:
         return None
 
     def stable_extra_prompt(self, context: ChatContext) -> str:
-        parts = ["普通聊天只使用当前群的有序消息和群内资料；不同群的上下文、话题、约定和用户个人资料互不继承。记忆或画像功能若被明确请求，也只能读取当前群范围。不要迁怒其他人，不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
+        if getattr(context, "private", False):
+            parts = [
+                "这是与当前用户的一对一私聊。只使用该用户自己的私聊发言、该用户在各群的发言和本私聊已确认送达的互动；不得带入任何其他用户的发言、资料或关系。"
+                "群聊中的群资料、群摘要和其他成员上下文不得进入私聊。"
+            ]
+            scene_rules = context.persona.resource_dir / "scene-expression.md"
+            if scene_rules.is_file():
+                parts.append(scene_rules.read_text(encoding="utf-8"))
+            return "\n\n".join(parts)
+        parts = ["普通聊天只使用当前群的有序消息和群内资料；不得拼接私聊、个人会话或其他群的上下文。不要迁怒其他人，不自动形成恋爱或排他关系。背景群聊不是本人格的亲历记忆。"]
         if context.persona.key == 'denia':
-            parts[0] = '你在每个群里都只依据当前群的记录与群内资料交流。不同群的用户资料、关系、经历、称呼和待办约定互不继承；明确请求记忆或画像时也只查看当前群。知道、推测、已告知和实际完成是不同状态，不把旁观当共同经历。'
+            parts[0] = '你在群聊中只依据当前群的记录与群内资料交流。不得拼接私聊、个人会话或其他群的用户资料、关系、经历、称呼和待办约定。知道、推测、已告知和实际完成是不同状态，不把旁观当共同经历。'
         scene_rules = context.persona.resource_dir / "scene-expression.md"
         if scene_rules.is_file():
             parts.append(scene_rules.read_text(encoding="utf-8"))

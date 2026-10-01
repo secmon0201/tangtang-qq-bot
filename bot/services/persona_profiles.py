@@ -66,6 +66,7 @@ class ChatContext:
     proactive: bool = False
     configuration_version: str = ""
     gate_revision: tuple[int, int] = (0, 0)
+    private: bool = False
 
 
 def load_personas(root: Path | None = None) -> dict[str, PersonaProfile]:

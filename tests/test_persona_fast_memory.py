@@ -10,6 +10,12 @@ from bot.services.tangtang_reply import parse_reply_plan
 from tests.test_persona_integration import async_test, event, make_runtime, Provider, service_for
 
 
+def private_event(text: str):
+    ev = event(text, group=0)
+    ev.message_type = "private"
+    return ev
+
+
 def fast_kernel(path):
     return TangtangMemoryKernel(TangtangDb(path), lambda: '2026-09-18T16:00:00+08:00', global_personal=True)
 
@@ -121,7 +127,7 @@ async def test_delivery_is_the_only_commit_point_for_fast_memory_impression_and_
 @async_test
 async def test_local_memory_controls_do_not_call_model_even_at_full_ignore_probability(tmp_path, monkeypatch, text):
     engine, _ = make_runtime(tmp_path)
-    engine.store.switch(1001, 'denia')
+    engine.store.switch(0, 'denia')
     provider = Provider({})
     service, config = service_for(tmp_path, engine, provider)
     config = replace(config, call_ignore_probability_by_group={1001: 1.0})
@@ -130,7 +136,7 @@ async def test_local_memory_controls_do_not_call_model_even_at_full_ignore_proba
         sent.append(str(params['message']))
         return {'message_id': 99}
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
-    await service.handle(None, event(text), config)
+    await service.handle(None, private_event(text), config)
     assert sent and not provider.seen
 
 

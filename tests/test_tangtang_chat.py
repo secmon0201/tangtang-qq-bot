@@ -8,7 +8,12 @@ from time import time
 
 import pytest
 import nonebot
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import (
+    GroupMessageEvent,
+    Message,
+    MessageSegment,
+    PrivateMessageEvent,
+)
 
 nonebot.init()
 from bot.plugins.tangtang_chat import is_call_event, is_proactive_event
@@ -69,6 +74,37 @@ def group_message(
             },
             "to_me": to_me,
             "group_id": group_id,
+        }
+    )
+
+
+def private_message(
+    *,
+    text: str = "test",
+    timestamp: int | None = None,
+    user_id: int = 3,
+    message_id: int = 4,
+) -> PrivateMessageEvent:
+    return PrivateMessageEvent.model_validate(
+        {
+            "time": int(time()) if timestamp is None else timestamp,
+            "self_id": 2,
+            "post_type": "message",
+            "sub_type": "friend",
+            "user_id": user_id,
+            "message_type": "private",
+            "message_id": message_id,
+            "message": text,
+            "original_message": text,
+            "raw_message": text,
+            "font": 14,
+            "sender": {
+                "user_id": user_id,
+                "nickname": "private-tester",
+                "sex": "unknown",
+                "age": 0,
+            },
+            "to_me": True,
         }
     )
 
@@ -519,6 +555,17 @@ def test_usage_without_cache_fields_is_unsupported_not_zero():
     assert "cache_miss_tokens" not in usage
 
 
+def test_usage_infers_zero_only_for_verified_cache_affinity():
+    usage = TangtangProvider._extract_usage(
+        {"usage": {"prompt_tokens": 12, "completion_tokens": 4}},
+        cache_zero_on_omission=True,
+    )
+    assert usage["cache_status"] == "reported"
+    assert usage["cache_read_tokens"] == 0
+    assert usage["cache_miss_tokens"] == 12
+    assert usage["cache_zero_inferred"] is True
+
+
 def test_usage_merge_accumulates_cache_across_tool_rounds():
     merged = TangtangService._merge_usage(
         {"prompt_tokens": 100, "cache_status": "reported", "cached_tokens": 80,
@@ -554,6 +601,89 @@ def test_call_event_rule(monkeypatch):
         group_message(group_id=1001, text="娅娅在吗", timestamp=int(time()) - 300)
     )
     assert not is_call_event(group_message(group_id=1001, text="报名 517"))
+
+
+def test_private_chat_rule_accepts_any_user_without_group_registration(monkeypatch):
+    enable_plugin_group_features(monkeypatch, 1001)
+    monkeypatch.setattr(
+        "bot.plugins.tangtang_chat.loader",
+        SimpleNamespace(load=lambda: enabled_config()),
+    )
+
+    assert is_call_event(private_message(user_id=9001, text="你好"))
+    assert is_call_event(private_message(user_id=9002, text="不用呼叫词也能聊"))
+    assert is_call_event(
+        private_message(
+            user_id=9005,
+            text="[CQ:image,file=https://example.invalid/private.png]",
+        )
+    )
+    assert not is_call_event(private_message(user_id=9003, text="#帮助"))
+    assert not is_call_event(
+        private_message(user_id=9004, text="过期消息", timestamp=int(time()) - 300)
+    )
+
+
+def test_private_persona_snapshot_uses_zero_scope_and_private_request_id():
+    from bot.services.persona_engine import PersonaEngine
+
+    engine = PersonaEngine.__new__(PersonaEngine)
+    engine.locked_persona = "denia"
+    engine.profiles = {"denia": SimpleNamespace(key="denia", version="v1")}
+    engine.store = SimpleNamespace(revision=lambda: 7)
+    engine.configuration_version = lambda: "config-v1"
+    engine.gate_revision = lambda group_id: (11, int(group_id))
+    engine.chat_enabled = lambda group_id, proactive: group_id == 0 and not proactive
+
+    context = engine.snapshot(private_message(user_id=9001, message_id=55), "model", False)
+
+    assert context.private is True
+    assert context.group_id == 0
+    assert context.user_id == 9001
+    assert context.request_id == "private:9001:55"
+    assert engine.current(context)
+
+
+def test_private_chat_gate_uses_global_switch_without_group_state(monkeypatch):
+    from bot.application import personas as composition
+
+    enabled = {"mention_chat": True}
+    monkeypatch.setattr(
+        composition.config_loader,
+        "load",
+        lambda: SimpleNamespace(enabled=True, proactive_enabled=True),
+    )
+    monkeypatch.setattr(
+        composition,
+        "passive_settings",
+        lambda: SimpleNamespace(
+            is_chat_globally_enabled=lambda feature: enabled[feature]
+        ),
+    )
+    monkeypatch.setattr(
+        composition,
+        "group_domains",
+        lambda: (_ for _ in ()).throw(AssertionError("private chat read group state")),
+    )
+
+    assert composition.chat_enabled(0, False)
+    assert not composition.chat_enabled(0, True)
+    enabled["mention_chat"] = False
+    assert not composition.chat_enabled(0, False)
+
+
+def test_private_persona_features_enable_only_expressions_without_group_state(monkeypatch):
+    from bot.application import personas as composition
+
+    monkeypatch.setattr(
+        composition,
+        "group_domains",
+        lambda: (_ for _ in ()).throw(AssertionError("private feature read group state")),
+    )
+
+    assert composition.persona_feature_enabled(0, "persona_expressions")
+    assert not composition.persona_feature_enabled(0, "persona_voice")
+    assert not composition.persona_feature_enabled(0, "persona_growth")
 
 
 def test_active_denias_call_word_and_wrong_names(monkeypatch):
@@ -1447,6 +1577,95 @@ def test_model_silent_does_not_send(tmp_path, monkeypatch):
     assert service.db.context_window(session_id)[1] == ()
 
 
+def test_cache_cohort_uses_group_spine_and_does_not_persist_request_tail(tmp_path, monkeypatch):
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    config = enabled_config(
+        TANGTANG_CONTEXT_LAYOUT="v2",
+        TANGTANG_CACHE_COHORT_MODE="on",
+    )
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=88, text="糖糖 记得我吗", user_id=3),
+        config,
+    ))
+
+    envelope = provider.envelopes[-1]
+    assert envelope is not None
+    with service.db._connect() as conn:
+        sessions = conn.execute(
+            "SELECT user_id, session_scope FROM chat_context_sessions ORDER BY id"
+        ).fetchall()
+        stored = conn.execute(
+            "SELECT payload_json FROM chat_context_turns ORDER BY id"
+        ).fetchall()
+    assert [(row["user_id"], row["session_scope"]) for row in sessions] == [(0, "group_spine")]
+    assert "[动态状态" not in stored[0]["payload_json"]
+    assert "记得我吗" in stored[0]["payload_json"]
+    assert envelope.static_prefix_hash
+    assert envelope.cache_affinity_key.startswith("tangtang-group-spine-")
+    assert "1001" not in envelope.cache_affinity_key
+
+
+def test_cache_cohort_configuration_validates_rollout_limits():
+    config = enabled_config(
+        TANGTANG_CONTEXT_LAYOUT="v2",
+        TANGTANG_CACHE_COHORT_MODE="canary",
+        TANGTANG_CACHE_CANARY_GROUP_IDS="1001",
+        TANGTANG_CACHE_SOFT_REPLAY_CHARS="16000",
+        TANGTANG_CACHE_HARD_REPLAY_CHARS="24000",
+    )
+    assert config.cache_cohort_enabled_for(1001)
+    assert not config.cache_cohort_enabled_for(1002)
+    with pytest.raises(ValueError, match="HARD_REPLAY"):
+        enabled_config(
+            TANGTANG_CONTEXT_LAYOUT="v2",
+            TANGTANG_CACHE_SOFT_REPLAY_CHARS="24000",
+            TANGTANG_CACHE_HARD_REPLAY_CHARS="16000",
+        )
+
+
+def test_cache_shadow_keeps_the_single_group_session(
+    tmp_path, monkeypatch
+):
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    original_payload = TangtangProvider._responses_payload
+    captured_payloads = []
+
+    def capture_payload(*args, **kwargs):
+        payload = original_payload(*args, **kwargs)
+        captured_payloads.append(payload)
+        return payload
+
+    monkeypatch.setattr(
+        TangtangProvider, "_responses_payload", staticmethod(capture_payload)
+    )
+    config = enabled_config(
+        TANGTANG_CONTEXT_LAYOUT="v2",
+        TANGTANG_CACHE_COHORT_MODE="shadow",
+    )
+    asyncio.run(service.handle(
+        SimpleNamespace(self_id=2),
+        group_message(group_id=1001, message_id=89, text="糖糖 记得我吗 shadow 检查", user_id=3),
+        config,
+    ))
+    with service.db._connect() as conn:
+        scopes = conn.execute(
+            "SELECT session_scope, COUNT(*) AS count FROM chat_context_sessions GROUP BY session_scope"
+        ).fetchall()
+        turns = conn.execute("SELECT COUNT(*) AS count FROM chat_context_turns").fetchone()["count"]
+    assert {row["session_scope"]: row["count"] for row in scopes} == {
+        "group_spine": 1,
+    }
+    assert turns == 2
+    assert provider.envelopes[-1] is not None
+    assert provider.envelopes[-1].cache_affinity_key == ""
+    assert len(captured_payloads) == 2
+    assert "prompt_cache_key" not in captured_payloads[0]
+    assert captured_payloads[1]["prompt_cache_key"].startswith(
+        "tangtang-group-spine-"
+    )
+
+
 def test_c_mode_question_replies_and_casual_rolls(tmp_path, monkeypatch):
     config = enabled_config(TANGTANG_MODE="c")
     service, sent, provider, usage_dir = make_service(tmp_path, monkeypatch)
@@ -2205,6 +2424,42 @@ def test_context_images_keep_their_original_senders(tmp_path, monkeypatch):
     assert "不要把引用消息的发送者当成其他上下文图片的发送者" in prompt
 
 
+def test_private_context_images_never_include_another_private_user(
+    tmp_path, monkeypatch
+):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_private_message(
+        "本人",
+        "[图片]",
+        user_id=11,
+        message_id="mine",
+        media_references=(
+            ImageReference("current", 1, "https://example.test/mine.png"),
+        ),
+    )
+    service.record_private_message(
+        "其他人",
+        "[图片]",
+        user_id=22,
+        message_id="other",
+        media_references=(
+            ImageReference("current", 1, "https://example.test/other.png"),
+        ),
+    )
+
+    references = service._context_image_references(
+        0,
+        exclude_message_id="current",
+        limit=2,
+        user_id=11,
+    )
+
+    assert [item.value for item in references] == [
+        "https://example.test/mine.png"
+    ]
+    assert all(item.sender_id == 11 for item in references)
+
+
 def test_context_images_only_use_the_immediately_previous_message(tmp_path, monkeypatch):
     service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
     service.record_group_message(
@@ -2489,3 +2744,92 @@ def test_prompt_includes_user_history_section(tmp_path, monkeypatch):
     prompt = service._build_prompt(event, enabled_config())
     assert "[该群友最近发言" not in prompt
     assert "我今天想聊枝江" in prompt
+
+
+def test_private_prompt_uses_only_the_same_users_private_and_group_utterances(
+    tmp_path, monkeypatch
+):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(
+        1001, "本人", "我在一群说过的话", user_id=3, message_id="g1"
+    )
+    service.record_group_message(
+        1002, "本人", "我在二群说过的话", user_id=3, message_id="g2"
+    )
+    service.record_group_message(
+        1001, "其他人", "绝不能进入私聊", user_id=9, message_id="other"
+    )
+    service.record_private_message(
+        "本人", "之前的私聊", user_id=3, message_id="p1"
+    )
+
+    prompt = service._build_prompt(
+        private_message(text="现在继续聊", message_id=99), enabled_config()
+    )
+
+    assert "[当前私聊消息]" in prompt
+    assert "我在一群说过的话" in prompt
+    assert "我在二群说过的话" in prompt
+    assert "之前的私聊" in prompt
+    assert "绝不能进入私聊" not in prompt
+    assert "[最近群聊气氛" not in prompt
+    assert "当前群号" not in prompt
+
+
+def test_group_prompt_never_stitches_private_or_other_group_personal_context(
+    tmp_path, monkeypatch
+):
+    service, _sent, _provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(
+        1001, "本人", "只属于当前群", user_id=3, message_id="g1"
+    )
+    service.record_group_message(
+        1002, "本人", "另一个群的本人发言", user_id=3, message_id="g2"
+    )
+    service.record_private_message(
+        "本人", "私聊里的本人发言", user_id=3, message_id="p1"
+    )
+
+    prompt = service._build_prompt(
+        group_message(group_id=1001, text="娅娅，你还记得我吗"), enabled_config()
+    )
+
+    assert "只属于当前群" in prompt
+    assert "另一个群的本人发言" not in prompt
+    assert "私聊里的本人发言" not in prompt
+    assert "不得拼接该用户在其他群、私聊或个人会话中的上下文" in prompt
+    assert "[个人上下文" not in prompt
+
+
+def test_private_model_uses_personal_session_and_private_delivery(
+    tmp_path, monkeypatch
+):
+    service, _sent, provider, _usage = make_service(tmp_path, monkeypatch)
+    service.record_group_message(
+        1001, "本人", "群里留下的本人发言", user_id=3, message_id="g1"
+    )
+    calls = []
+
+    async def send(_bot, action, **params):
+        calls.append((action, params))
+        return {"message_id": 7001}
+
+    monkeypatch.setattr("bot.services.tangtang_chat.call_qq_action", send)
+    asyncio.run(
+        service.handle(
+            SimpleNamespace(self_id=2),
+            private_message(text="私聊继续", message_id=88),
+            enabled_config(TANGTANG_CONTEXT_LAYOUT="v2"),
+        )
+    )
+
+    assert provider.calls == 1
+    assert "群里留下的本人发言" in provider.envelopes[-1].current_text
+    assert calls[0][0] == "send_private_msg"
+    assert calls[0][1]["user_id"] == 3
+    assert "group_id" not in calls[0][1]
+    with service.db._connect() as conn:
+        session = conn.execute(
+            "SELECT group_id,user_id,session_scope FROM chat_context_sessions"
+        ).fetchone()
+    assert tuple(session) == (0, 3, "private_personal")

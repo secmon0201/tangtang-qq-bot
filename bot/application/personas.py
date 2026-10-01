@@ -17,9 +17,21 @@ from bot.services.tangtang_db import TangtangDb
 def chat_enabled(group_id: int, proactive: bool) -> bool:
     feature = "proactive_chat" if proactive else "mention_chat"
     config = config_loader.load()
+    if int(group_id) == 0:
+        return (
+            config.enabled
+            and not proactive
+            and passive_settings().is_chat_globally_enabled("mention_chat")
+        )
     return (config.enabled and (not proactive or config.proactive_enabled)
             and passive_settings().is_chat_globally_enabled(feature)
-            and group_domains().effective_feature_enabled(group_id, feature))
+             and group_domains().effective_feature_enabled(group_id, feature))
+
+
+def persona_feature_enabled(group_id: int, feature: str) -> bool:
+    if int(group_id) == 0:
+        return feature == "persona_expressions"
+    return group_domains().effective_feature_enabled(group_id, feature)
 
 
 @lru_cache(maxsize=1)
@@ -31,7 +43,7 @@ def persona_engine() -> PersonaEngine:
     return PersonaEngine(store, speech,
         history_db=history,
         locked_persona="denia",
-        feature_enabled=lambda group, feature: group_domains().effective_feature_enabled(group, feature),
+        feature_enabled=persona_feature_enabled,
         chat_enabled=chat_enabled,
         gate_revision=lambda group: database().chat_gate_revision(group),
         configuration_version=lambda: hashlib.sha256(repr(config_loader.load()).encode()).hexdigest())

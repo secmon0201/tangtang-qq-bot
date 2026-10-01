@@ -89,6 +89,33 @@ def test_context_scope_isolated_by_group_user_and_persona_database(tmp_path: Pat
     assert denia.context_window(scopes[3])[1][0]["content"] == "scope-3"
 
 
+def test_private_personal_session_is_explicit_and_separate_from_group_spines(
+    tmp_path: Path,
+):
+    db = TangtangDb(tmp_path / "context.db")
+    private = db.ensure_context_session(
+        group_id=0,
+        user_id=2001,
+        layout_version="agent-context-v2",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        session_scope="private_personal",
+        now="now",
+    )
+    group = db.ensure_group_context_spine(
+        group_id=1001,
+        layout_version="agent-context-v2",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        stable_prefix_hash="a" * 64,
+        now="now",
+    )
+
+    assert private != group
+    assert db.context_session(private)["session_scope"] == "private_personal"
+    assert db.context_session(group)["session_scope"] == "group_spine"
+
+
 def test_context_version_change_starts_fresh_window_without_deleting_raw_turns(
     tmp_path: Path,
 ):
@@ -125,6 +152,64 @@ def test_context_version_change_starts_fresh_window_without_deleting_raw_turns(
         now="new",
     )
     assert db.context_window(session_id)[1] == (message("user", "new-layout"),)
+
+
+def test_group_spine_keeps_legacy_personal_sessions_historical(tmp_path: Path):
+    db = TangtangDb(tmp_path / "context.db")
+    legacy = session(db, group_id=1001, user_id=2001)
+    spine = db.ensure_group_context_spine(
+        group_id=1001,
+        layout_version="agent-context-v2",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        stable_prefix_hash="a" * 64,
+        now="now",
+    )
+
+    assert legacy != spine
+    assert db.context_session(legacy)["session_scope"] == "legacy_personal"
+    assert db.context_session(spine)["session_scope"] == "group_spine"
+    assert db.context_session(spine)["context_epoch"] == 0
+
+    same_spine = db.ensure_group_context_spine(
+        group_id=1001,
+        layout_version="agent-context-v2",
+        persona_version="persona-v1",
+        tool_version="tools-v1",
+        stable_prefix_hash="b" * 64,
+        now="later",
+    )
+    assert same_spine == spine
+    assert db.context_session(spine)["context_epoch"] == 1
+
+
+def test_hard_budget_keeps_complete_recent_rounds_without_deleting_history(tmp_path: Path):
+    db = TangtangDb(tmp_path / "context.db")
+    session_id = session(db)
+    for index in range(4):
+        db.commit_context_items(
+            session_id,
+            f"round-{index}",
+            (
+                message("user", f"question-{index}-" + "x" * 100),
+                {"type": "tool_call", "call_id": f"call-{index}", "name": "search", "arguments": "{}"},
+                {"type": "tool_result", "call_id": f"call-{index}", "output": "ok"},
+                message("assistant", f"answer-{index}-" + "y" * 100),
+            ),
+            now=f"round-{index}",
+        )
+
+    _snapshot, items, budget = db.context_window_with_budget(
+        session_id, soft_chars=450, hard_chars=700
+    )
+
+    assert budget["budget_action"] == "hard_trimmed"
+    assert [item["type"] for item in items] == [
+        "message", "tool_call", "tool_result", "message"
+    ]
+    assert items[0]["content"].startswith("question-3")
+    with db._connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM chat_context_turns").fetchone()[0] == 16
 
 
 def test_group_context_cursor_advances_only_with_confirmed_delivery(tmp_path: Path):
@@ -359,6 +444,13 @@ def test_snapshot_validation_rejects_wrong_source_and_preserves_old_shape():
         validate_snapshot(summary, source_turn_ids=(1, 3), revision=3)
     with pytest.raises(ValueError, match="fields"):
         validate_snapshot({**summary, "extra": True}, source_turn_ids=(1, 2), revision=3)
+    with pytest.raises(ValueError, match="characters"):
+        validate_snapshot(
+            {**summary, "facts": ["x" * 100]},
+            source_turn_ids=(1, 2),
+            revision=3,
+            max_chars=80,
+        )
 
 
 class CompactionProvider:

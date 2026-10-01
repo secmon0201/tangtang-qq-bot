@@ -100,9 +100,17 @@ Q6 增加 12 个原生写工具；稳定全集现为 36 项。状态版本在付
 TANGTANG_CONTEXT_LAYOUT=v1|shadow|v2
 TANGTANG_NATIVE_ACTION_TOOLS=false|shadow|true
 TANGTANG_CONTEXT_COMPACTION_ENABLED=false|true
+TANGTANG_CACHE_COHORT_MODE=off|shadow|canary|on
+TANGTANG_CACHE_CANARY_GROUP_IDS=<managed group IDs>
+TANGTANG_CACHE_SOFT_REPLAY_CHARS=16000
+TANGTANG_CACHE_HARD_REPLAY_CHARS=24000
+TANGTANG_CACHE_SNAPSHOT_CHARS=6000
+TANGTANG_CACHE_RECENT_ROUNDS=8
 ```
 
 `shadow` 只在本地构造、序列化和比较新旧 payload，不发起第二次模型请求。布局、人格资源和工具 Schema 分别版本化；换群、换用户、状态变化或当前消息变化不得改变稳定前缀 hash。
+
+缓存 cohort 使用每群一个已确认送达的对话主干。个人画像、长期记忆、引用、图片和当前群聊增量只留在本轮尾部，不能写回主干；旧个人会话保留审计用途且不合并。`cache-shadow` 比较候选群主干 payload，实际请求不发送缓存亲和字段；`cache-canary` 仅对指定群启用，`cache-on` 才全量启用。受控探针确认 AIZZ 接受且能提升命中后，`canary/on` 会发送由群主干 session 与 `context_epoch` 哈希派生的 `prompt_cache_key`，不包含群号、用户身份或正文；稳定前缀变化会递增 epoch 并自动换键。
 
 ## 阶段门槛
 
@@ -142,9 +150,10 @@ TANGTANG_CONTEXT_COMPACTION_ENABLED=false|true
 ```powershell
 .\.venv\Scripts\python.exe scripts\replay_agent_context.py
 .\.venv\Scripts\python.exe scripts\benchmark_agent_cache.py
+.\.venv\Scripts\python.exe scripts\probe_provider_cache.py
 ```
 
-`replay_agent_context.py` 对 Responses 与 Chat Completions 构造相同的两轮语义序列，验证上一轮请求是下一轮的严格前缀、工具调用／结果顺序一致、shadow 候选含完整 44 项 Schema 且没有第二次付费请求。报告只含字符数、条目数和 hash，默认写入忽略的 `reports/agent-context-replay.json`。`benchmark_agent_cache.py` 默认同样只构造合成上下文并记录零网络请求；只有人工明确加 `--live` 才会用当前 `config_loader` 和 `TangtangProvider` 连续请求，首轮预热、后续统计真实缓存字段。live 报告使用纯合成长前缀，不包含群聊、身份、端点或密钥；HTTP 失败仍写入脱敏状态和已尝试次数并返回非零，供应商不返回缓存字段时保持 `unsupported`，不得补成零或宣称达标。
+`replay_agent_context.py` 对 Responses 与 Chat Completions 构造相同的两轮语义序列，验证上一轮请求是下一轮的严格前缀、工具调用／结果顺序一致、shadow 候选含完整工具 Schema 且没有第二次付费请求。报告只含字符数、条目数和 hash，默认写入忽略的 `reports/agent-context-replay.json`。`benchmark_agent_cache.py` 默认同样只构造合成上下文并记录零网络请求；只有人工明确加 `--live` 才会用当前 `config_loader` 和 `TangtangProvider` 连续请求，首轮预热、后续统计真实缓存字段。`probe_provider_cache.py --live` 使用冷请求、严格追加、TTL 后追加和不同前缀对照验证通用 payload；只有通用探针未命中时才运行 `--live --prompt-cache-key` 验证缓存亲和能力。该开关只影响合成探针，默认不发送字段。live 报告使用纯合成长前缀，不包含群聊、身份、端点、实际缓存键或密钥；HTTP 失败仍写入脱敏状态和已尝试次数并返回非零，供应商不返回缓存字段时保持 `unsupported`，不得补成零或宣称达标。
 
 生产 usage 聚合使用：
 
@@ -161,10 +170,10 @@ TANGTANG_CONTEXT_COMPACTION_ENABLED=false|true
 上线顺序固定如下：
 
 1. 离线回放和完整门禁通过。
-2. 运行 `.\.venv\Scripts\python.exe scripts\configure_agent_rollout.py --mode shadow --apply`，原子设置 `TANGTANG_CONTEXT_LAYOUT=shadow`、`TANGTANG_NATIVE_ACTION_TOOLS=shadow`、`TANGTANG_CONTEXT_COMPACTION_ENABLED=false`，然后仅重启 NoneBot。shadow 仍只发送一次旧 payload，候选仅本地构造。
-3. 在配置的固定测试群发送普通聊天、一个只读工具和一个明确拒绝用例；核对回复、QQ 回执、usage、OneBot 流量和错误日志。状态型工具优先自动化测试，不为验收制造无必要的真实状态变更。
-4. 依次在固定测试群、少量管理群、全部已启用群观察；三个开关仍为进程级，因此扩大范围使用现有群功能／技能灰度，不新增第四个上下文开关。
-5. 运行 `scripts\configure_agent_rollout.py --mode v2 --apply`，原子设置 `TANGTANG_CONTEXT_LAYOUT=v2`、`TANGTANG_NATIVE_ACTION_TOOLS=true`、`TANGTANG_CONTEXT_COMPACTION_ENABLED=true`，仅重启 NoneBot并重复实聊、只读工具和健康检查。
+2. 运行 `.\.venv\Scripts\python.exe scripts\configure_agent_rollout.py --mode cache-shadow --apply`，原子设置 v2 上下文、缓存 cohort 的 `shadow` 模式和压缩开关，然后仅重启 NoneBot。该模式仍只发送一次旧 payload，候选仅本地构造。
+3. 在配置的测试群连续完成十轮普通文本聊天，每轮等待实际送达后再发送下一轮；普通聊天不携带工具 Schema。明确 `#` 指令的回归验证与缓存十轮样本分开执行，核对回复、QQ 回执、usage、OneBot 流量和错误日志。
+4. 依次在测试群、少量管理群、全部已启用群观察；缓存 cohort 使用同一 `TANGTANG_CACHE_COHORT_MODE` 的 `shadow`、`canary`、`on` 状态推进，群范围由 canary 列表控制。
+5. 运行 `scripts\configure_agent_rollout.py --mode cache-canary --canary-group-ids <已管理测试群> --apply`，仅让测试群启用群主干；通过后使用 `--mode cache-on --apply` 扩大范围。每次仅重启 NoneBot并重复实聊、只读工具和健康检查。
 6. 执行一次开关回退演练：用 `scripts\configure_agent_rollout.py --mode rollback --apply` 切到 `v1/false/false`，仅重启 NoneBot并验证，再用 `--mode v2 --apply` 恢复 `v2/true/true`。每次写入都在 `data/backups` 保存 `.env` 恢复副本；不得删除会话、轮次、快照或压缩任务。
 
 每次重启都必须核验新 PID、`127.0.0.1:8080` 监听归属、已建立 OneBot 连接／实际流量以及空 `logs/bot.err.log`，并确认 SnowLuma、QQ 和 Core 未被重启。固定测试群通知只能使用 `scripts/notify_test_group.py`，不得向脚本传群号。

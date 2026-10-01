@@ -13,10 +13,17 @@ from bot.services.persona_observer import PersonaObserver
 from tests.test_persona_integration import async_test, event, make_runtime, Provider, service_for
 
 
+def private_event(text: str, *, message: int = 1):
+    ev = event(text, group=0, message=message)
+    ev.message_type = "private"
+    return ev
+
+
 def runtime(tmp_path, output):
     engine, _ = make_runtime(tmp_path)
     engine.store.switch(1001, 'denia')
     engine.store.switch(1002, 'denia')
+    engine.store.switch(0, 'denia')
     engine.store.set_option('denia_v2_enabled', True)
     provider = Provider(output)
     service, config = service_for(tmp_path, engine, provider)
@@ -25,18 +32,30 @@ def runtime(tmp_path, output):
 
 def capture(service, engine, config, ev, direct=True):
     context = engine.snapshot(ev, config.model, False)
-    service.record_group_message(ev.group_id, '群友', ev.get_plaintext(), user_id=ev.user_id,
-        message_id=ev.message_id, observation=dict(persona='denia',
+    observation = dict(
+        persona='denia',
         route_version=f'{context.selection_revision}:{context.persona.version}',
-        occurred_at=time.time() - 5, received_at=time.time() - 5,
-        attribution='direct' if direct else 'ambient'))
+        occurred_at=time.time() - 5,
+        received_at=time.time() - 5,
+        attribution='direct' if direct else 'ambient',
+    )
+    if getattr(ev, 'message_type', '') == 'private':
+        service.record_private_message(
+            '用户', ev.get_plaintext(), user_id=ev.user_id,
+            message_id=ev.message_id, observation=observation,
+        )
+    else:
+        service.record_group_message(
+            ev.group_id, '群友', ev.get_plaintext(), user_id=ev.user_id,
+            message_id=ev.message_id, observation=observation,
+        )
 
 
-def output(decision='reply'):
+def output(decision='reply', *, group_id=1001):
     return {'decision': decision, 'messages': ['画稿可以慢慢改'], 'voice': 'text',
         'claims': [{'kind': 'fact', 'topic': '创作', 'statement': '我在修改画稿',
                     'assertion_type': 'self_report', 'applicability': '创作时',
-                    'evidence': [{'event_key': '1001:1', 'quote': '我在修改画稿'}]}]}
+                    'evidence': [{'event_key': f'{group_id}:1', 'quote': '我在修改画稿'}]}]}
 
 
 def test_diagnostics_preserve_source_queue_when_persona_db_has_empty_inbox(tmp_path):
@@ -60,8 +79,10 @@ def test_diagnostics_preserve_source_queue_when_persona_db_has_empty_inbox(tmp_p
 @pytest.mark.parametrize('decision,ack', [('reply', True), ('reply', False), ('observe', True)])
 @async_test
 async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, decision, ack):
-    engine, service, config, provider = runtime(tmp_path, output(decision))
-    ev = event('娅娅，记住我在修改画稿')
+    engine, service, config, provider = runtime(
+        tmp_path, output(decision, group_id=0)
+    )
+    ev = private_event('娅娅，记住我在修改画稿')
     capture(service, engine, config, ev)
     sent = []
     async def send(*args, **kwargs):
@@ -70,8 +91,8 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
     await service.handle(SimpleNamespace(), ev, config)
     store = engine.cognition('denia', service._base_db)
-    assert any(c['content'] == '我在修改画稿' for c in store.snapshot('saved', ev.user_id, 1001, []).claims)
-    assert not store.snapshot('cross', ev.user_id, 1002, []).claims
+    assert any(c['content'] == '我在修改画稿' for c in store.snapshot('saved', ev.user_id, 0, []).claims)
+    assert not store.snapshot('cross', ev.user_id, 1001, []).claims
     states = PersonaActions(store).diagnostics()['actions']
     if decision == 'observe':
         assert not sent and not states
@@ -86,8 +107,10 @@ async def test_memory_survives_silence_or_failed_send(tmp_path, monkeypatch, dec
 
 @async_test
 async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
-    engine, service, config, provider = runtime(tmp_path, output('observe'))
-    first = event('娅娅，记住我在修改画稿')
+    engine, service, config, provider = runtime(
+        tmp_path, output('observe', group_id=0)
+    )
+    first = private_event('娅娅，记住我在修改画稿')
     capture(service, engine, config, first)
     await service.handle(SimpleNamespace(), first, config)
     from tests.test_persona_profiles import publish
@@ -100,7 +123,7 @@ async def test_own_impression_view_does_not_call_model(tmp_path, monkeypatch):
         sent.append(str(kwargs['message']))
         return {'message_id': 4001}
     monkeypatch.setattr('bot.services.tangtang_chat.call_qq_action', send)
-    viewing = event('娅娅，你对我有什么印象？', group=1001, message=2)
+    viewing = private_event('娅娅，你对我有什么印象？', message=2)
     capture(service, engine, config, viewing)
     await service.handle(SimpleNamespace(), viewing, config)
     assert len(provider.seen) == 1
@@ -150,10 +173,10 @@ def test_legacy_migration_preserves_history_and_is_idempotent(tmp_path):
 
 @async_test
 async def test_partial_rejection_keeps_source_for_worker_and_repairs_reply(tmp_path, monkeypatch):
-    bad = output()
+    bad = output(group_id=0)
     bad['claims'].append({**bad['claims'][0], 'topic': '虚构', 'evidence': [{'event_key': 'fake', 'quote': '未说过'}]})
     engine, service, config, provider = runtime(tmp_path, bad)
-    ev = event('娅娅，记住我在修改画稿')
+    ev = private_event('娅娅，记住我在修改画稿')
     capture(service, engine, config, ev)
     original_generate = provider.generate_agent
     async def generate(*args):
@@ -169,7 +192,7 @@ async def test_partial_rejection_keeps_source_for_worker_and_repairs_reply(tmp_p
     await service.handle(SimpleNamespace(), ev, config)
     assert len(provider.seen) == 2 and len(sent) == 1
     assert ObservationInbox(service._base_db).diagnostics()['states'] == {'pending': 1}
-    assert any(c['content'] == '我在修改画稿' for c in engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 1001, []).claims)
+    assert any(c['content'] == '我在修改画稿' for c in engine.cognition('denia', service._base_db).snapshot('saved', ev.user_id, 0, []).claims)
 
 
 @async_test

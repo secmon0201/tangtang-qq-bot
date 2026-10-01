@@ -31,7 +31,11 @@ def compaction_prompt(source: Mapping[str, Any], revision: int) -> str:
 
 
 def validate_snapshot(
-    value: Any, *, source_turn_ids: tuple[int, ...], revision: int
+    value: Any,
+    *,
+    source_turn_ids: tuple[int, ...],
+    revision: int,
+    max_chars: int = 24_000,
 ) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != set(SNAPSHOT_FIELDS):
         raise ValueError("snapshot fields are invalid")
@@ -49,17 +53,28 @@ def validate_snapshot(
     if type(value.get("revision")) is not int or value["revision"] != int(revision):
         raise ValueError("snapshot revision is invalid")
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    if len(encoded) > 24_000:
-        raise ValueError("snapshot exceeds 24000 characters")
+    if len(encoded) > int(max_chars):
+        raise ValueError(f"snapshot exceeds {int(max_chars)} characters")
     return dict(value)
 
 
-def parse_snapshot(text: str, *, source_turn_ids: tuple[int, ...], revision: int) -> dict[str, Any]:
+def parse_snapshot(
+    text: str,
+    *,
+    source_turn_ids: tuple[int, ...],
+    revision: int,
+    max_chars: int = 24_000,
+) -> dict[str, Any]:
     try:
         value = json.loads(str(text).strip())
     except (TypeError, ValueError) as exc:
         raise ValueError("snapshot is not valid JSON") from exc
-    return validate_snapshot(value, source_turn_ids=source_turn_ids, revision=revision)
+    return validate_snapshot(
+        value,
+        source_turn_ids=source_turn_ids,
+        revision=revision,
+        max_chars=max_chars,
+    )
 
 
 __all__ = [

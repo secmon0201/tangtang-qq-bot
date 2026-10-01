@@ -178,6 +178,9 @@ CREATE TABLE IF NOT EXISTS chat_context_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
+    session_scope TEXT NOT NULL DEFAULT 'legacy_personal',
+    context_epoch INTEGER NOT NULL DEFAULT 0,
+    stable_prefix_hash TEXT NOT NULL DEFAULT '',
     layout_version TEXT NOT NULL,
     persona_version TEXT NOT NULL,
     tool_version TEXT NOT NULL,
@@ -284,6 +287,10 @@ class TangtangDb:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.executescript(_SCHEMA + INBOX_SCHEMA)
         self._migrate_schema(conn)
+        # Migrations run before callers enter their own transaction. Commit
+        # here so an idempotent data backfill cannot leave an implicit SQLite
+        # transaction open for `BEGIN IMMEDIATE`.
+        conn.commit()
         return conn
 
     @staticmethod
@@ -339,6 +346,27 @@ class TangtangDb:
             conn.execute(
                 "ALTER TABLE chat_context_sessions "
                 "ADD COLUMN group_context_cursor_id INTEGER NOT NULL DEFAULT 0"
+            )
+        if context_columns and "session_scope" not in context_columns:
+            conn.execute(
+                "ALTER TABLE chat_context_sessions "
+                "ADD COLUMN session_scope TEXT NOT NULL DEFAULT 'legacy_personal'"
+            )
+        if context_columns and "context_epoch" not in context_columns:
+            conn.execute(
+                "ALTER TABLE chat_context_sessions "
+                "ADD COLUMN context_epoch INTEGER NOT NULL DEFAULT 0"
+            )
+        if context_columns and "stable_prefix_hash" not in context_columns:
+            conn.execute(
+                "ALTER TABLE chat_context_sessions "
+                "ADD COLUMN stable_prefix_hash TEXT NOT NULL DEFAULT ''"
+            )
+        if context_columns:
+            conn.execute(
+                "UPDATE chat_context_sessions SET session_scope = "
+                "CASE WHEN user_id = 0 THEN 'group_spine' ELSE 'legacy_personal' END "
+                "WHERE session_scope = '' OR session_scope = 'legacy_personal'"
             )
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tangtang_calls'"
@@ -1145,6 +1173,30 @@ class TangtangDb:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+    def recent_personal_messages(
+        self,
+        user_id: int,
+        *,
+        limit: int = 30,
+        exclude_private_message_id: str = "",
+    ) -> list[dict[str, Any]]:
+        """One user's recent private and group utterances, oldest first."""
+
+        parameters: list[Any] = [int(user_id)]
+        exclusion = ""
+        if exclude_private_message_id:
+            exclusion = "AND NOT (group_id = 0 AND message_id = ?) "
+            parameters.append(str(exclude_private_message_id))
+        parameters.append(max(1, int(limit)))
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM tangtang_group_messages WHERE user_id = ? "
+                + exclusion
+                + "ORDER BY id DESC LIMIT ?",
+                parameters,
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def profile_messages(
         self,
         user_id: int,
@@ -1406,7 +1458,14 @@ class TangtangDb:
         persona_version: str,
         tool_version: str,
         now: str,
+        session_scope: str | None = None,
+        stable_prefix_hash: str = "",
     ) -> int:
+        scope = str(session_scope or (
+            "group_spine" if int(user_id) == 0 else "legacy_personal"
+        ))
+        if scope not in {"group_spine", "legacy_personal", "private_personal"}:
+            raise ValueError("context session scope is invalid")
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM chat_context_sessions WHERE group_id = ? AND user_id = ?",
@@ -1415,19 +1474,24 @@ class TangtangDb:
             if row is None:
                 cursor = conn.execute(
                     "INSERT INTO chat_context_sessions "
-                    "(group_id, user_id, layout_version, persona_version, tool_version, "
-                    "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (int(group_id), int(user_id), str(layout_version), str(persona_version),
-                     str(tool_version), str(now), str(now)),
+                    "(group_id, user_id, session_scope, stable_prefix_hash, layout_version, "
+                    "persona_version, tool_version, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (int(group_id), int(user_id), scope, str(stable_prefix_hash),
+                     str(layout_version), str(persona_version), str(tool_version),
+                     str(now), str(now)),
                 )
                 return int(cursor.lastrowid)
+            effective_prefix_hash = str(stable_prefix_hash or row["stable_prefix_hash"] or "")
             changed = (
                 str(row["layout_version"]) != str(layout_version)
                 or str(row["persona_version"]) != str(persona_version)
                 or str(row["tool_version"]) != str(tool_version)
+                or (bool(stable_prefix_hash) and str(row["stable_prefix_hash"]) != effective_prefix_hash)
             )
             active_from = int(row["active_from_turn_id"])
             group_context_cursor = int(row["group_context_cursor_id"])
+            context_epoch = int(row["context_epoch"])
             if changed:
                 latest = conn.execute(
                     "SELECT COALESCE(MAX(id), 0) AS id FROM chat_context_turns "
@@ -1436,14 +1500,40 @@ class TangtangDb:
                 ).fetchone()
                 active_from = max(active_from, int(latest["id"]))
                 group_context_cursor = 0
+                context_epoch += 1
             conn.execute(
                 "UPDATE chat_context_sessions SET layout_version = ?, persona_version = ?, "
-                "tool_version = ?, active_from_turn_id = ?, group_context_cursor_id = ?, "
+                "tool_version = ?, session_scope = ?, stable_prefix_hash = ?, context_epoch = ?, "
+                "active_from_turn_id = ?, group_context_cursor_id = ?, "
                 "updated_at = ? WHERE id = ?",
-                (str(layout_version), str(persona_version), str(tool_version), active_from,
-                 group_context_cursor, str(now), int(row["id"])),
+                (str(layout_version), str(persona_version), str(tool_version), scope,
+                 effective_prefix_hash, context_epoch, active_from, group_context_cursor,
+                 str(now), int(row["id"])),
             )
         return int(row["id"])
+
+    def ensure_group_context_spine(
+        self,
+        *,
+        group_id: int,
+        layout_version: str,
+        persona_version: str,
+        tool_version: str,
+        stable_prefix_hash: str,
+        now: str,
+    ) -> int:
+        """Return the sole append-only group spine for the active persona version."""
+
+        return self.ensure_context_session(
+            group_id=group_id,
+            user_id=0,
+            layout_version=layout_version,
+            persona_version=persona_version,
+            tool_version=tool_version,
+            stable_prefix_hash=stable_prefix_hash,
+            session_scope="group_spine",
+            now=now,
+        )
 
     def context_session(self, session_id: int) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -1571,6 +1661,98 @@ class TangtangDb:
         if snapshot_dict is not None:
             snapshot_dict["summary"] = json.loads(snapshot_dict.pop("summary_json"))
         return snapshot_dict, items
+
+    def context_window_with_budget(
+        self,
+        session_id: int,
+        *,
+        soft_chars: int,
+        hard_chars: int,
+    ) -> tuple[dict[str, Any] | None, tuple[dict[str, Any], ...], dict[str, Any]]:
+        """Select a replay-safe suffix without deleting retained context.
+
+        A request id is the unit of removal. This preserves messages, tool calls,
+        and tool results as a complete delivered round while a compaction job is
+        pending.
+        """
+
+        soft_chars = max(1, int(soft_chars))
+        hard_chars = max(soft_chars, int(hard_chars))
+        with self._connect() as conn:
+            session = conn.execute(
+                "SELECT active_from_turn_id FROM chat_context_sessions WHERE id = ?",
+                (int(session_id),),
+            ).fetchone()
+            active_from = int(session["active_from_turn_id"]) if session is not None else 0
+            snapshot = conn.execute(
+                "SELECT * FROM chat_context_snapshots WHERE session_id = ? AND active = 1 "
+                "AND cutoff_turn_id > ? ORDER BY version DESC LIMIT 1",
+                (int(session_id), active_from),
+            ).fetchone()
+            cutoff = max(
+                active_from,
+                int(snapshot["cutoff_turn_id"]) if snapshot is not None else 0,
+            )
+            rows = conn.execute(
+                "SELECT request_id, payload_json FROM chat_context_turns WHERE session_id = ? "
+                "AND delivery_status = 'confirmed' AND id > ? ORDER BY id",
+                (int(session_id), cutoff),
+            ).fetchall()
+            snapshot_dict = dict(snapshot) if snapshot is not None else None
+            snapshot_text = str(snapshot_dict["summary_json"]) if snapshot_dict else ""
+            all_items = tuple(json.loads(row["payload_json"]) for row in rows)
+            replay_chars = len(snapshot_text) + len(json.dumps(
+                all_items, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ))
+            action = "none"
+            selected_rows = list(rows)
+            if replay_chars > hard_chars:
+                action = "hard_trimmed"
+                rounds: list[list[Any]] = []
+                for row in rows:
+                    if not rounds or str(rounds[-1][0]["request_id"]) != str(row["request_id"]):
+                        rounds.append([row])
+                    else:
+                        rounds[-1].append(row)
+                retained: list[Any] = []
+                for round_rows in reversed(rounds):
+                    candidate = [*round_rows, *retained]
+                    candidate_items = tuple(json.loads(row["payload_json"]) for row in candidate)
+                    candidate_chars = len(snapshot_text) + len(json.dumps(
+                        candidate_items, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ))
+                    if candidate_chars <= soft_chars or not retained:
+                        retained = candidate
+                    else:
+                        break
+                selected_rows = retained
+                if len(snapshot_text) > hard_chars:
+                    action = "hard_unavoidable"
+            items = tuple(json.loads(row["payload_json"]) for row in selected_rows)
+            for item in items:
+                if not isinstance(item.get("content"), list):
+                    continue
+                for part in item["content"]:
+                    if part.get("type") != "image_url":
+                        continue
+                    url = part["image_url"]["url"]
+                    if url.startswith("vision:"):
+                        media = conn.execute(
+                            "SELECT data_url FROM chat_context_images WHERE digest=?", (url[7:],)
+                        ).fetchone()
+                        if media is None:
+                            raise ValueError("retained context image is unavailable")
+                        part["image_url"]["url"] = str(media[0])
+        if snapshot_dict is not None:
+            snapshot_dict["summary"] = json.loads(snapshot_dict.pop("summary_json"))
+        selected_chars = len(snapshot_text) + len(json.dumps(
+            items, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ))
+        return snapshot_dict, items, {
+            "budget_action": action,
+            "replay_chars_before_budget": replay_chars,
+            "replay_chars": selected_chars,
+        }
 
     def uncompacted_context_count(self, session_id: int) -> int:
         with self._connect() as conn:

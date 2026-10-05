@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "python": "",
+  "api_script": "",
+  "tts_config": "",
+  "bert_path": "",
+  "host": "127.0.0.1",
+  "port": 9890,
+  "retry_seconds": 15
+}

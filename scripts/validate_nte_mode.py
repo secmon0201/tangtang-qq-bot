@@ -67,13 +67,12 @@ def validate(root: Path) -> list[str]:
             if expected_prefix not in prefixes:
                 errors.append(f"{plugin}.force_prefix must include {expected_prefix}")
 
+    # Login, help extensions, and rendering options belong to the upstream
+    # plugin. Only require that its runtime config is valid JSON here.
     waves_config_path = root / "GsUID.Core" / "data" / "XutheringWavesUID" / "config.json"
     try:
-        waves_config = json.loads(waves_config_path.read_text(encoding="utf-8-sig"))
-        extra_modules = waves_config.get("HelpExtraModules", {}).get("data", [])
-        if "all" not in {str(value).lower() for value in extra_modules}:
-            errors.append("XutheringWavesUID.HelpExtraModules must include all")
-    except (OSError, json.JSONDecodeError, AttributeError) as exc:
+        json.loads(waves_config_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"invalid XutheringWavesUID config: {exc}")
 
     reminder_config_path = root / "GsUID.Core" / "data" / "RoverReminder" / "config.json"

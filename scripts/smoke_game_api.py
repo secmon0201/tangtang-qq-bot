@@ -115,8 +115,6 @@ def _run_server() -> int:
     for name in (
         "bot.plugins.scope",
         "bot.plugins.game_api",
-        "bot.plugins.nte_game_ui",
-        "bot.plugins.wuwa_game_ui",
         "bot.plugins.group_settings",
         "bot.plugins.commands",
         "GenshinUID",

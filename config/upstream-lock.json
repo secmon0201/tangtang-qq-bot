@@ -6,35 +6,35 @@
       "path": "GsUID.Core",
       "url": "https://github.com/Genshin-bots/gsuid_core.git",
       "branch": "master",
-      "commit": "43cb56d6f48dd4bca0b6294f4172c89d6d1f83f3"
+      "commit": "87c06f11ae10c12b3bb8e76b3c6f420c831282a8"
     },
     {
       "name": "GenshinUID connector",
       "path": "GsUID.Core/gsuid_core/plugins/GenshinUID",
       "url": "https://github.com/KimigaiiWuyi/GenshinUID.git",
       "branch": "v4",
-      "commit": "35f73c7a625aaac950d8bd0a19f9704da0baba65"
+      "commit": "6087286c2ac79f4d10f810efec0deeef00b9abcf"
     },
     {
       "name": "NTEUID",
       "path": "GsUID.Core/gsuid_core/plugins/NTEUID",
       "url": "https://github.com/tyql688/NTEUID.git",
       "branch": "main",
-      "commit": "ba7790e13e39f9a825090853498848b51a06c3c9"
+      "commit": "a4ca7e2cf94e73400d7d160d671b19922fddbbe7"
     },
     {
       "name": "XutheringWavesUID",
       "path": "GsUID.Core/gsuid_core/plugins/XutheringWavesUID",
       "url": "https://github.com/Loping151/XutheringWavesUID.git",
       "branch": "main",
-      "commit": "16699574efe6a165a235a97cfc788c4e07037729"
+      "commit": "b02c7a58870234bbebc29563eb1e45a646395792"
     },
     {
       "name": "RoverSign",
       "path": "GsUID.Core/gsuid_core/plugins/RoverSign",
       "url": "https://github.com/Loping151/RoverSign.git",
       "branch": "main",
-      "commit": "7a4d8a970d460d44234d3815a66abbf5911debfa"
+      "commit": "97cccaa5afeab3661e2a3901145869ed3f7a4ec8"
     },
     {
       "name": "TodayEcho",
@@ -48,7 +48,7 @@
       "path": "GsUID.Core/gsuid_core/plugins/ScoreEcho",
       "url": "https://github.com/Loping151/ScoreEcho.git",
       "branch": "main",
-      "commit": "611addb18f0d2dabc9d9058e9b9adf7c81bbae84"
+      "commit": "9a15321c0c37e56d89cf14d821067ee70508f4b7"
     },
     {
       "name": "RoverReminder",

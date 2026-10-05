@@ -101,7 +101,7 @@ def _private_literals(values: dict[str, str]) -> dict[str, set[str]]:
         raw_value = values.get(key, "").strip()
         if not raw_value:
             continue
-        parts = raw_value.split(",") if key.endswith("_IDS") else [raw_value]
+        parts = raw_value.split(",") if (key.endswith("_IDS") or "PROBABILITY" in key) else [raw_value]
         for part in parts:
             value = part.strip()
             if len(value) >= 5 and value not in {"https://api.deepseek.com"}:

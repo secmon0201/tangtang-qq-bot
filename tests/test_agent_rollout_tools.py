@@ -25,7 +25,7 @@ def test_offline_context_replay_has_strict_cross_api_prefix_and_full_tools():
 
     report = replay.build_report(stable_chars=16_000)
 
-    assert report["tool_count"] == 44
+    assert report["tool_count"] == 36
     assert report["cross_api_semantic_order_equal"] is True
     assert all(
         value["strict_append_prefix"] is True
@@ -33,7 +33,7 @@ def test_offline_context_replay_has_strict_cross_api_prefix_and_full_tools():
     )
     assert report["shadow"] == {
         "candidate_built_locally": True,
-        "candidate_tool_count": 44,
+        "candidate_tool_count": 36,
         "legacy_provider_tool_count": 2,
         "additional_paid_requests": 0,
     }
@@ -188,6 +188,60 @@ def test_usage_report_with_only_unsupported_cache_has_null_cache_totals():
     assert cache["weighted_cache_ratio"] is None
 
 
+def test_usage_report_stratifies_group_spine_warm_requests_without_identity():
+    usage = load_script("report_agent_usage")
+    records = [
+        usage_record(
+            ts="2026-09-21T10:00:00+08:00",
+            request_trace="a" * 16,
+            session_scope="group_spine",
+            cache_cohort_mode="on",
+            cache_cohort_hash="d" * 16,
+            context_epoch=1,
+            budget_action="none",
+        ),
+        usage_record(
+            ts="2026-09-21T10:01:00+08:00",
+            request_trace="b" * 16,
+            session_scope="group_spine",
+            cache_cohort_mode="on",
+            cache_cohort_hash="d" * 16,
+            context_epoch=1,
+            budget_action="hard_trimmed",
+        ),
+    ]
+
+    summary = usage.build_report(records)["windows"]["all"]
+    assert summary["session_scopes"] == {"group_spine": 2}
+    assert summary["budget_actions"] == {"hard_trimmed": 1, "none": 1}
+    assert summary["warm_group_spine"]["request_count"] == 1
+    assert summary["warm_active_group_spine"]["request_count"] == 0
+    assert "cache_cohort_hash" not in json.dumps(summary)
+
+
+def test_usage_report_strict_warm_requires_active_affinity():
+    usage = load_script("report_agent_usage")
+    records = [
+        usage_record(
+            ts="2026-09-21T10:00:00+08:00", request_trace="a" * 16,
+            session_scope="group_spine", cache_cohort_hash="d" * 16,
+            cache_affinity_mode="active",
+        ),
+        usage_record(
+            ts="2026-09-21T10:01:00+08:00", request_trace="b" * 16,
+            session_scope="group_spine", cache_cohort_hash="d" * 16,
+            cache_affinity_mode="off",
+        ),
+        usage_record(
+            ts="2026-09-21T10:02:00+08:00", request_trace="c" * 16,
+            session_scope="group_spine", cache_cohort_hash="d" * 16,
+            cache_affinity_mode="active",
+        ),
+    ]
+    summary = usage.build_report(records)["windows"]["all"]
+    assert summary["warm_active_group_spine"]["request_count"] == 1
+
+
 def test_cache_benchmark_is_offline_by_default_and_contains_no_provider_secrets():
     benchmark = load_script("benchmark_agent_cache")
 
@@ -197,7 +251,7 @@ def test_cache_benchmark_is_offline_by_default_and_contains_no_provider_secrets(
     assert report["mode"] == "offline"
     assert report["status"] == "not_run"
     assert report["network_requests"] == 0
-    assert report["tool_count"] == 44
+    assert report["tool_count"] == 36
     assert report["stable_prefix_across_calls"] is True
     assert report["measured_cache_ratio"] is None
     assert "api_key" not in encoded
@@ -217,6 +271,78 @@ def test_cache_usage_row_does_not_turn_unsupported_into_zero_cache():
     assert row["cache_status"] == "unsupported"
     assert "cache_read_tokens" not in row
     assert "cache_ratio" not in row
+
+
+def test_provider_cache_probe_is_synthetic_and_offline_by_default():
+    probe = load_script("probe_provider_cache")
+
+    report = probe.offline_report(stable_chars=4096, ttl_seconds=60)
+    encoded = json.dumps(report, ensure_ascii=False)
+
+    assert report["mode"] == "offline"
+    assert report["network_requests"] == 0
+    assert report["vendor_fields_sent"] is False
+    assert report["vendor_fields"] == []
+    assert report["scenarios"]["strict_append"]["strict_prefix"] is True
+    assert report["scenarios"]["cold"]["static_prefix_hash"] != report["scenarios"]["different_cohort"]["static_prefix_hash"]
+    assert "api_key" not in encoded and "api_url" not in encoded
+
+
+def test_provider_cache_probe_adds_affinity_only_when_explicitly_requested():
+    from dataclasses import replace
+
+    from bot.services.agent_context import ContextEnvelope
+    from bot.services.tangtang_chat import TangtangConfig, TangtangProvider
+
+    probe = load_script("probe_provider_cache")
+    config = replace(
+        TangtangConfig.disabled("test"),
+        enabled=True,
+        model="synthetic-model",
+        max_output_tokens=32,
+    )
+    first = ContextEnvelope.create(
+        persona="stable synthetic prefix",
+        current_input="first request",
+    )
+    second = ContextEnvelope.create(
+        persona="stable synthetic prefix",
+        current_input="second request",
+    )
+    different = ContextEnvelope.create(
+        persona="different synthetic prefix",
+        current_input="control request",
+    )
+
+    default_payload = TangtangProvider._responses_payload(
+        config, first.static_text, first.current_text, envelope=first
+    )
+    provider = probe.CacheProbeProvider(prompt_cache_key=True)
+    first_payload = provider._responses_payload(
+        config, first.static_text, first.current_text, envelope=first
+    )
+    second_payload = provider._responses_payload(
+        config, second.static_text, second.current_text, envelope=second
+    )
+    different_payload = provider._responses_payload(
+        config, different.static_text, different.current_text, envelope=different
+    )
+    chat_payload = provider._chat_payload(
+        config, first.static_text, first.current_text, envelope=first
+    )
+    report = probe.offline_report(
+        stable_chars=4096,
+        ttl_seconds=60,
+        prompt_cache_key=True,
+    )
+
+    assert "prompt_cache_key" not in default_payload
+    assert first_payload["prompt_cache_key"] == second_payload["prompt_cache_key"]
+    assert first_payload["prompt_cache_key"] != different_payload["prompt_cache_key"]
+    assert chat_payload["prompt_cache_key"] == first_payload["prompt_cache_key"]
+    assert report["vendor_fields_sent"] is True
+    assert report["vendor_fields"] == ["prompt_cache_key"]
+    assert first_payload["prompt_cache_key"] not in json.dumps(report)
 
 
 def test_live_cache_benchmark_writes_bounded_http_failure_evidence(monkeypatch):
@@ -258,7 +384,7 @@ def test_live_cache_benchmark_writes_bounded_http_failure_evidence(monkeypatch):
     assert "http://" not in json.dumps(report)
 
 
-def test_rollout_configuration_changes_only_the_three_fixed_switches():
+def test_rollout_configuration_changes_only_the_fixed_rollout_switches():
     rollout = load_script("configure_agent_rollout")
     original = [
         "SECRET_KEY=do-not-touch",
@@ -274,6 +400,8 @@ def test_rollout_configuration_changes_only_the_three_fixed_switches():
     assert "TANGTANG_CONTEXT_LAYOUT=shadow" in output
     assert "TANGTANG_NATIVE_ACTION_TOOLS=shadow" in output
     assert "TANGTANG_CONTEXT_COMPACTION_ENABLED=false" in output
+    assert "TANGTANG_CACHE_COHORT_MODE=off" in output
+    assert "TANGTANG_CACHE_CANARY_GROUP_IDS=" in output
     assert set(changes) == set(rollout.SWITCH_KEYS)
 
 
@@ -307,3 +435,43 @@ def test_rollout_apply_is_atomic_and_creates_a_recoverable_backup(tmp_path):
     assert "TANGTANG_CONTEXT_LAYOUT=v2" in updated
     assert "TANGTANG_NATIVE_ACTION_TOOLS=true" in updated
     assert "TANGTANG_CONTEXT_COMPACTION_ENABLED=true" in updated
+    assert "TANGTANG_CACHE_COHORT_MODE=off" in updated
+
+
+def test_cache_canary_requires_explicit_positive_group_ids():
+    rollout = load_script("configure_agent_rollout")
+
+    try:
+        rollout.updated_lines([], "cache-canary")
+    except ValueError as exc:
+        assert "canary-group-ids" in str(exc)
+    else:
+        raise AssertionError("canary rollout must require a group list")
+
+    output, changes = rollout.updated_lines([], "cache-canary", canary_group_ids="1001, 1002")
+    assert "TANGTANG_CACHE_COHORT_MODE=canary" in output
+    assert "TANGTANG_CACHE_CANARY_GROUP_IDS=1001,1002" in output
+    assert changes["TANGTANG_CACHE_COHORT_MODE"] == ("<unset>", "canary")
+
+
+def test_rollout_output_redacts_canary_group_ids(tmp_path, monkeypatch, capsys):
+    rollout = load_script("configure_agent_rollout")
+    env_path = tmp_path / ".env"
+    env_path.write_text("TANGTANG_CONTEXT_LAYOUT=v2\n", encoding="utf-8")
+    monkeypatch.setattr(rollout, "ENV_PATH", env_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "configure_agent_rollout.py",
+            "--mode",
+            "cache-canary",
+            "--canary-group-ids",
+            "1001,1002",
+        ],
+    )
+
+    assert rollout.main() == 0
+    output = capsys.readouterr().out
+    assert "1001" not in output and "1002" not in output
+    assert "TANGTANG_CACHE_CANARY_GROUP_IDS: <empty> -> <configured:2>" in output

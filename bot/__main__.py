@@ -12,7 +12,6 @@ from bot.integrations.genshinuid_connector_compat import (
     install_genshinuid_connector_compatibility,
 )
 from bot.openapi import configure_official_environment
-from bot.services.nte_prefix_display import patch_upstream_nte_prefix
 
 
 def main() -> None:
@@ -68,8 +67,6 @@ def main() -> None:
             plugin_spec.key,
         )
     if settings.gsuid_enabled and settings.transport == "onebot":
-        if not patch_upstream_nte_prefix():
-            logger.info("NTEUID display prefix patch skipped: module is not loaded in this process")
         if importlib.util.find_spec("GenshinUID") is None:
             logger.warning(
                 "GSUID_ENABLED=true but the GenshinUID Core connector is not installed; "
@@ -79,7 +76,7 @@ def main() -> None:
             logger.warning("failed to load the GenshinUID Core connector")
         else:
             install_genshinuid_connector_compatibility()
-            logger.info("GenshinUID event-path isolation installed")
+            logger.info("GenshinUID loaded with project-owned transport compatibility")
     nonebot.run()
 
 

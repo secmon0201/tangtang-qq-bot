@@ -42,6 +42,7 @@ from bot.services.tangtang_chat import (
     resolve_at_labels,
 )
 from bot.services.tangtang_runtime import config_loader as loader
+from bot.services.tangtang_cache_warmer import AgentCacheWarmer
 from bot.services.tangtang_features import (
     classify_local_feature,
     has_feature_hint,
@@ -701,6 +702,8 @@ proactive_coordinator = ProactiveCoordinator(
     connected=lambda bot: get_bots().get(str(bot.self_id)) is bot,
     groups=lambda: tuple(group_domains().all_group_ids()))
 _proactive_task = None
+_cache_warmer_task = None
+cache_warmer = AgentCacheWarmer(service)
 _continuation_quota_scheduler = AsyncIOScheduler(timezone=settings.timezone)
 
 
@@ -720,8 +723,9 @@ async def schedule_continuation_quota_catchup(bot: Bot) -> None:
 
 @get_driver().on_startup
 async def start_proactive_timer() -> None:
-    global _proactive_task
+    global _proactive_task, _cache_warmer_task
     _proactive_task = asyncio.create_task(proactive_coordinator.run())
+    _cache_warmer_task = asyncio.create_task(cache_warmer.run_loop(loader))
     _continuation_quota_scheduler.add_job(
         refresh_daily_continuation_quotas, "cron", hour=0, minute=0,
         id="continuation-daily-quotas", replace_existing=True,
@@ -734,6 +738,9 @@ async def stop_proactive_timer() -> None:
     if _continuation_quota_scheduler.running:
         _continuation_quota_scheduler.shutdown(wait=False)
     await continuation_coordinator.close()
+    if _cache_warmer_task:
+        _cache_warmer_task.cancel()
+        await asyncio.gather(_cache_warmer_task, return_exceptions=True)
     if _proactive_task:
         _proactive_task.cancel()
         await asyncio.gather(_proactive_task, return_exceptions=True)

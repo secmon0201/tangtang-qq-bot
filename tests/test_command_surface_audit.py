@@ -10,7 +10,7 @@ def test_audit_reports_no_collisions_or_missing_entries():
     assert report["collisions"] == {}
     assert report["missing_catalog"] == []
     assert report["missing_files"] == []
-    assert report["plugins"] >= 27
+    assert report["plugins"] >= 26
     assert report["commands"] >= 80
 
 

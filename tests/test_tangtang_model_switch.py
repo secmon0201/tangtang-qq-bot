@@ -42,6 +42,7 @@ def test_loader_uses_the_active_numbered_model_profile(tmp_path: Path):
     config = loader.load()
 
     assert config.enabled is True
+    assert config.provider == "deepseek"
     assert config.api_url == "https://proxy.example.invalid/v1"
     assert config.api_key == "test-only"
     assert config.api_style == "chat_completions"

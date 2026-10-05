@@ -1,0 +1,205 @@
+{
+  "modules": [
+    {
+      "source": "bot/services/mini_games.py",
+      "source_sha256": "b9273c39a9067b3d2743b041f950adcc91e7ec55976cf0ecbfc5daa460993f65",
+      "destination": "tangtang_harness/business/mini_games.py"
+    },
+    {
+      "source": "bot/services/idioms.py",
+      "source_sha256": "0bd0e76fa2de7098a4151604bd0030cc7448ca3d51b0308765ee7b9cfe56eb75",
+      "destination": "tangtang_harness/business/idioms.py"
+    },
+    {
+      "source": "bot/services/today_wife.py",
+      "source_sha256": "39ef8de01a620ff029167a236a5da9978e86972f5821590ddcf4ac902fb0bb8c",
+      "destination": "tangtang_harness/business/today_wife.py"
+    },
+    {
+      "source": "bot/services/today_wife_game.py",
+      "source_sha256": "c4f2946cfc4e7e71db11b8f7b92e9a06693f2a53a7e43bbf14600d7180248a91",
+      "destination": "tangtang_harness/business/today_wife_game.py"
+    },
+    {
+      "source": "bot/services/today_wife_story.py",
+      "source_sha256": "b4d84c8dcaad8f5cfc9bcbc576e1aaef46626d5b9a53e3df35f4ef52e292f330",
+      "destination": "tangtang_harness/business/today_wife_story.py"
+    },
+    {
+      "source": "bot/services/today_wife_content.py",
+      "source_sha256": "36e8ff17f9352ef1f182c292ae9e2514b002be67b733ea8243d4481587e3e7b6",
+      "destination": "tangtang_harness/business/today_wife_content.py"
+    },
+    {
+      "source": "bot/services/today_wife_narrative.py",
+      "source_sha256": "e163425a657811ffeed59c2bb217e7ed2d1ce3b4a4e0f1760460ab7bedfd7790",
+      "destination": "tangtang_harness/business/today_wife_narrative.py"
+    },
+    {
+      "source": "bot/services/reports.py",
+      "source_sha256": "d1b8b46665cbd22bf22869ce160dc345ac2110deee07716e6bef8bcf24ddc5ea",
+      "destination": "tangtang_harness/business/reports.py"
+    },
+    {
+      "source": "bot/services/mini_game_reports.py",
+      "source_sha256": "b416dc71ac693a64406c51b8572a092ad439f68f4130c52329d814a97390fc61",
+      "destination": "tangtang_harness/business/mini_game_reports.py"
+    },
+    {
+      "source": "bot/services/image_style.py",
+      "source_sha256": "2fd70bd821cc74c4f5c458b971adcdab5276e89f63a36f29b7245ae82d0a1119",
+      "destination": "tangtang_harness/business/image_style.py"
+    },
+    {
+      "source": "bot/services/emoji_text.py",
+      "source_sha256": "d0e88cfda8ae4895920e87832bb4bf1be602cbe7070c5b3d03c0580d0d2a7ea8",
+      "destination": "tangtang_harness/business/emoji_text.py"
+    },
+    {
+      "source": "bot/services/character_marks.py",
+      "source_sha256": "6c5bb2e194b8098dcce96534768538eedceb57ddb94f76f9a256f37e61430583",
+      "destination": "tangtang_harness/business/character_marks.py"
+    },
+    {
+      "source": "bot/services/stats.py",
+      "source_sha256": "545b4b5d98e137a0a3d33ee0fa14cad979da4c510ddcb5a5a7839a34307c4fd4",
+      "destination": "tangtang_harness/business/stats.py"
+    },
+    {
+      "source": "bot/services/group_domains.py",
+      "source_sha256": "3932178c1a493f962a240113207a06a27a8671e176e6087f7cc3c3047a018770",
+      "destination": "tangtang_harness/business/group_domains.py"
+    },
+    {
+      "source": "bot/services/knowledge_db.py",
+      "source_sha256": "d6d3ea7d63f28d70e09f47141920d51605f5f241b9527798d50611997dfaa446",
+      "destination": "tangtang_harness/business/knowledge_db.py"
+    },
+    {
+      "source": "bot/services/knowledge_search.py",
+      "source_sha256": "baf23ee2c0505126b2693db7d8efa2628bf2d82ea393163be64bef287f4d62cc",
+      "destination": "tangtang_harness/business/knowledge_search.py"
+    },
+    {
+      "source": "bot/services/knowledge_review.py",
+      "source_sha256": "60d3109b8b3053474364f6c2e65af44e7a37dae4ea0440672071ffcb992d2cea",
+      "destination": "tangtang_harness/business/knowledge_review.py"
+    },
+    {
+      "source": "bot/services/zhijiang_knowledge.py",
+      "source_sha256": "c2253dfa694ecaa9d59dd69b1f8feb61023ba1f9ca95ada8dc78ae3d19f38735",
+      "destination": "tangtang_harness/business/zhijiang_knowledge.py"
+    },
+    {
+      "source": "bot/services/mingchao_meme_culture.py",
+      "source_sha256": "6661bef0b07fc1580747b2c588b509125f514dbe40e8eef16d7202911b2ea4bf",
+      "destination": "tangtang_harness/business/mingchao_meme_culture.py"
+    },
+    {
+      "source": "bot/services/denia_gallery.py",
+      "source_sha256": "49957da1366a73ec7b75e7af48fff4cc22f3f18d9829c137ba78bf10ff7dfdec",
+      "destination": "tangtang_harness/business/denia_gallery.py"
+    },
+    {
+      "source": "bot/services/asoul.py",
+      "source_sha256": "4877539c21191898d41570e2a58e955d2e62c5666d2c471f5a04f6c176d7f0bd",
+      "destination": "tangtang_harness/business/asoul.py"
+    },
+    {
+      "source": "bot/services/asoul_render.py",
+      "source_sha256": "2c4450b5681a0113f2815e4929df2bb100259414b38585a247626f1ee292f272",
+      "destination": "tangtang_harness/business/asoul_render.py"
+    },
+    {
+      "source": "bot/services/asoul_web_render.py",
+      "source_sha256": "6539f10124649050eb84679af9274d2a80743c837ea1c908ff576388929a0f3d",
+      "destination": "tangtang_harness/business/asoul_web_render.py"
+    },
+    {
+      "source": "bot/services/web_screenshot.py",
+      "source_sha256": "bbba03ec262a3634182a0f7bbf0532366cdd2e7446d90ff780e4d31b3bf19822",
+      "destination": "tangtang_harness/business/web_screenshot.py"
+    },
+    {
+      "source": "bot/services/avatars.py",
+      "source_sha256": "85bf3ac17cce9f20c2da65a960b535236eba7e05f92e214783aed795a47cf490",
+      "destination": "tangtang_harness/business/avatars.py"
+    },
+    {
+      "source": "bot/services/duplicate.py",
+      "source_sha256": "9a77b739722cb98b94eeb462efc669ccba40aeef1f7adedd40f36edf1c4634bc",
+      "destination": "tangtang_harness/business/duplicate.py"
+    },
+    {
+      "source": "bot/services/hourly_copy.py",
+      "source_sha256": "25bc40c320a1c2697b73dffd2269811639b6844260ea5723a0eeed33d57465e3",
+      "destination": "tangtang_harness/business/hourly_copy.py"
+    },
+    {
+      "source": "bot/services/a_coast_archive.py",
+      "source_sha256": "d1a2b59fa3f923aeb6dba04c1d2bcfc10a16849b677df719a130dbe2b5346e1e",
+      "destination": "tangtang_harness/business/a_coast_archive.py"
+    },
+    {
+      "source": "bot/services/a_coast_archive_render.py",
+      "source_sha256": "b8603cad8068f0779eb20346c0a0b35b7b16be92f4161428755ab7fab0d4e680",
+      "destination": "tangtang_harness/business/a_coast_archive_render.py"
+    },
+    {
+      "source": "bot/services/tangtang_db.py",
+      "source_sha256": "cd50121681f0dbee66ae9b7c68db491586706475a253804d2e8a272d808a6d1e",
+      "destination": "tangtang_harness/business/tangtang_db.py"
+    },
+    {
+      "source": "bot/services/persona_mood.py",
+      "source_sha256": "ecae0f8974bad258fa315fadaa4eeaf369774cd4702457d5358227b4330c2b55",
+      "destination": "tangtang_harness/business/persona_mood.py"
+    },
+    {
+      "source": "bot/services/persona_inbox.py",
+      "source_sha256": "8e36f70c2c66a1fe10c5fac36e482120e540d6b1a79fc31bf34509c5db317e06",
+      "destination": "tangtang_harness/business/persona_inbox.py"
+    },
+    {
+      "source": "bot/services/zhijiang_live_guard.py",
+      "source_sha256": "f33c7b6f35955cc25472823fceb34ff890a4f826f48e24491553282c061f3826",
+      "destination": "tangtang_harness/business/zhijiang_live_guard.py"
+    },
+    {
+      "source": "bot/services/reactions.py",
+      "source_sha256": "d3d4d6d6eed4426249c64dd89e5fa419d85c976053f515478b581c1c40b57288",
+      "destination": "tangtang_harness/business/reactions.py"
+    },
+    {
+      "source": "bot/services/triple_repeat.py",
+      "source_sha256": "c5b776c4f3c6258c2274d95967aaafc21fe84d27238ebeaa0b6ed66351e2302f",
+      "destination": "tangtang_harness/business/triple_repeat.py"
+    },
+    {
+      "source": "bot/services/qq_platform.py",
+      "source_sha256": "6d4d69919e11d5b48ce54511ea6423944790cc6f7f4efb562f28f505e4d531f2",
+      "destination": "tangtang_harness/business/qq_platform.py"
+    },
+    {
+      "source": "bot/services/gateway.py",
+      "source_sha256": "b0b3e6cecbd06ebdc3d1a1d551becc96f0b0ffa9a98238771a615fb4c1024624",
+      "destination": "tangtang_harness/business/gateway.py"
+    },
+    {
+      "source": "bot/services/tangtang_humanize.py",
+      "source_sha256": "af205fed522b7e3fd727754a6f4b4e8cf3e875a875677d54c0f302add293b380",
+      "destination": "tangtang_harness/business/tangtang_humanize.py"
+    },
+    {
+      "source": "bot/services/community_web.py",
+      "source_sha256": "40bb88853b0b8d79c032fe4463ca4db84b552e3298f4401f25e587397d75bc71",
+      "destination": "tangtang_harness/business/community_web.py"
+    },
+    {
+      "source": "bot/db.py",
+      "source_sha256": "b39ffb00723076b0f3898d6c460f8cb7ac5d39e3bcc63cacf72f6b0107ec2af0",
+      "destination": "tangtang_harness/business/db.py"
+    }
+  ],
+  "resource_count": 579
+}

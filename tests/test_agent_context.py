@@ -131,7 +131,13 @@ def test_cache_affinity_key_is_opt_in_and_does_not_change_static_hash():
         ("responses", TangtangProvider._responses_payload),
         ("chat_completions", TangtangProvider._chat_payload),
     ):
-        config = replace(base, api_style=style, model="model", max_output_tokens=32)
+        config = replace(
+            base,
+            provider="aizz",
+            api_style=style,
+            model="gpt-5.6-luna",
+            max_output_tokens=32,
+        )
         plain_payload = builder(
             config, plain.static_text, plain.current_text, tools=TOOLS, envelope=plain
         )

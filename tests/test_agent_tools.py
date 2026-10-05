@@ -16,21 +16,21 @@ def call(name: str, arguments: str) -> dict[str, str]:
     return {"call_id": "c1", "name": name, "arguments": arguments}
 
 
-def test_tool_registry_contains_two_search_and_forty_two_action_tools():
-    assert len(BASE_TOOL_SPECS) == 44
-    assert len(TOOL_REGISTRY) == 44
-    assert len(ACTION_TOOL_NAMES) == 42
+def test_tool_registry_excludes_upstream_game_passthrough_tools():
+    assert len(BASE_TOOL_SPECS) == 36
+    assert len(TOOL_REGISTRY) == 36
+    assert len(ACTION_TOOL_NAMES) == 34
     assert ACTION_TOOL_NAMES == frozenset(
         name for name in TOOL_REGISTRY if name not in {
             "search_zhijiang_knowledge", "search_mingchao_meme_culture"
         }
     )
     assert {spec.delivery for spec in BASE_TOOL_SPECS} == {"model_data", "direct_qq"}
-    assert sum(spec.effect == "read" for spec in BASE_TOOL_SPECS) == 32
+    assert sum(spec.effect == "read" for spec in BASE_TOOL_SPECS) == 24
     assert sum(spec.effect == "write" for spec in BASE_TOOL_SPECS) == 12
     assert all(spec.explicit_only for spec in BASE_TOOL_SPECS if spec.delivery == "direct_qq")
     schemas = tool_schemas(include_actions=True)
-    assert len(schemas) == 44
+    assert len(schemas) == 36
     assert all(schema["parameters"]["additionalProperties"] is False for schema in schemas)
 
 
@@ -47,10 +47,6 @@ def test_action_tool_arguments_map_to_existing_feature_contracts():
     ))
     assert archive.parameter("target") == "mentioned"
     assert archive.parameter("keyword") == "枝江"
-    role = parse_action_tool_call(call(
-        "wuwa_character_rank", '{"scope":"group","page":1,"character":"今汐"}'
-    ))
-    assert role.args == "群" and role.parameter("character") == "今汐"
     assert parse_action_tool_call(call("roulette_load", "{}")).action == "roulette_load"
     assert parse_action_tool_call(call(
         "wife_take", '{"target":"mentioned"}'
@@ -72,9 +68,7 @@ def test_action_tool_arguments_map_to_existing_feature_contracts():
             "archive_search", '{"target":"mentioned","keyword":"","page":1}'
         ))
     with pytest.raises(ValueError):
-        parse_action_tool_call(call(
-            "wuwa_character_rank", '{"scope":"bot","page":0,"character":"今汐"}'
-        ))
+        parse_action_tool_call(call("wuwa_character_rank", "{}"))
     with pytest.raises(ValueError):
         parse_action_tool_call(call("wife_take", '{"target":"self"}'))
     with pytest.raises(ValueError):

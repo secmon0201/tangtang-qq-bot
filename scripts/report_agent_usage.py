@@ -7,6 +7,7 @@ import json
 import statistics
 from collections import Counter
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -23,9 +24,20 @@ TERMINAL_EVENTS = frozenset({
 
 def parse_timestamp(value: Any) -> datetime | None:
     try:
-        return datetime.fromisoformat(str(value))
+        dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+        return dt
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_tz(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return dt
 
 
 def load_records(paths: Iterable[Path]) -> tuple[list[dict[str, Any]], int]:
@@ -101,6 +113,8 @@ def select_requests(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[dict[str, Any]]:
+    start = _normalize_tz(start)
+    end = _normalize_tz(end)
     selected: list[dict[str, Any]] = []
     traced: dict[str, dict[str, Any]] = {}
     for record in records:
@@ -129,6 +143,8 @@ def select_payload_builds(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[dict[str, Any]]:
+    start = _normalize_tz(start)
+    end = _normalize_tz(end)
     selected: list[dict[str, Any]] = []
     for record in records:
         timestamp = parse_timestamp(record.get("ts"))
@@ -221,6 +237,13 @@ def summarize(
         "session_scopes": _counter(rows, "session_scope"),
         "budget_actions": _counter(rows, "budget_action"),
         "cache_affinity_modes": _counter(rows, "cache_affinity_mode"),
+        "cache_affinity_transports": _counter(rows, "cache_affinity_transport"),
+        "cache_affinity_key_sent_records": sum(
+            1 for row in rows if row.get("cache_affinity_key_sent") is True
+        ),
+        "cache_affinity_fallback_records": sum(
+            1 for row in rows if row.get("cache_affinity_fallback") is True
+        ),
         "context_epochs": _counter(rows, "context_epoch"),
         "warm_group_spine": (
             summarize(

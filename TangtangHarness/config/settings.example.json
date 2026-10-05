@@ -1,0 +1,33 @@
+{
+  "host": "127.0.0.1",
+  "port": 8090,
+  "mode": "observe",
+  "active_model": "example",
+  "profiles": [{
+    "id": "example", "name": "自选模型", "provider": "custom", "model": "",
+    "base_url": "https://example.invalid/v1", "api_key_env": "HARNESS_MODEL_API_KEY",
+    "api_style": "chat_completions", "context_limit": 131072, "max_output_tokens": 4096,
+    "reasoning_effort": "none", "vision": true, "cache_key_enabled": false,
+    "usage_semantics": "total_input", "currency": "", "price_version": ""
+  }],
+  "input_budget_tokens": 32768,
+  "cache_input_budget_tokens": null,
+  "recent_rounds": 8,
+  "persona": "denia",
+  "group_ids": [],
+  "extra": {
+    "context_mode": "cache_first",
+    "test_prefix": "#harness",
+    "isolated_scope_enabled": false,
+    "private_user_ids": [],
+    "core": {"enabled": false, "url": "ws://127.0.0.1:8765", "identity": "TangtangHarness", "receive_identities": []},
+    "speech": {"endpoint": "http://127.0.0.1:9890", "ref_audio_path": "", "prompt_text": ""},
+    "proactive_strategy": "active_v1",
+    "proactive_daily_attempts": 8,
+    "private_context_idle_seconds": 3600,
+    "window_cost_projection_rounds": 3,
+    "window_rebuild_history_ratio": 0.5,
+    "window_cost_soft_ratio": 0.75,
+    "window_cost_min_saving": 0.0
+  }
+}

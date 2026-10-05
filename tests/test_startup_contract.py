@@ -128,9 +128,23 @@ def test_full_stack_verifier_checks_transport_watchdog_and_error_log():
     assert "Test-OneBotConnectionOwnership" in verifier
     assert "watch_qq_transport.ps1" in verifier
     assert "last_check_completed_at" in verifier
+    assert "WatchdogHeartbeatAgeSeconds" in verifier
+    assert "WatchdogStatus" in verifier
+    assert "$watchdogHeartbeatReady = $watchdogHeartbeatAgeSeconds -ge 0" in verifier
+    assert "$watchdogHealthy = $watchdogHeartbeatReady -and $watchdogStatus -eq 'healthy'" in verifier
+    assert "Open $snowLumaProcessesUrl" in verifier
     assert "GSUID_CORE_PORT" in verifier
     assert "bot.err.log" in verifier
     assert "Full stack is healthy and ready." in verifier
+
+
+def test_full_start_guides_manual_snowluma_account_loading():
+    startup = source("scripts/start_all.ps1")
+
+    assert "manualSnowLumaActionNeeded" in startup
+    assert "http://127.0.0.1:$($transport.SnowLumaWebUiPort)/processes" in startup
+    assert "Start-Process -FilePath $snowLumaProcessesUrl" in startup
+    assert "if ($manualSnowLumaActionNeeded) { 180 } else { 90 }" in startup
 
 
 def test_tunnel_uses_http2_and_watchdog_requires_an_edge_connection():
@@ -222,12 +236,9 @@ def test_named_tunnel_starts_gateway_with_bounded_resource_limits():
     assert "'--client-timeout-seconds', $GatewayClientTimeoutSeconds" in script
     assert "'--max-request-mb', $GatewayMaxRequestMB" in script
     assert "Gateway limits must be positive integers" in script
-    assert "'set_wuwa_login_url.ps1'" in script
-    assert "'GsUID.Core\\data\\XutheringWavesUID\\config.json'" in script
-
-    wuwa_setter = source("scripts/set_wuwa_login_url.ps1")
-    assert "$config.WavesLoginUrl.data = $url" in wuwa_setter
-    assert "$config.WavesLoginUrlSelf.data = $true" in wuwa_setter
+    assert "set_wuwa_login_url.ps1" not in script
+    assert "set_nte_login_url.ps1" not in script
+    assert "Upstream game configuration was not rewritten" in script
 
     configure = source("scripts/configure_tangtang_named_tunnel.ps1")
     assert "[string]$ShortHostname = ''" in configure

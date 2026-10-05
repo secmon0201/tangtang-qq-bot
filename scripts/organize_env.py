@@ -126,7 +126,6 @@ SECTIONS = (
             "GSUID_CORE_PORT",
             "GSUID_CORE_WS_TOKEN",
             "GSUID_CORE_BOTID",
-            "WUWA_IMPORT_CLUSTER_NAME",
             "STATS_REALTIME_ENABLED",
             "A_COAST_PROFILE_ENABLED",
             "ASOUL_BILI_ENABLED",

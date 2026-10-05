@@ -23,8 +23,6 @@ SUPPORTED_ACTIONS = frozenset(
         "mini_game_bomb",
         "mini_game_dice",
         "mini_game_guess",
-        "nte_rank",
-        "wuwa_rank",
         "wife_personal",
         "wife_group",
         "denia_gallery",
@@ -35,7 +33,6 @@ RANKING_SCOPES = frozenset({"day", "week", "month", "total"})
 MINI_GAME_ACTIONS = frozenset(
     {"mini_game_roulette", "mini_game_bomb", "mini_game_dice", "mini_game_guess"}
 )
-GAME_RANK_ACTIONS = frozenset({"nte_rank", "wuwa_rank"})
 
 _FEATURE_HINT_RE = re.compile(
     r"直播|在播|有谁在播|谁在播|发言|排行|榜|统计|灌水|集群|日程|枝江|"
@@ -61,9 +58,7 @@ _FUNCTION_TABLE = """支持的功能：
 - zhijiang_schedule：枝江直播/枝江日程/直播日程
 - group_ranking：当前群发言排行，范围 day/week/month/total
 - cluster_ranking：当前群所属集群的发言排行，范围 day/week/month/total
-- mini_game_roulette/mini_game_bomb/mini_game_dice/mini_game_guess：本群或总的小游戏榜单
-- nte_rank：异环（NTE）最强排行，scope 为群或总
-- wuwa_rank：鸣潮最强排行，scope 为群或总"""
+- mini_game_roulette/mini_game_bomb/mini_game_dice/mini_game_guess：本群或总的小游戏榜单"""
 
 _ROUTER_RULES = """把呼叫分成三档：
 - clear：用户明确要求查看某个功能。
@@ -91,8 +86,6 @@ _MINI_GAME_RANK_RE = re.compile(
     r"(转盘|俄罗斯转盘|炸弹|定时炸弹|骰子|幸运骰局|猜数|猜数字)"
     r"(?:的)?(?:总)?(?:排行)?(?:榜|榜单)"
 )
-_NTE_RANK_RE = re.compile(r"(异环|nte)", re.IGNORECASE)
-_WUWA_RANK_RE = re.compile(r"(鸣潮|ww)", re.IGNORECASE)
 _GALLERY_REQUEST_RE = re.compile(
     r"想看|要看|看看|看一下|看一张|来一张|来张|来到|来点|发一张|发个|发点|"
     r"给我|要一个|要一张|求一张"
@@ -126,24 +119,6 @@ def classify_extra_feature(text: str) -> FeatureDecision | None:
         return FeatureDecision(
             tier="clear", action=action, scope=scope, cluster=False, line=line
         )
-    if re.search(r"(?:异环|nte)(?:本群|当前群|群|bot|总)?(?:最强)?排行", normalized, re.I):
-        scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
-        return FeatureDecision(
-            tier="clear",
-            action="nte_rank",
-            scope=scope,
-            cluster=False,
-            line="",
-        )
-    if re.search(r"(?:鸣潮|ww)(?:本群|当前群|群|bot|总)?(?:最强)?排行", normalized, re.I):
-        scope = "总" if ("总" in normalized or "bot" in normalized.casefold()) else "群"
-        return FeatureDecision(
-            tier="clear",
-            action="wuwa_rank",
-            scope=scope,
-            cluster=False,
-            line="",
-        )
     return None
 
 
@@ -162,30 +137,6 @@ def _extra_feature_line(decision: FeatureDecision, *, call_keyword: str) -> str:
         if denia:
             return f"唔……{subject}的{scope}榜，我看看。"
         return f"好呀，这就看看{subject}{scope}榜。"
-    if decision.action == "nte_rank":
-        if denia:
-            return (
-                "异环的总榜呀，我翻一下。"
-                if decision.scope == "总"
-                else "异环的本群榜呀，我翻一下。"
-            )
-        return (
-            "好呀，这就看看异环总最强排行。"
-            if decision.scope == "总"
-            else "好呀，这就看看异环本群最强排行。"
-        )
-    if decision.action == "wuwa_rank":
-        if denia:
-            return (
-                "鸣潮的总榜呀，我看看谁最强。"
-                if decision.scope == "总"
-                else "鸣潮的本群榜呀，我看看谁最强。"
-            )
-        return (
-            "好呀，这就看看鸣潮总榜谁最强。"
-            if decision.scope == "总"
-            else "好呀，这就看看鸣潮本群谁最强。"
-        )
     return ""
 
 
@@ -403,7 +354,7 @@ class TangtangFeatureClassifier:
                 action = "cluster_ranking"
             if action == "cluster_ranking":
                 cluster = True
-        elif action in MINI_GAME_ACTIONS or action in GAME_RANK_ACTIONS:
+        elif action in MINI_GAME_ACTIONS:
             scope = "总" if scope in {"总", "bot"} else "群"
             cluster = False
         else:

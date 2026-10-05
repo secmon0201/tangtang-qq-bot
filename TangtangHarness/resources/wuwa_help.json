@@ -1,0 +1,698 @@
+{
+  "账号与登录": {
+    "desc": "绑定 UID，登录国服或国际服账号",
+    "data": [
+      {
+        "name": "绑定特征码",
+        "desc": "绑定鸣潮 UID（特征码 = UID，9 位数字）。首次使用本插件需要先绑定。",
+        "eg": "绑定123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "切换特征码",
+        "desc": "在已绑定的多个 UID 间切换默认账号。",
+        "eg": "切换123456",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除特征码",
+        "desc": "删除单个已绑定的 UID。",
+        "eg": "删除123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看或刷新特征码列表",
+        "desc": "查看自己当前绑定的所有 UID 列表。`查看` 仅查看；`刷新绑定` 会从库街区刷新角色头像和昵称缓存。",
+        "eg": "查看 or 刷新绑定",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除全部特征码",
+        "desc": "一键解绑当前用户全部 UID（破坏性）。",
+        "eg": "删除全部特征码",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "推荐->登录页登录",
+        "desc": "进入库街区登录页流程绑定 cookie。Bot 会回复登录链接，用户在浏览器完成登录后回填。这是国服推荐方式。",
+        "eg": "登录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "国际服登录",
+        "desc": "国际服账号通过邮箱+密码登录绑定。Bot 会引导用户在私聊中分步输入邮箱、密码。",
+        "eg": "邮箱登录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "添加token",
+        "desc": "高级用户用：手动绑定库街区 token + device id（格式 `添加token <token>,<did>`）。普通用户用 `登录` 即可，不需要 token。",
+        "eg": "添加token tk,did",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除token",
+        "desc": "删除当前 UID 绑定的库街区 cookie/token。",
+        "eg": "删除token 123456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "获取绑定的token",
+        "desc": "查看自己当前绑定的 token（仅自己可见，私聊回复，用于排查或迁移）。",
+        "eg": "获取token",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "面板与日常": {
+    "desc": "面板、养成、体力和日常查询",
+    "data": [
+      {
+        "name": "鸣潮面板更新",
+        "desc": "从库街区拉取最新角色面板数据。`刷新面板` 全员；`刷新<角色名>面板` 只刷某角色。这是有 API 调用副作用的写操作。",
+        "eg": "刷新(椿)面板",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度统计",
+        "desc": "查询账号下全部角色的练度排行（按角色等级/共鸣链/武器谐振/声骸主词条评分排序）。可加 `刷新` 前缀（如 `刷新练度统计`）从库街区拉新数据后再统计。可附 `五星/四星/全部` 筛选星级，附 `1`/`2` 指定单列/双列（如 `练度2`），不传则按角色数量自动。",
+        "eg": "练度1",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "基本信息卡片",
+        "desc": "查询账号总览卡片（等级/活跃天数/已激活角色数/已开启探索点/服饰数量/饰品数量/摩托等级等）。",
+        "eg": "卡片",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "收藏图鉴",
+        "desc": "查询自己的收藏图鉴（共鸣者服饰 / 服饰饰品 / 武器投影 / 声骸换影 / 终端替换 / 涂装 / 车架模组 / 摩托饰品），共鸣者服饰不含三星。命令字：`图鉴` / `服饰` / `皮肤` / `收藏` / `收藏图鉴` / `皮肤图鉴` / `服饰图鉴` / `饰品` / `饰品图鉴` / `摩托` / `摩托饰品` / `涂装` / `车架模组` / `车架`。",
+        "eg": "收藏图鉴",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查询声骸列表",
+        "desc": "查询自己拥有的声骸列表，按 cost 和评分排序。可加页码（如 `声骸列表2` 第 2 页）。",
+        "eg": "声骸列表1",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查询角色面板",
+        "desc": "查询某个角色的完整面板（属性 / 装备的武器 / 声骸 / 共鸣链 / 实战伤害评分）。命令格式：`<角色名>面板` 或 `角色面板<角色名>` 或 `查询<角色名>`。例：`长离面板`、`椿面板`、`角色面板凌阳`。",
+        "eg": "椿面板",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查询角色伤害",
+        "desc": "查询某角色按 N 号档位面板配置算出的伤害分析（包含技能倍率、暴击期望、配队 buff 推算）。格式：`<角色名>伤害<N>`，N 是档位（1/2/3 等，对应不同模拟环境）。例：`长离伤害3`。",
+        "eg": "椿伤害3",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查询角色权重",
+        "desc": "查询某角色的声骸主/副词条权重配置（即评分公式所用的权重表）。格式：`<角色名>权重`。",
+        "eg": "椿权重",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查看优化建议",
+        "desc": "给出某角色提升综合评分的方向：推荐的最优声骸主/副词条配置，以及当前面板各词条的提升收益排序。格式：`<角色名>优化`（同义：`优化建议` / `提升` / `提升建议` / `yh`）。例：`椿优化`。",
+        "eg": "椿提升建议",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "体力",
+        "desc": "查询自己的鸣潮每日实时状态：结晶波片体力数值 / 满体力剩余时间 / 每日任务进度 / 周本完成情况 / 训练塔进度。命令字：`体力` / `每日` / `mr` / `便笺` / `便签` / `实时便笺`。",
+        "eg": "mr/每日",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "查询探索度",
+        "desc": "查询世界探索度图（按地区列出探索进度、声笺收集、宝箱、视界等）。",
+        "eg": "探索度",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "库洛币",
+        "desc": "查询当前库洛币余额及月卡/每日签到状态。",
+        "eg": "库洛币",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "日历",
+        "desc": "鸣潮当期/下期活动 + 当前/下期卡池倒计时一览图。",
+        "eg": "日历",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "兑换码",
+        "desc": "列出当前所有可用的鸣潮兑换码 + 各码奖励内容 + 过期时间。",
+        "eg": "兑换码",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色养成",
+        "desc": "查询某角色的养成材料一览（突破/天赋升级所需周本素材/小怪掉落/技能书等）。格式：`<角色名>养成`。例：`菲比养成`。",
+        "eg": "菲比养成",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色持有率",
+        "desc": "查询角色持有率统计（按 plugin 范围 / 群范围 / 全局范围）。格式：`(群)角色持有率(up/all)`。`up` = 仅 UP 池角色；`all` = 全角色。加 `群` = 本群范围。例：`群角色持有率up`。",
+        "eg": "(群)角色持有率(up/all)",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "玩法与排行": {
+    "desc": "战绩查询；项目榜单每页 100 条",
+    "data": [
+      {
+        "name": "深塔",
+        "desc": "查询自己本期逆境深塔（深境区/超载/稳定/实验）的挑战记录与通关层数、用时、上阵角色。需绑定 cookie。命令字：`深塔` / `st` / `逆境深塔` / `超载` / `稳定` / `实验`。",
+        "eg": "st/深塔",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "全息战略",
+        "desc": "查询自己的全息战略（同步挑战，boss 单挑模拟玩法，如朔雷之鳞等）通关情况。",
+        "eg": "qx/全息",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "深塔出场率",
+        "desc": "本期逆境深塔本群/全体角色出场率统计（哪些角色被用得多）。",
+        "eg": "深塔出场率",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "冥歌海墟",
+        "desc": "查询自己冥歌海墟（海墟/无尽深渊/禁忌海域/再生海域）的挑战记录。命令字：`hx` / `冥海` / `海墟` / `冥歌海墟` / `无尽` / `wj` / `禁忌` 等。",
+        "eg": "hx/冥歌海墟",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "冥歌海墟出场率",
+        "desc": "本期冥歌海墟角色出场率统计。",
+        "eg": "冥海出场率",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "终焉矩阵",
+        "desc": "查询自己全息矩阵（终焉矩阵 / 矩阵叠兵）的挑战记录：稳态协议(简单关)和奇点扩张(难关，玩家口中的「矩阵」一般特指这关)的通关状态、积分、队伍配置。命令字：`矩阵` / `jz` / `终焉矩阵` / `矩阵叠兵` / `奇点扩张` / `稳态协议`。",
+        "eg": "矩阵/jz",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "矩阵出场率",
+        "desc": "本期奇点扩张队伍出场率统计：热门配队（按出现次数）+ 高分配队（按平均分），各取前8。可选传角色名只看含该角色的队伍。命令字：`矩阵热门队` / `矩阵高分队` / `矩阵配队` / `矩阵出场率`。",
+        "eg": "矩阵出场率 椿",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "海墟无尽排行",
+        "desc": "本群冥歌海墟无尽层（最深层）排行，每页20条。格式：`无尽排行<页码>`。",
+        "eg": "无尽排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "海墟无尽总排行",
+        "desc": "全体冥歌海墟无尽层排行。格式：`无尽总排行<页码>`。",
+        "eg": "无尽总排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "矩阵群排行",
+        "desc": "本群终焉矩阵积分排行，每页20条。格式：`矩阵排行<页码>`。",
+        "eg": "矩阵排行2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "矩阵总排行",
+        "desc": "全体终焉矩阵积分排行。格式：`矩阵总排行<页码>`。例：`矩阵总排行1`。",
+        "eg": "矩阵总排行1",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色评分排行",
+        "desc": "本群角色综合评分榜",
+        "eg": "今汐评分排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色评分总排行",
+        "desc": "机器人角色综合评分总榜",
+        "eg": "今汐评分总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色声骸排行",
+        "desc": "本群角色声骸评分榜",
+        "eg": "今汐声骸排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色声骸总排行",
+        "desc": "机器人角色声骸评分总榜",
+        "eg": "今汐声骸总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度排行",
+        "desc": "本群账号练度榜",
+        "eg": "练度排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "练度总排行",
+        "desc": "机器人账号练度总榜",
+        "eg": "练度总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "最强排行",
+        "desc": "本群每个角色最高评分",
+        "eg": "最强排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "最强总排行",
+        "desc": "机器人每个角色最高评分",
+        "eg": "最强总排行",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "抽卡记录": {
+    "desc": "导入、查询、排行、导出与删除记录",
+    "data": [
+      {
+        "name": "抽卡帮助",
+        "desc": "查看抽卡记录功能的导入说明 + 命令一览图。",
+        "eg": "抽卡帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "抽卡登录",
+        "desc": "云·鸣潮（国服云游戏）手机号+验证码登录，登录信息入库后用于自动获取抽卡 recordId，无需再贴链接。登录后会在主插件登录有效时自动更新一次。命令字：抽卡登录/云鸣潮登录/云登录。",
+        "eg": "抽卡登录",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "更新抽卡记录",
+        "desc": "用已入库的云·鸣潮登录信息自动获取 recordId 并更新抽卡记录。需先 抽卡登录，且主插件登录（ck）有效。命令字：更新抽卡记录/刷新抽卡记录。",
+        "eg": "更新抽卡记录",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "导入抽卡链接",
+        "desc": "通过抽卡链接 URL 导入抽卡记录。格式：`导入抽卡链接 <url>`。url 形如 `https://...record_id=xxx`，用户应先查看 抽卡帮助 获取链接。",
+        "eg": "导入抽卡链接 https://...record_id=5e4d436ea1",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "导入工坊抽卡记录",
+        "desc": "通过工坊批量导入抽卡记录。格式：`导入工坊抽卡记录<uid>`。",
+        "eg": "导入工坊抽卡记录123456789",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "导入小黑盒抽卡记录",
+        "desc": "通过小黑盒批量导入抽卡记录。格式：`导入小黑盒抽卡记录<小黑盒ID>`。",
+        "eg": "导入小黑盒抽卡记录12345678",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "抽卡记录",
+        "desc": "查询自己已导入的抽卡记录统计：各卡池总抽数 / 当前距离保底 / 出 5 星历史平均抽数 / 欧非指数等。命令字：`抽卡记录` / `抽卡页面`。需要先导入。",
+        "eg": "抽卡页面/抽卡记录",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "导出抽卡记录",
+        "desc": "把自己的抽卡记录导出为 JSON 文件回传，方便换 bot 迁移。",
+        "eg": "导出抽卡记录",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "抽卡排行",
+        "desc": "本群抽卡排行，每页20条。支持三种模式：`抽卡排行欧`、`抽卡排行非`、`抽卡排行抽数`；在末尾加页码，如 `抽卡排行欧2`。",
+        "eg": "抽卡排行(欧/非/抽数)2",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "删除抽卡记录",
+        "desc": "删除指定 UID 的全部抽卡记录（破坏性）。格式：`删除抽卡记录<uid>`。",
+        "eg": "删除抽卡记录uid",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "攻略资料": {
+    "desc": "角色、武器、声骸和游戏公告",
+    "data": [
+      {
+        "name": "角色攻略",
+        "desc": "查询某角色的攻略图（社区作者贡献的配装/共鸣链优先级/技能加点等）。格式：`<角色名>攻略`，例 `长离攻略`、`椿攻略`、`忌炎攻略`。",
+        "eg": "椿攻略",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色共鸣链",
+        "desc": "查询某角色的共鸣链详情图，含每条共鸣链的效果文本。格式：`<角色名>共鸣链`。",
+        "eg": "安可共鸣链",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色技能",
+        "desc": "查询某角色的全套技能（常态攻击/共鸣技能/共鸣解放/变奏/延奏/固有/特殊）描述与倍率。格式：`<角色名>技能`。",
+        "eg": "维里奈技能",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色机制",
+        "desc": "查询某角色的玩法机制说明图（特殊能量条 / 招式系统 / 共鸣链交互机制等）。格式：`<角色名>机制`。",
+        "eg": "维里奈机制",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "角色别名",
+        "desc": "查询某角色已注册的全部别名（俗称、外号、英文名）。格式：`<角色名>别名`。直接发 `别名` 则查看全部角色别名。",
+        "eg": "维里奈别名",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "武器介绍",
+        "desc": "查询某武器的详细介绍（基础属性 / 突破素材 / 满级面板 / 效果描述 / 各谐振数值）。格式：`<武器名>介绍`。例：`椿专武介绍`、`不屈命定之冠介绍`。",
+        "eg": "椿专武介绍",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "声骸介绍",
+        "desc": "查询某声骸的详细介绍（cost / 所属合鸣套装 / 技能效果 / 各等级倍率）。格式：`<声骸名>介绍`。例：`角介绍`、`无冠者介绍`。",
+        "eg": "角介绍",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "武器列表",
+        "desc": "查询武器一览表，可按武器类型过滤。格式：`<武器类型?>武器<列表?>`。武器类型可选：长刃 / 迅刀 / 佩枪 / 臂铠 / 音感仪。例：`音感仪武器列表`、`迅刀武器`。",
+        "eg": "(武器类型)武器(列表)",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "套装效果",
+        "desc": "查询全部合鸣套装一览图，含 2/5 件套效果。可附带版本号筛选最新版本套装。格式：`套装列表` 或 `套装列表<版本>`。例：`套装列表3.0`、`套装列表`。",
+        "eg": "套装列表3.0",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "深塔海墟信息",
+        "desc": "查询深塔/海墟某期的关卡 + Buff + 怪物分布配置图。格式：`深塔信息<期数>` 或 `海墟信息<期数>`。例：`深塔信息11`。",
+        "eg": "深塔/海墟信息11",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "游戏公告列表",
+        "desc": "查询当前游戏内活动 / 系统 / 更新公告的列表索引。",
+        "eg": "公告",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "游戏公告明细",
+        "desc": "查看指定公告 ID 的全文。格式：`公告#<id>`，id 是公告列表里的编号。例：`公告#1456`。",
+        "eg": "公告#1456",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "综合评分说明",
+        "desc": "查看综合评分的计算规则与评分细则说明图（计分基准、共鸣效率乘区、收益得分等）。",
+        "eg": "综合评分说明",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "扩展功能": {
+    "desc": "签到、梭哈、评分；邮箱提醒已停用",
+    "data": [
+      {
+        "name": "签到",
+        "desc": "RoverSign 每日签到",
+        "eg": "签到",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "签到日历",
+        "desc": "查看当月签到日历",
+        "eg": "签到日历",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "自动签到",
+        "desc": "开启或关闭每日自动签到",
+        "eg": "开启自动签到",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "梭哈",
+        "desc": "TodayEcho 声骸强化模拟",
+        "eg": "梭哈10次",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "声骸图片评分",
+        "desc": "ScoreEcho 识图评分",
+        "eg": "评分 卡提1c(生命)",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "国际服分析",
+        "desc": "查看 ScoreEcho 分析功能",
+        "eg": "分析帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "邮箱体力提醒",
+        "desc": "该功能已关闭，不保存设置也不发送邮件",
+        "eg": "推送邮箱",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "个人设置": {
+    "desc": "背景、面板图、语言与 UID 显示",
+    "data": [
+      {
+        "name": "设置体力背景",
+        "desc": "设置体力图的自定义背景，可选角色立绘或自定义图。格式：`设置体力背景<角色名>` 或 `设置体力背景<图片hash>`。",
+        "eg": "设置体力背景长离/a1b2c3d4",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置角色面板图",
+        "desc": "把某角色面板背景设置为指定的自定义图。格式：`设置<角色名>面板图<hash>`。先用 `上传<角色>面板` 上传，再用本命令绑定。",
+        "eg": "设置长离面板图a1b2c3d4",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置语言",
+        "desc": "设置面板/体力/卡片等渲染图的显示语言。格式：`设置语言<语言代码>`。语言代码：chs / cht / en / jp /kr。",
+        "eg": "设置语言en",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "设置(取消)隐藏UID",
+        "desc": "开启或关闭自己 UID 在所有渲染卡片中的脱敏显示（前 2 位 + **** + 后 2 位）。未设置时跟随全局 HideUid 开关。命令：`设置隐藏uid` / `取消隐藏uid`。",
+        "eg": "设置(取消)隐藏uid",
+        "need_ck": true,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  },
+  "帮助": {
+    "desc": "简约版、完整版与上游快照",
+    "data": [
+      {
+        "name": "简约帮助",
+        "desc": "普通用户常用功能与扩展",
+        "eg": "帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "完整帮助",
+        "desc": "全部普通、扩展和管理命令",
+        "eg": "完整帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      },
+      {
+        "name": "原版帮助",
+        "desc": "上游原版帮助快照",
+        "eg": "原版帮助",
+        "need_ck": false,
+        "need_sk": false,
+        "need_admin": false
+      }
+    ]
+  }
+}

@@ -35,6 +35,7 @@ class TangtangModelProfile:
 
     def config_values(self) -> dict[str, str]:
         values = {
+            "TANGTANG_PROVIDER": self.provider,
             "TANGTANG_API_URL": self.api_url,
             "TANGTANG_API_KEY": self.api_key,
             "TANGTANG_API_STYLE": self.api_style,

@@ -161,12 +161,6 @@ ACTION_TOOL_SPECS: tuple[ToolSpec, ...] = (
     ToolSpec("mini_game_guess", ACTION_CONTRACTS["mini_game_guess"].description,
              enum_parameters("scope", ("group", "bot"), "本群或明确机器人总榜"),
              "read", "direct_qq", True, "mini_games"),
-    ToolSpec("nte_rank", ACTION_CONTRACTS["nte_rank"].description,
-             enum_parameters("scope", ("group", "bot"), "本群或明确机器人总榜"),
-             "read", "direct_qq", True, "nte_game_ui"),
-    ToolSpec("wuwa_rank", ACTION_CONTRACTS["wuwa_rank"].description,
-             enum_parameters("scope", ("group", "bot"), "本群或明确机器人总榜"),
-             "read", "direct_qq", True, "wuwa_game_ui"),
     ToolSpec("wife_personal", ACTION_CONTRACTS["wife_personal"].description,
              empty_parameters(), "read", "direct_qq", True, "today_wife"),
     ToolSpec("wife_group", ACTION_CONTRACTS["wife_group"].description,
@@ -193,18 +187,6 @@ ACTION_TOOL_SPECS: tuple[ToolSpec, ...] = (
              archive_parameters(), "read", "direct_qq", True, "a_coast_archive"),
     ToolSpec("zhijiang_status", ACTION_CONTRACTS["zhijiang_status"].description,
              empty_parameters(), "read", "direct_qq", True, "zhijiang"),
-    ToolSpec("nte_help", ACTION_CONTRACTS["nte_help"].description,
-             empty_parameters(), "read", "direct_qq", True, "nte_game_ui"),
-    ToolSpec("nte_mint_rank", ACTION_CONTRACTS["nte_mint_rank"].description,
-             scope_page_parameters(), "read", "direct_qq", True, "nte_game_ui"),
-    ToolSpec("wuwa_help", ACTION_CONTRACTS["wuwa_help"].description,
-             empty_parameters(), "read", "direct_qq", True, "wuwa_game_ui"),
-    ToolSpec("wuwa_character_rank", ACTION_CONTRACTS["wuwa_character_rank"].description,
-             scope_page_parameters(character=True), "read", "direct_qq", True, "wuwa_game_ui"),
-    ToolSpec("wuwa_echo_rank", ACTION_CONTRACTS["wuwa_echo_rank"].description,
-             scope_page_parameters(character=True), "read", "direct_qq", True, "wuwa_game_ui"),
-    ToolSpec("wuwa_progress_rank", ACTION_CONTRACTS["wuwa_progress_rank"].description,
-             scope_page_parameters(), "read", "direct_qq", True, "wuwa_game_ui"),
     ToolSpec("wife_draw", ACTION_CONTRACTS["wife_draw"].description,
              empty_parameters(), "write", "direct_qq", True, "today_wife"),
     ToolSpec("wife_take", ACTION_CONTRACTS["wife_take"].description,
@@ -275,7 +257,7 @@ def parse_action_tool_call(call: Mapping[str, Any]) -> FeatureRequest:
             str(arguments.get("scope") or "") == "cluster",
         )
     if name in {"mini_game_roulette", "mini_game_bomb", "mini_game_dice",
-                "mini_game_guess", "nte_rank", "wuwa_rank"}:
+                "mini_game_guess"}:
         if set(arguments) != {"scope"} or arguments.get("scope") not in {"group", "bot"}:
             raise ValueError("invalid ranking scope")
         return FeatureRequest(name, "总" if arguments["scope"] == "bot" else "群")

@@ -172,11 +172,7 @@ if (-not $blocked) {
     Write-Output "Path restriction verified: only /nte/* is exposed."
 }
 
-Write-Output "Writing NTELoginUrl..."
-& (Join-Path $PSScriptRoot "set_nte_login_url.ps1") -PublicBaseUrl $publicUrl
-
-Write-Output "Restarting GsUID Core so the new NTELoginUrl takes effect..."
-Restart-Core
+Write-Output "NTE login tunnel is ready; upstream NTEUID configuration was not rewritten."
 
 Write-Output ""
 Write-Output "Done. Public login base URL: $publicUrl"

@@ -138,6 +138,10 @@ def plugin_specs_for(
         spec
         for spec in PLUGIN_SPECS
         if transport in spec.transports
+        # Game commands are passed through to GsUID Core. The project-owned
+        # ranking/help matchers remain available for maintenance and tests,
+        # but must not intercept the upstream event path.
+        and spec.key not in {"nte_game_ui", "wuwa_game_ui"}
         and (spec.setting is None or flags.get(spec.setting, False))
     )
 

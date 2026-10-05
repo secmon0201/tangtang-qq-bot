@@ -103,15 +103,11 @@ def test_mini_game_rankings_route_deterministically():
         assert decision.scope == scope
 
 
-def test_game_rank_requests_route_deterministically():
-    nte = classify_local_feature("看一下异环最强排行")
-    assert nte is not None and nte.action == "nte_rank" and nte.scope == "群"
-    nte_total = classify_local_feature("异环总排行")
-    assert nte_total is not None and nte_total.action == "nte_rank" and nte_total.scope == "总"
-    wuwa = classify_local_feature("看看鸣潮最强排行")
-    assert wuwa is not None and wuwa.action == "wuwa_rank" and wuwa.scope == "群"
-    wuwa_total = classify_local_feature("鸣潮bot排行")
-    assert wuwa_total is not None and wuwa_total.action == "wuwa_rank" and wuwa_total.scope == "总"
+def test_game_rank_requests_stay_on_the_upstream_path():
+    assert classify_local_feature("看一下异环最强排行") is None
+    assert classify_local_feature("异环总排行") is None
+    assert classify_local_feature("看看鸣潮最强排行") is None
+    assert classify_local_feature("鸣潮bot排行") is None
 
 
 def test_game_actions_keep_their_scope_through_request_mapping():
@@ -120,8 +116,6 @@ def test_game_actions_keep_their_scope_through_request_mapping():
     for action in (
         "mini_game_roulette",
         "mini_game_dice",
-        "nte_rank",
-        "wuwa_rank",
     ):
         request = request_from_decision(
             FeatureDecision("clear", action, "总", False, "line")

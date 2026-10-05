@@ -1,6 +1,8 @@
 param(
     [switch]$SkipDependencies,
-    [switch]$SkipRepositorySync
+    [switch]$SkipRepositorySync,
+    [ValidateRange(1, 5)]
+    [int]$FetchAttempts = 2
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +40,70 @@ function Resolve-UpstreamPath {
         throw "Unsafe upstream repository path in lock file: $RelativePath"
     }
     return $candidate
+}
+
+function Get-UpstreamTransports {
+    return @(
+        @{ Name = "schannel"; Args = @("-c", "http.sslBackend=schannel", "-c", "http.version=HTTP/1.1") },
+        @{ Name = "openssl"; Args = @("-c", "http.sslBackend=openssl", "-c", "http.version=HTTP/1.1") },
+        @{ Name = "openssl-http2"; Args = @("-c", "http.sslBackend=openssl", "-c", "http.version=HTTP/2") }
+    )
+}
+
+function Invoke-UpstreamGit {
+    param(
+        [string]$Path,
+        [string]$TargetBranch,
+        [string[]]$Operation,
+        [int]$Attempts
+    )
+    # Git for Windows may fail one repository with a Schannel handshake error
+    # while the same network can reach the other locked repositories. Keep
+    # origin unchanged and try the native TLS backend as a local fallback.
+    $transports = Get-UpstreamTransports
+    $failures = @()
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        foreach ($transport in $transports) {
+            $gitArgs = @("-C", $Path) + $transport.Args + $Operation
+            $previousErrorAction = $ErrorActionPreference
+            try {
+                # Native git writes normal progress to stderr. Do not let the
+                # script-wide Stop policy turn that progress into an exception.
+                $ErrorActionPreference = "Continue"
+                $output = @(& git @gitArgs 2>&1)
+                $exitCode = $LASTEXITCODE
+            } finally {
+                $ErrorActionPreference = $previousErrorAction
+            }
+            if ($exitCode -eq 0) {
+                $output | ForEach-Object { Write-Host $_ }
+                return
+            }
+            $detail = ($output -join " ").Trim()
+            if ($detail.Length -gt 240) { $detail = $detail.Substring(0, 240) }
+            $failures += "attempt $attempt/$Attempts via $($transport.Name): exit $exitCode $detail"
+        }
+        if ($attempt -lt $Attempts) { Start-Sleep -Seconds 1 }
+    }
+    throw "Could not run git $($Operation[0]) for origin/$TargetBranch at $Path. $($failures -join '; ')"
+}
+
+function Invoke-UpstreamFetch {
+    param(
+        [string]$Path,
+        [string]$TargetBranch,
+        [int]$Attempts
+    )
+    Invoke-UpstreamGit $Path $TargetBranch @("fetch", "--prune", "origin", $TargetBranch) $Attempts
+}
+
+function Invoke-UpstreamPull {
+    param(
+        [string]$Path,
+        [string]$TargetBranch,
+        [int]$Attempts
+    )
+    Invoke-UpstreamGit $Path $TargetBranch @("pull", "--ff-only", "origin", $TargetBranch) $Attempts
 }
 
 $CoreEntries = @($UpstreamLock.repositories | Where-Object { $_.name -eq "GsUID Core" })
@@ -91,11 +157,7 @@ function Sync-Repository {
         }
 
         $targetBranch = if ($Branch) { $Branch } else { $currentBranch }
-        & git -C $Path fetch --prune origin $targetBranch
-        $fetchExitCode = $LASTEXITCODE
-        if ($fetchExitCode -ne 0) {
-            throw "Could not fetch origin/$targetBranch for $Path (exit code $fetchExitCode)."
-        }
+        Invoke-UpstreamFetch $Path $targetBranch $FetchAttempts
 
         $expectedTracking = "origin/$targetBranch"
         $tracking = (& git -C $Path rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>$null)
@@ -117,11 +179,7 @@ function Sync-Repository {
             throw "Could not compare $Path with origin/$targetBranch (exit code $historyExitCode)."
         }
 
-        & git -C $Path pull --ff-only origin $targetBranch
-        $pullExitCode = $LASTEXITCODE
-        if ($pullExitCode -ne 0) {
-            throw "Could not fast-forward $Path (exit code $pullExitCode)."
-        }
+        Invoke-UpstreamPull $Path $targetBranch $FetchAttempts
         return
     }
     if (Test-Path -LiteralPath $Path) {

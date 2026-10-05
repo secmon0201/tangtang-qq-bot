@@ -1,0 +1,17 @@
+.watchdog-summary { margin-bottom: 18px; }
+.watchdog-check-time { margin: 13px 0 9px; font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.watchdog-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.watchdog-service { border: 1px solid var(--border); border-radius: 9px; padding: 16px; min-width: 0; }
+.watchdog-service-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.watchdog-service-heading h3 { margin: 0; font-size: 15px; }
+.watchdog-service dl { margin: 0; display: grid; gap: 9px; font-size: 12px; }
+.watchdog-service dl > div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 10px; }
+.watchdog-service dt { color: var(--muted); }
+.watchdog-service dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.watchdog-service-error { margin: 15px 0 0; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.watchdog-service-error strong { display: block; margin-bottom: 5px; }
+.watchdog-event-detail { min-width: 180px; max-width: 320px; overflow-wrap: anywhere; white-space: normal; }
+.watchdog-event-detail details { margin-top: 7px; }
+.watchdog-event-detail summary { color: var(--primary); cursor: pointer; }
+.watchdog-event-detail p { white-space: pre-wrap; margin: 8px 0 0; }
+@media (max-width: 650px) { .watchdog-services { grid-template-columns: 1fr; } .watchdog-service { padding: 14px; } }

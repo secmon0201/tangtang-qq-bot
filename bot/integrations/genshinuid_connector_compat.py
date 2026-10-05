@@ -10,6 +10,7 @@ from bot.integrations.gsuid_core_compat import GsuidCompatibilityError
 
 
 _PATCH_MARKER = "__qqbot_event_path_isolation__"
+_SEND_PATCH_MARKER = "__qqbot_send_target_resolution__"
 _CONNECT_TASK = "_qqbot_background_connect_task"
 
 
@@ -48,6 +49,45 @@ def install_genshinuid_connector_compatibility(
         raise GsuidCompatibilityError(
             "GenshinUID connector API changed; repeat_connect is not async."
         )
+
+    try:
+        client_module = importlib.import_module(f"{connector_module.__name__}.client")
+    except ImportError as exc:
+        raise GsuidCompatibilityError(
+            "GenshinUID connector API changed; client module is unavailable."
+        ) from exc
+    current_pick_bots = getattr(client_module, "_pick_bots", None)
+    if not callable(current_pick_bots):
+        raise GsuidCompatibilityError(
+            "GenshinUID connector API changed; client._pick_bots is unavailable."
+        )
+
+    if not getattr(current_pick_bots, _SEND_PATCH_MARKER, False):
+        from nonebot import get_bots
+
+        identity_module = importlib.import_module(
+            f"{connector_module.__name__}.identity"
+        )
+        resolve_bot = getattr(identity_module, "resolve_bot", None)
+        if not callable(resolve_bot):
+            raise GsuidCompatibilityError(
+                "GenshinUID connector API changed; identity.resolve_bot is unavailable."
+            )
+
+        def pick_bots(msg: Any) -> list[Any]:
+            bots = get_bots()
+            self_id = str(getattr(msg, "bot_self_id", "") or "")
+            exact = bots.get(self_id) if self_id else None
+            if exact is not None:
+                return [exact]
+            found = resolve_bot(
+                str(getattr(msg, "bot_id", "") or ""),
+                self_id,
+            )
+            return [found] if found is not None else []
+
+        setattr(pick_bots, _SEND_PATCH_MARKER, True)
+        client_module._pick_bots = pick_bots
 
     async def get_connected_client() -> Any | None:
         # The scheduler owns reconnect and health checks. An event must only

@@ -10,10 +10,17 @@ $root = Split-Path -Parent $PSScriptRoot
 $settings = Get-QqTransportSettings -Root $root
 $deadline = (Get-Date).AddSeconds($WaitSeconds)
 $healthy = $false
+$watchdogHealthy = $false
 $processes = @()
 $connections = @()
 $listener = $false
 $webUiReady = $null
+$watchdogReady = $false
+$watchdogHeartbeatReady = $false
+$watchdogHeartbeatAgeSeconds = $null
+$watchdogStatus = 'unknown'
+$watchdogPidPath = Join-Path $root 'logs\qq-transport-watchdog.pid'
+$watchdogStatePath = Join-Path $root 'data\qq-transport-watchdog-state.json'
 
 do {
     $processes = @(Get-ConfiguredTransportProcesses -Settings $settings)
@@ -24,41 +31,42 @@ do {
         @(Get-NetTCPConnection -State Listen -LocalPort $settings.SnowLumaWebUiPort -ErrorAction SilentlyContinue).Count -gt 0
     } else { $true }
     $healthy = $listener -and $clientMatchesTransport -and $webUiReady
-    if (-not $healthy -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-} while (-not $healthy -and (Get-Date) -lt $deadline)
-
-$watchdogPidPath = Join-Path $root 'logs\qq-transport-watchdog.pid'
-$watchdogReady = $false
-if (Test-Path -LiteralPath $watchdogPidPath -PathType Leaf) {
-    $rawWatchdogPid = (Get-Content -LiteralPath $watchdogPidPath -Raw -ErrorAction SilentlyContinue).Trim()
-    if ($rawWatchdogPid -match '^\d+$') {
-        $watchdog = Get-CimInstance Win32_Process -Filter "ProcessId = $rawWatchdogPid" -ErrorAction SilentlyContinue
-        $watchdogScript = [regex]::Escape([IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'watch_qq_transport.ps1')))
-        $watchdogReady = $null -ne $watchdog -and
-            $watchdog.Name -match '(?i)^(powershell|pwsh)\.exe$' -and
-            [string]$watchdog.CommandLine -match $watchdogScript
-    }
-}
-
-$watchdogStatePath = Join-Path $root 'data\qq-transport-watchdog-state.json'
-$watchdogHeartbeatReady = $false
-if (Test-Path -LiteralPath $watchdogStatePath -PathType Leaf) {
-    try {
-        $watchdogState = Get-Content -LiteralPath $watchdogStatePath -Raw -Encoding utf8 | ConvertFrom-Json
-        $completedValue = $watchdogState.last_check_completed_at
-        $completedAt = if ($completedValue -is [datetime]) {
-            [datetimeoffset]$completedValue
-        } else {
-            [datetimeoffset]::Parse([string]$completedValue)
+    $watchdogReady = $false
+    if (Test-Path -LiteralPath $watchdogPidPath -PathType Leaf) {
+        $rawWatchdogPid = (Get-Content -LiteralPath $watchdogPidPath -Raw -ErrorAction SilentlyContinue).Trim()
+        if ($rawWatchdogPid -match '^\d+$') {
+            $watchdog = Get-CimInstance Win32_Process -Filter "ProcessId = $rawWatchdogPid" -ErrorAction SilentlyContinue
+            $watchdogScript = [regex]::Escape([IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'watch_qq_transport.ps1')))
+            $watchdogReady = $null -ne $watchdog -and
+                $watchdog.Name -match '(?i)^(powershell|pwsh)\.exe$' -and
+                [string]$watchdog.CommandLine -match $watchdogScript
         }
-        $completedAt = $completedAt.ToUniversalTime()
-        $heartbeatAge = ([datetimeoffset]::UtcNow - $completedAt).TotalSeconds
-        $watchdogHeartbeatReady = [string]$watchdogState.last_status -eq 'healthy' -and
-            $heartbeatAge -ge 0 -and $heartbeatAge -le 180
-    } catch {
-        $watchdogHeartbeatReady = $false
     }
-}
+    $watchdogHeartbeatReady = $false
+    $watchdogHeartbeatAgeSeconds = $null
+    $watchdogStatus = 'unknown'
+    if (Test-Path -LiteralPath $watchdogStatePath -PathType Leaf) {
+        try {
+            $watchdogState = Get-Content -LiteralPath $watchdogStatePath -Raw -Encoding utf8 | ConvertFrom-Json
+            $watchdogStatus = [string]$watchdogState.last_status
+            $completedValue = $watchdogState.last_check_completed_at
+            $completedAt = if ($completedValue -is [datetime]) {
+                [datetimeoffset]$completedValue
+            } else {
+                [datetimeoffset]::Parse([string]$completedValue)
+            }
+            $completedAt = $completedAt.ToUniversalTime()
+            $watchdogHeartbeatAgeSeconds = ([datetimeoffset]::UtcNow - $completedAt).TotalSeconds
+            $watchdogHeartbeatReady = $watchdogHeartbeatAgeSeconds -ge 0 -and $watchdogHeartbeatAgeSeconds -le 180
+        } catch {
+            $watchdogHeartbeatReady = $false
+            $watchdogStatus = 'invalid_state'
+        }
+    }
+    $watchdogHealthy = $watchdogHeartbeatReady -and $watchdogStatus -eq 'healthy'
+    $ready = $healthy -and $watchdogReady -and $watchdogHealthy
+    if (-not $ready -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+} while (-not $ready -and (Get-Date) -lt $deadline)
 
 $corePort = 8765
 $watchdogSupervisorReady = $false
@@ -96,13 +104,37 @@ $status = [pscustomobject]@{
     SnowLumaWebUi = $webUiReady
     Watchdog = $watchdogReady
     WatchdogHeartbeat = $watchdogHeartbeatReady
+    WatchdogHeartbeatAgeSeconds = if ($null -eq $watchdogHeartbeatAgeSeconds) { $null } else { [Math]::Round($watchdogHeartbeatAgeSeconds, 1) }
+    WatchdogStatus = $watchdogStatus
+    WatchdogHealthy = $watchdogHealthy
     WatchdogSupervisor = $watchdogSupervisorReady
     GsUIDCore = $coreListener
     BotErrorLogEmpty = $botErrorEmpty
     SpeechRuntime = $speechReady
 }
 
-if (-not $healthy -or -not $watchdogReady -or -not $watchdogHeartbeatReady -or -not $watchdogSupervisorReady -or -not $coreListener -or -not $botErrorEmpty) {
+if (-not $healthy -or -not $watchdogReady -or -not $watchdogHealthy -or -not $watchdogSupervisorReady -or -not $coreListener -or -not $botErrorEmpty) {
+    Write-Host 'Full-stack readiness checks did not pass:' -ForegroundColor Red
+    if (-not $listener) { Write-Host ' - NoneBot is not listening on the configured port.' -ForegroundColor Red }
+    if ($processes.Count -ne 1) { Write-Host " - Expected one configured transport process; found $($processes.Count)." -ForegroundColor Red }
+    if ($connections.Count -eq 0) {
+        Write-Host ' - No OneBot reverse WebSocket client is connected.' -ForegroundColor Red
+        if ($settings.Transport -eq 'snowluma' -and $webUiReady) {
+            $snowLumaProcessesUrl = "http://127.0.0.1:$($settings.SnowLumaWebUiPort)/processes"
+            Write-Host " - Open $snowLumaProcessesUrl, probe the QQ processes, load the configured bot account, and complete any manual QQ verification." -ForegroundColor Yellow
+        }
+    } elseif ($connections.Count -gt 1) {
+        Write-Host " - Expected one OneBot client; found $($connections.Count)." -ForegroundColor Red
+    } elseif (-not $clientMatchesTransport) {
+        Write-Host ' - The OneBot client is not owned by the configured transport process.' -ForegroundColor Red
+    }
+    if (-not $webUiReady) { Write-Host ' - SnowLuma WebUI is not listening.' -ForegroundColor Red }
+    if (-not $watchdogReady) { Write-Host ' - The owned watchdog process is not running.' -ForegroundColor Red }
+    if (-not $watchdogHeartbeatReady) { Write-Host ' - The watchdog completed heartbeat is missing or older than 180 seconds.' -ForegroundColor Red }
+    elseif ($watchdogStatus -ne 'healthy') { Write-Host " - The watchdog is updating, but its current status is '$watchdogStatus'." -ForegroundColor Red }
+    if (-not $watchdogSupervisorReady) { Write-Host ' - The watchdog scheduled supervisor is unavailable or disabled.' -ForegroundColor Red }
+    if (-not $coreListener) { Write-Host " - GsUID Core is not listening on port $corePort." -ForegroundColor Red }
+    if (-not $botErrorEmpty) { Write-Host ' - logs\bot.err.log is not empty.' -ForegroundColor Red }
     throw ('Full-stack verification failed: ' + ($status | ConvertTo-Json -Compress))
 }
 

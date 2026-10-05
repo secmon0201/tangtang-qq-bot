@@ -41,6 +41,21 @@ if (Test-Path -LiteralPath $namedTunnelConfig) {
 
 Write-Host "[7/10] Starting QQ transport: $($transport.Transport)..."
 & (Join-Path $PSScriptRoot 'start_qq_transport.ps1')
+$manualSnowLumaActionNeeded = $false
+if ($transport.Transport -eq 'snowluma') {
+    $transportProcesses = @(Get-ConfiguredTransportProcesses -Settings $transport)
+    $oneBotConnections = @(Get-OneBotClientConnections -Port $transport.Port)
+    if ($transportProcesses.Count -eq 1 -and $oneBotConnections.Count -eq 0) {
+        $manualSnowLumaActionNeeded = $true
+        $snowLumaProcessesUrl = "http://127.0.0.1:$($transport.SnowLumaWebUiPort)/processes"
+        Write-Warning 'SnowLuma is running, but the configured bot account is not connected to NoneBot.'
+        Write-Host 'In the SnowLuma Processes page, probe the QQ processes and load the configured bot account.'
+        Write-Host 'Complete any QQ login or device verification manually. Startup will keep checking for up to 180 seconds.'
+        Write-Host "SnowLuma Processes: $snowLumaProcessesUrl"
+        try { Start-Process -FilePath $snowLumaProcessesUrl -ErrorAction Stop | Out-Null }
+        catch { Write-Warning "Could not open the SnowLuma Processes page automatically: $($_.Exception.Message)" }
+    }
+}
 
 if (Test-Path -LiteralPath $namedTunnelConfig) {
     Write-Host '[8/10] NTE login is already included in the fixed Tangtang web tunnel.'
@@ -55,7 +70,8 @@ Write-Host '[9/10] Starting the QQ transport watchdog...'
 & (Join-Path $PSScriptRoot 'start_watchdog.ps1')
 
 Write-Host '[10/10] Verifying SnowLuma, NoneBot, OneBot, watchdog, and speech health...'
-& (Join-Path $PSScriptRoot 'verify_full_stack.ps1') -WaitSeconds 90
+$verificationWaitSeconds = if ($manualSnowLumaActionNeeded) { 180 } else { 90 }
+& (Join-Path $PSScriptRoot 'verify_full_stack.ps1') -WaitSeconds $verificationWaitSeconds
 } catch {
     # Render inside the transcript before rethrowing outside its lifetime.
     Write-Host ($_ | Out-String)

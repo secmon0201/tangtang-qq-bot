@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -25,13 +26,21 @@ def _connector(*, client=None):
     async def repeat_connect():
         await connect()
 
-    return SimpleNamespace(
+    client_module = ModuleType("fake_genshinuid.client")
+    client_module._pick_bots = lambda _msg: []
+    identity_module = ModuleType("fake_genshinuid.identity")
+    identity_module.resolve_bot = lambda _bot_id, _self_id: None
+    sys.modules[client_module.__name__] = client_module
+    sys.modules[identity_module.__name__] = identity_module
+    connector = SimpleNamespace(
         _ensure_client=ensure_client,
         connect=connect,
         connect_lock=asyncio.Lock(),
         repeat_connect=repeat_connect,
         gsclient=client,
     )
+    connector.__name__ = "fake_genshinuid"
+    return connector
 
 
 def test_offline_event_path_returns_immediately_without_reconnecting():
@@ -111,14 +120,44 @@ def test_adapter_fails_loudly_when_upstream_api_changes(missing):
         install_genshinuid_connector_compatibility(connector)
 
 
-def test_adapter_is_installed_after_connector_load_and_before_run():
+def test_main_installs_connector_compatibility_after_load():
     source = (ROOT / "bot" / "__main__.py").read_text(encoding="utf-8")
 
     connector_load = source.index('nonebot.load_plugin("GenshinUID")')
-    adapter_install = source.index("install_genshinuid_connector_compatibility()")
     repeat_enabled = source.index('os.environ.setdefault("gsuid_core_repeat", "true")')
     initialized = source.index("nonebot.init()")
     run = source.index("nonebot.run()")
 
     assert repeat_enabled < initialized
+    adapter_install = source.index("install_genshinuid_connector_compatibility()")
+
     assert connector_load < adapter_install < run
+
+
+def test_send_target_falls_back_to_platform_resolution(monkeypatch):
+    connector = _connector()
+    client_module = sys.modules["fake_genshinuid.client"]
+    identity_module = sys.modules["fake_genshinuid.identity"]
+    fallback_bot = object()
+    identity_module.resolve_bot = lambda _bot_id, _self_id: fallback_bot
+    import nonebot
+
+    monkeypatch.setattr(nonebot, "get_bots", lambda: {})
+
+    install_genshinuid_connector_compatibility(connector)
+
+    msg = SimpleNamespace(bot_id="onebot", bot_self_id="stale-id")
+    assert client_module._pick_bots(msg) == [fallback_bot]
+
+
+def test_send_target_prefers_exact_nonebot_bot(monkeypatch):
+    connector = _connector()
+    client_module = sys.modules["fake_genshinuid.client"]
+    import nonebot
+
+    bot = object()
+    monkeypatch.setattr(nonebot, "get_bots", lambda: {"synthetic-bot": bot})
+    install_genshinuid_connector_compatibility(connector)
+
+    msg = SimpleNamespace(bot_id="onebot", bot_self_id="synthetic-bot")
+    assert client_module._pick_bots(msg) == [bot]

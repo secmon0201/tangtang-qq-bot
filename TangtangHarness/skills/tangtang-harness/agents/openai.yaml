@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness 制作、修复与维护"
+  short_description: "沉淀当前 QQ Harness 的制作、故障修复、数据迁移与日常维护流程"
+  default_prompt: "使用 $tangtang-harness 按当前工程边界完成这次制作、修复或维护任务，并给出对应验证结果。"

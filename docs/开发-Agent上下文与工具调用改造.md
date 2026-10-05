@@ -110,7 +110,7 @@ TANGTANG_CACHE_RECENT_ROUNDS=8
 
 `shadow` 只在本地构造、序列化和比较新旧 payload，不发起第二次模型请求。布局、人格资源和工具 Schema 分别版本化；换群、换用户、状态变化或当前消息变化不得改变稳定前缀 hash。
 
-缓存 cohort 使用每群一个已确认送达的对话主干。个人画像、长期记忆、引用、图片和当前群聊增量只留在本轮尾部，不能写回主干；旧个人会话保留审计用途且不合并。`cache-shadow` 比较候选群主干 payload，实际请求不发送缓存亲和字段；`cache-canary` 仅对指定群启用，`cache-on` 才全量启用。受控探针确认 AIZZ 接受且能提升命中后，`canary/on` 会发送由群主干 session 与 `context_epoch` 哈希派生的 `prompt_cache_key`，不包含群号、用户身份或正文；稳定前缀变化会递增 epoch 并自动换键。
+缓存 cohort 使用每群一个已确认送达的对话主干。个人画像、长期记忆、引用、图片和当前群聊增量只留在本轮尾部，不能写回主干；旧个人会话保留审计用途且不合并。`cache-shadow` 比较候选群主干 payload，实际请求不发送缓存亲和字段；`cache-canary` 仅对指定群启用，`cache-on` 才全量启用。`canary/on` 对已验证模型档案发送由群主干 session 与 `context_epoch` 哈希派生的 `prompt_cache_key`，不包含群号、用户身份或正文；稳定前缀变化会递增 epoch 并自动换键。模型1的 Cline Pass 代理用该键稳定选择账号/上游并在转发前移除，模型2/3/4直接接收；未知档案只启用稳定前缀。接口明确拒绝字段时自动无键重试，usage 记录 `cache_affinity_key_sent`、`cache_affinity_transport` 和 `cache_affinity_fallback`。
 
 ## 阶段门槛
 
@@ -128,7 +128,7 @@ TANGTANG_CACHE_RECENT_ROUNDS=8
 
 ## 风险清单
 
-- 供应商缓存字段名称和语义不同；缺失必须记 `unsupported`，不能补零。
+- 供应商缓存字段名称和语义不同；缺失默认记 `unsupported`，不能补零。生产请求只有在响应明确返回 cache read/write/miss 字段时才进入命中率统计；合成探针的推断值必须与生产统计隔离，不能用来把字段缺失改写成确定未命中。
 - Chat Completions 与 Responses 的工具项形状不同；语义序列必须一致且保持严格追加前缀。
 - QQ 发送可能无回执或部分成功；未确认送达的内容不能进入活跃上下文。
 - 模型可能重复、越权或在状态变化后调用工具；执行层必须整批预检并逐项复核。
@@ -153,7 +153,7 @@ TANGTANG_CACHE_RECENT_ROUNDS=8
 .\.venv\Scripts\python.exe scripts\probe_provider_cache.py
 ```
 
-`replay_agent_context.py` 对 Responses 与 Chat Completions 构造相同的两轮语义序列，验证上一轮请求是下一轮的严格前缀、工具调用／结果顺序一致、shadow 候选含完整工具 Schema 且没有第二次付费请求。报告只含字符数、条目数和 hash，默认写入忽略的 `reports/agent-context-replay.json`。`benchmark_agent_cache.py` 默认同样只构造合成上下文并记录零网络请求；只有人工明确加 `--live` 才会用当前 `config_loader` 和 `TangtangProvider` 连续请求，首轮预热、后续统计真实缓存字段。`probe_provider_cache.py --live` 使用冷请求、严格追加、TTL 后追加和不同前缀对照验证通用 payload；只有通用探针未命中时才运行 `--live --prompt-cache-key` 验证缓存亲和能力。该开关只影响合成探针，默认不发送字段。live 报告使用纯合成长前缀，不包含群聊、身份、端点、实际缓存键或密钥；HTTP 失败仍写入脱敏状态和已尝试次数并返回非零，供应商不返回缓存字段时保持 `unsupported`，不得补成零或宣称达标。
+`replay_agent_context.py` 对 Responses 与 Chat Completions 构造相同的两轮语义序列，验证上一轮请求是下一轮的严格前缀、工具调用／结果顺序一致、shadow 候选含完整工具 Schema 且没有第二次付费请求。报告只含字符数、条目数和 hash，默认写入忽略的 `reports/agent-context-replay.json`。`benchmark_agent_cache.py` 默认同样只构造合成上下文并记录零网络请求；只有人工明确加 `--live` 才会用当前 `config_loader` 和 `TangtangProvider` 连续请求，首轮预热、后续统计真实缓存字段。`probe_provider_cache.py --live` 使用冷请求、严格追加、TTL 后追加和不同前缀对照验证通用 payload；只有通用探针未命中时才运行 `--live --prompt-cache-key` 验证缓存亲和能力。该开关只影响合成探针，默认不发送字段。live 报告使用纯合成长前缀，不包含群聊、身份、端点、实际缓存键或密钥；HTTP 失败仍写入脱敏状态和已尝试次数并返回非零。供应商不返回缓存字段时保持 `unsupported`，不把字段缺失改写成确定未命中；合成探针结果与生产请求统计严格分开。
 
 生产 usage 聚合使用：
 

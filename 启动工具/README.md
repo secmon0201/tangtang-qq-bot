@@ -25,9 +25,11 @@
 
 QQ 扫码、滑块、短信和设备验证始终在 QQ/SnowLuma 界面中由用户手动完成。
 
+`01` / `02` 启动 SnowLuma 后若尚无 OneBot 连接，会自动打开 `http://127.0.0.1:5099/processes`。在“进程注入”页先探测账号，再只加载机器人账号对应的 QQ 主进程；如出现扫码、设备验证或登录确认，仍由用户在 QQ/SnowLuma 中完成。启动器会继续等待最多 180 秒。不要开启全进程自动注入，否则同机运行的个人 QQ 也会被 SnowLuma 加载。
+
 日常 `01` 和 `02` 同时启动已配置且未被关闭的语音服务；`03` 停止语音进程但保留总开关供下次启动恢复。`13` 主动关闭后，日常启动不会擅自重开，可用 `12` 恢复。语音模型常驻内存以避免每次冷启动；NoneBot 独立后台每 10 秒检查，异常退出后以至少 120 秒的拉起间隔尝试恢复，预热成功才开放。语音故障不会阻止文字、排行、游戏和 QQ 连接启动。
 
-三个全栈快捷入口保持原文件名，内部统一调用 `scripts\start_all.ps1`、`restart_all.ps1`、`stop_all.ps1`。启动和重启只有在 SnowLuma、NoneBot 监听、唯一 OneBot 客户端、watchdog 进程与健康心跳、Core 监听和空错误日志全部通过后才返回成功；若 QQ 需要重新验证，会明确失败并保留 SnowLuma WebUI 供人工处理。
+三个全栈快捷入口保持原文件名，内部统一调用 `scripts\start_all.ps1`、`restart_all.ps1`、`stop_all.ps1`。启动和重启只有在 SnowLuma、NoneBot 监听、唯一 OneBot 客户端、watchdog 进程与健康心跳、Core 监听和空错误日志全部通过后才返回成功；若 QQ 需要重新验证或尚未加载机器人账号，会打开 SnowLuma 进程页并给出明确操作，超时后仍保留 WebUI 供人工处理。
 
 在本机 `.env` 填好 `PUBLIC_SITE_BASE_URL`、`PUBLIC_SHORT_HOST` 和 `PUBLIC_TUNNEL_NAME` 后，使用 `scripts\configure_tangtang_named_tunnel.ps1` 完成一次性 Cloudflare 授权，再由 `scripts\start_tangtang_named_tunnel.ps1` / `stop_tangtang_named_tunnel.ps1` 启停固定入口。公开源码中的 `example.invalid` 只是不可解析的安全示例，不是可用地址。此后 `01`、`02`、`03` 和 watchdog 会自动识别固定隧道；详细地址与安全边界见 [网页地址与固定隧道](../docs/运维-网页地址与固定隧道.md)。
 

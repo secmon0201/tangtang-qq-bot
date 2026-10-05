@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from time import time
 
 import pytest
+import httpx
 import nonebot
 from nonebot.adapters.onebot.v11 import (
     GroupMessageEvent,
@@ -275,7 +276,7 @@ def test_config_validation():
     assert enabled_config(TANGTANG_NATIVE_ACTION_TOOLS="true").native_action_tools == "true"
     disabled = TangtangConfig.from_values({"TANGTANG_ENABLED": "false"}, (1001,))
     assert not disabled.enabled
-    assert disabled.ignore_probability == 0.05
+    assert disabled.ignore_probability == 0.0
     import pytest
 
     with pytest.raises(ValueError):
@@ -553,6 +554,35 @@ def test_usage_normalizes_anthropic_and_gemini_cache_fields():
     assert gemini["cache_miss_tokens"] == 18
 
 
+def test_usage_merges_nested_proxy_cache_metadata():
+    usage = TangtangProvider._extract_usage({
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 10,
+        },
+        "usageMetadata": {
+            "cachedContentTokenCount": 70,
+            "totalTokenCount": 110,
+        },
+    })
+    assert usage["cache_status"] == "reported"
+    assert usage["cache_read_tokens"] == 70
+    assert usage["cache_miss_tokens"] == 30
+
+
+def test_usage_accepts_camel_case_nested_cache_details():
+    usage = TangtangProvider._extract_usage({
+        "usage": {
+            "inputTokens": 100,
+            "outputTokens": 10,
+            "inputTokensDetails": {"cachedTokens": 70},
+        },
+    })
+    assert usage["cache_status"] == "reported"
+    assert usage["cache_read_tokens"] == 70
+    assert usage["cache_miss_tokens"] == 30
+
+
 def test_usage_without_cache_fields_is_unsupported_not_zero():
     usage = TangtangProvider._extract_usage({"usage": {
         "prompt_tokens": 12, "completion_tokens": 4,
@@ -571,6 +601,238 @@ def test_usage_infers_zero_only_for_verified_cache_affinity():
     assert usage["cache_read_tokens"] == 0
     assert usage["cache_miss_tokens"] == 12
     assert usage["cache_zero_inferred"] is True
+
+
+def test_antigravity_gemini_38_keeps_cache_omission_unsupported():
+    config = enabled_config(
+        TANGTANG_PROVIDER="antigravity",
+        TANGTANG_MODEL="gemini-3.8-flash-high",
+        TANGTANG_API_STYLE="chat_completions",
+    )
+    assert TangtangProvider._verified_zero_on_cache_omission(config) is False
+
+    usage = TangtangProvider._extract_usage(
+        {"usage": {"prompt_tokens": 12, "completion_tokens": 4}},
+        cache_zero_on_omission=TangtangProvider._verified_zero_on_cache_omission(config),
+    )
+    assert usage["cache_status"] == "unsupported"
+    assert "cache_read_tokens" not in usage
+    assert "cache_miss_tokens" not in usage
+    assert usage.get("cache_zero_inferred") is None
+
+
+def test_cache_omission_stays_unsupported_for_other_provider_or_model():
+    other_provider = enabled_config(
+        TANGTANG_PROVIDER="custom",
+        TANGTANG_MODEL="gemini-3.8-flash-high",
+    )
+    other_model = enabled_config(
+        TANGTANG_PROVIDER="antigravity",
+        TANGTANG_MODEL="gemini-3.8-pro-high",
+    )
+    assert TangtangProvider._verified_zero_on_cache_omission(other_provider) is False
+    assert TangtangProvider._verified_zero_on_cache_omission(other_model) is False
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "api_style", "supported"),
+    (
+        ("deepseek", "cline-pass/deepseek-v4.1-flash", "chat_completions", True),
+        ("deepseek", "deepseek-flash", "responses", True),
+        ("aizz", "gpt-5.6-luna", "responses", True),
+        ("antigravity", "gemini-3.8-flash-high", "chat_completions", True),
+        ("custom", "future-model", "responses", False),
+    ),
+)
+def test_model_profile_controls_prompt_cache_key(
+    provider, model, api_style, supported
+):
+    config = enabled_config(
+        TANGTANG_PROVIDER=provider,
+        TANGTANG_MODEL=model,
+        TANGTANG_API_STYLE=api_style,
+    )
+    envelope = ContextEnvelope.create(
+        persona="stable",
+        current_input="current",
+        cache_affinity_key="synthetic-affinity",
+    )
+    builder = (
+        TangtangProvider._responses_payload
+        if api_style == "responses"
+        else TangtangProvider._chat_payload
+    )
+    payload = builder(config, "ignored", "ignored", envelope=envelope)
+    assert TangtangProvider._supports_prompt_cache_key(config) is supported
+    assert (payload.get("prompt_cache_key") == "synthetic-affinity") is supported
+
+
+def test_prompt_cache_key_fallback_requires_an_explicit_parameter_error():
+    request = httpx.Request("POST", "https://example.invalid/v1/responses")
+    unsupported = httpx.Response(
+        400,
+        request=request,
+        json={"error": {"message": "unsupported parameter: prompt_cache_key"}},
+    )
+    timeout = httpx.Response(
+        504,
+        request=request,
+        json={"error": {"message": "request timeout"}},
+    )
+    assert TangtangProvider._unsupported_cache_key_error(unsupported) is True
+    assert TangtangProvider._unsupported_cache_key_error(timeout) is False
+
+
+def test_provider_retries_without_prompt_cache_key_when_explicitly_rejected(
+    monkeypatch,
+):
+    payloads = []
+
+    async def fake_post(_client, endpoint, **kwargs):
+        payloads.append(kwargs["json"])
+        request = httpx.Request("POST", endpoint)
+        if len(payloads) == 1:
+            return httpx.Response(
+                400,
+                request=request,
+                json={"error": {"message": "unsupported parameter: prompt_cache_key"}},
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "output_text": "OK",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 2,
+                    "input_tokens_details": {"cached_tokens": 0},
+                },
+            },
+        )
+
+    monkeypatch.setattr("bot.services.tangtang_chat.provider_post", fake_post)
+    config = enabled_config(
+        TANGTANG_PROVIDER="aizz",
+        TANGTANG_MODEL="gpt-5.6-luna",
+        TANGTANG_API_STYLE="responses",
+    )
+    envelope = ContextEnvelope.create(
+        persona="stable",
+        current_input="current",
+        cache_affinity_key="synthetic-affinity",
+    )
+    result = asyncio.run(
+        TangtangProvider().generate_agent(
+            config, envelope.static_text, envelope.current_text, envelope=envelope
+        )
+    )
+    assert len(payloads) == 2
+    assert payloads[0]["prompt_cache_key"] == "synthetic-affinity"
+    assert "prompt_cache_key" not in payloads[1]
+    assert result.usage["cache_affinity_key_sent"] is False
+    assert result.usage["cache_affinity_fallback"] is True
+
+
+def test_provider_retry_on_502_success_after_retries(monkeypatch):
+    calls = []
+    delays = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+
+    async def fake_post(_client, endpoint, **kwargs):
+        calls.append(kwargs["json"])
+        request = httpx.Request("POST", endpoint)
+        if len(calls) < 3:
+            return httpx.Response(502, request=request, text="Bad Gateway")
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "output_text": "OK after retry",
+                "usage": {
+                    "input_tokens": 50,
+                    "output_tokens": 5,
+                },
+            },
+        )
+
+    monkeypatch.setattr("bot.services.tangtang_chat.provider_post", fake_post)
+    config = enabled_config(
+        TANGTANG_PROVIDER="aizz",
+        TANGTANG_MODEL="gpt-5.6-luna",
+        TANGTANG_API_STYLE="responses",
+    )
+    result = asyncio.run(
+        TangtangProvider().generate_agent(
+            config, "persona", "prompt"
+        )
+    )
+    assert len(calls) == 3
+    assert delays == [1.0, 2.0]
+    assert result.text == "OK after retry"
+
+
+def test_provider_retry_exhausted_raises_exception(monkeypatch):
+    calls = []
+    delays = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+
+    async def fake_post(_client, endpoint, **kwargs):
+        calls.append(kwargs["json"])
+        request = httpx.Request("POST", endpoint)
+        return httpx.Response(502, request=request, text="Bad Gateway")
+
+    monkeypatch.setattr("bot.services.tangtang_chat.provider_post", fake_post)
+    config = enabled_config(
+        TANGTANG_PROVIDER="aizz",
+        TANGTANG_MODEL="gpt-5.6-luna",
+        TANGTANG_API_STYLE="responses",
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(
+            TangtangProvider().generate_agent(
+                config, "persona", "prompt"
+            )
+        )
+    assert len(calls) == 3
+    assert delays == [1.0, 2.0]
+
+
+def test_provider_non_retryable_status_fails_immediately(monkeypatch):
+    calls = []
+    delays = []
+
+    async def fake_sleep(seconds):
+        delays.append(seconds)
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+
+    async def fake_post(_client, endpoint, **kwargs):
+        calls.append(kwargs["json"])
+        request = httpx.Request("POST", endpoint)
+        return httpx.Response(400, request=request, text="Bad Request")
+
+    monkeypatch.setattr("bot.services.tangtang_chat.provider_post", fake_post)
+    config = enabled_config(
+        TANGTANG_PROVIDER="aizz",
+        TANGTANG_MODEL="gpt-5.6-luna",
+        TANGTANG_API_STYLE="responses",
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(
+            TangtangProvider().generate_agent(
+                config, "persona", "prompt"
+            )
+        )
+    assert len(calls) == 1
+    assert delays == []
 
 
 def test_usage_merge_accumulates_cache_across_tool_rounds():
@@ -1644,7 +1906,7 @@ def test_private_model_silent_gets_natural_fallback(tmp_path, monkeypatch):
     assert not any(event["event"] == "silent" for event in events)
 
 
-def test_private_model_error_gets_natural_fallback(tmp_path, monkeypatch):
+def test_private_model_error_silent_without_fallback(tmp_path, monkeypatch):
     class FailingProvider(FakeProvider):
         async def generate_agent(self, *args, **kwargs):
             self.calls += 1
@@ -1664,10 +1926,10 @@ def test_private_model_error_gets_natural_fallback(tmp_path, monkeypatch):
     )
 
     assert provider.calls == 1
-    assert sent == [PRIVATE_ERROR_REPLY]
+    assert sent == []
     assert any(
-        event["event"] == "forced_reply"
-        and event["detail"] == "model_error:TimeoutError"
+        event["event"] == "error"
+        and event["detail"] == "TimeoutError"
         for event in usage_events(usage_dir)
     )
 
@@ -1737,6 +1999,8 @@ def test_cache_shadow_keeps_the_single_group_session(
     config = enabled_config(
         TANGTANG_CONTEXT_LAYOUT="v2",
         TANGTANG_CACHE_COHORT_MODE="shadow",
+        TANGTANG_PROVIDER="aizz",
+        TANGTANG_MODEL="gpt-5.6-luna",
     )
     asyncio.run(service.handle(
         SimpleNamespace(self_id=2),

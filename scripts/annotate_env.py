@@ -63,7 +63,7 @@ OVERRIDES = {
     "CODEX_COMPLETION_NOTIFY_TOKEN": "Codex 完成通知鉴权令牌（或使用 ONEBOT_ACCESS_TOKEN）",
     "ASOUL_BILI_GROUP_IDS": "B站推送群的首次迁移种子（运行时以 SQLite 为准）",
     "GLOBAL_ANNOUNCEMENT_DEFAULT_CLUSTER": "内部公告接口默认使用的 SQLite 集群名称或别名",
-    "WUWA_IMPORT_CLUSTER_NAME": "鸣潮历史数据导入允许使用的 SQLite 集群名称或别名",
+    "WUWA_IMPORT_CLUSTER_NAME": "已停用的历史导入参数；项目不再写入上游鸣潮数据",
     "ASOUL_BILI_POLL_INTERVAL_SECONDS": "B站轮询间隔秒数（60-3600）",
     "ASOUL_BILI_PUSH_DYNAMIC": "是否推送 B站动态",
     "ASOUL_BILI_PUSH_LIVE": "是否推送 B站开播",

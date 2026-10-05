@@ -187,6 +187,7 @@ def request_from_decision(decision) -> FeatureRequest:
 
 
 def skill_prompt(actions: tuple[str, ...]) -> str:
+    """[已弃用] Q9 阶段已全面转为原生 Tool Calling，此提示词不再注入，仅保留离线兼容。"""
     rows = [f"- {action}: {ACTION_CONTRACTS[action].description}；args={list(ACTION_CONTRACTS[action].args)}"
             for action in actions if action in ACTION_CONTRACTS]
     return (

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>查重与白名单</title>
+  <style>
+    :root { --ink:#302932; --muted:#716773; --pink:#d9487d; --line:#ead7df; --paper:#fffdfd; --good:#17613f; --bad:#a43353; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#f8f4f6; font:15px/1.55 "Microsoft YaHei",system-ui,sans-serif; }
+    main { width:min(1120px,100%); margin:auto; padding:26px 20px 48px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
+    h1 { margin:0; font-size:26px; } h2 { margin:0 0 14px; font-size:17px; }
+    .muted,.timer { color:var(--muted); font-size:13px; } .timer { color:var(--pink); font-weight:700; white-space:nowrap; }
+    .grid { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr); gap:16px; }
+    section { padding:20px; border:1px solid var(--line); border-radius:8px; background:var(--paper); }
+    .wide { grid-column:1/-1; } label { display:block; margin:12px 0 6px; font-weight:700; }
+    input,select,button { font:inherit; } input,select { width:100%; padding:9px; border:1px solid #d7c6ce; border-radius:6px; background:#fff; }
+    button { padding:8px 13px; border:1px solid var(--line); border-radius:6px; color:var(--ink); background:#fff; cursor:pointer; }
+    button:hover { border-color:var(--pink); } button.primary { color:#fff; border-color:var(--pink); background:var(--pink); }
+    button:disabled { opacity:.5; cursor:wait; } .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+    .checks label { margin:0; padding:8px; border:1px solid var(--line); border-radius:6px; font-weight:400; }
+    .checks input,.inline input { width:auto; margin-right:7px; } .inline { font-weight:400; }
+    .list { display:grid; gap:8px; max-height:430px; overflow:auto; }
+    .item { padding:11px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+    .meta { margin-top:3px; color:var(--muted); font-size:13px; }
+    .result { display:none; margin-bottom:16px; padding:11px; border-radius:6px; }
+    .result.ok,.result.error { display:block; } .result.ok { color:var(--good); background:#edf9f2; } .result.error { color:var(--bad); background:#fff0f4; }
+    table { width:100%; border-collapse:collapse; font-size:13px; } th,td { padding:8px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); }
+    @media (max-width:760px) { main { padding:18px 12px 32px; } header { flex-direction:column; } .grid { grid-template-columns:1fr; } .checks { grid-template-columns:1fr; } .wide { grid-column:auto; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><div><h1>查重与白名单</h1><div class="muted" id="scope">正在校验链接</div></div><div class="timer" id="timer"></div></header>
+  <div id="result" class="result" role="status"></div>
+  <div class="grid">
+    <section>
+      <h2>查重范围</h2>
+      <label for="mode">模式</label><select id="mode"><option value="source">起点群与目标群</option><option value="all">全部群互查</option></select>
+      <label>群</label><div id="groups" class="checks"></div>
+      <label class="inline"><input id="ignore" type="checkbox">忽略白名单</label>
+      <div class="actions"><button id="scan" class="primary">开始查重</button></div>
+    </section>
+    <section>
+      <h2>查重白名单</h2>
+      <label for="user">QQ 号</label><input id="user" inputmode="numeric">
+      <label for="note">备注</label><input id="note" maxlength="200">
+      <div class="actions"><button id="add">添加或更新</button><button id="remove">移除</button></div>
+      <div id="whitelist" class="list" style="margin-top:16px"></div>
+    </section>
+    <section class="wide"><h2>查重结果</h2><div id="rows" class="muted">尚未执行查重。</div></section>
+  </div>
+</main>
+<script>
+(() => {
+  const token = location.pathname.split('/').filter(Boolean).pop();
+  const api = location.pathname.startsWith('/duplicate/')
+    ? `/duplicate/api/${encodeURIComponent(token)}`
+    : `/operator/api/duplicate/${encodeURIComponent(token)}`;
+  const $ = id => document.getElementById(id);
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const setResult = (message, error = false) => { const node = $('result'); node.textContent = message; node.className = `result ${error ? 'error' : 'ok'}`; };
+  const request = async (path, options = {}) => { const response = await fetch(api + path, options); const payload = await response.json().catch(() => ({detail:'请求失败'})); if (!response.ok) throw new Error(payload.detail || '请求失败'); return payload; };
+  const selectedGroups = () => [...document.querySelectorAll('#groups input:checked')].map(node => Number(node.value));
+  const post = (path, value) => request(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(value)});
+  const busy = (button, state) => { button.disabled = state; };
+
+  function renderState(state) {
+    $('scope').textContent = '链接仅限本次操作';
+    $('timer').textContent = `剩余 ${Math.ceil(state.remaining_seconds / 60)} 分钟`;
+    $('groups').innerHTML = state.groups.map(group => `<label><input type="checkbox" value="${Number(group.id)}">${escapeHtml(group.name)} (${Number(group.id)})</label>`).join('');
+    $('whitelist').innerHTML = state.whitelist.length
+      ? state.whitelist.map(row => `<div class="item"><strong>${Number(row.user_id)} ${escapeHtml(row.nickname)}</strong><div class="meta">${escapeHtml(row.note || '无备注')}</div></div>`).join('')
+      : '<div class="muted">白名单为空</div>';
+  }
+
+  async function refresh() { renderState(await request('/state')); }
+  async function updateWhitelist(action) {
+    try {
+      await post(`/whitelist/${action}`, {user_id:$('user').value, note:$('note').value});
+      setResult('白名单已更新。');
+      await refresh();
+    } catch (error) { setResult(error.message, true); }
+  }
+
+  $('add').onclick = () => updateWhitelist('add');
+  $('remove').onclick = () => updateWhitelist('remove');
+  $('scan').onclick = async () => {
+    const button = $('scan'); busy(button, true);
+    try {
+      const result = await post('/scan', {groups:selectedGroups(), mode:$('mode').value, ignore_whitelist:$('ignore').checked});
+      $('rows').innerHTML = `共 ${Number(result.count)} 名重复成员` + (result.rows.length ? `<table><thead><tr><th>QQ</th><th>昵称</th><th>出现群</th></tr></thead><tbody>${result.rows.map(row => `<tr><td>${Number(row.user_id)}</td><td>${escapeHtml(row.nickname)}</td><td>${escapeHtml(row.groups.map(group => group.group_name || group.group_id).join('、'))}</td></tr>`).join('')}</tbody></table>` : '');
+      setResult('查重完成。');
+    } catch (error) { setResult(error.message, true); }
+    finally { busy(button, false); }
+  };
+
+  refresh().catch(error => { $('scope').textContent = error.message; setResult(error.message, true); });
+})();
+</script>
+</body>
+</html>

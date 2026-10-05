@@ -51,6 +51,10 @@ from bot.services.tangtang_models import (
     model_catalog,
     resolve_model_profile,
 )
+from bot.services.tangtang_circuit_breaker import (
+    CircuitState,
+    TangtangCircuitBreaker,
+)
 from bot.services.tangtang_memory import TangtangMemoryKernel
 from bot.services.persona_memory_contract import enforce_memory_confirmation, memory_requested
 from bot.services.tangtang_reply import (
@@ -59,7 +63,6 @@ from bot.services.tangtang_reply import (
     reply_bubble_limit,
     reply_style_instruction,
 )
-from bot.services.local_skill_contract import skill_prompt
 from bot.services.agent_context import (
     AGENT_INVARIANT_INSTRUCTIONS,
     AGENT_REPLY_INSTRUCTIONS,
@@ -104,6 +107,12 @@ LINES_PATH = RESOURCE_DIR / "lines.txt"
 
 GROUP_CONTEXT_MESSAGES = 30
 GROUP_DAILY_DIGEST_MESSAGES = 2000
+PROMPT_CACHE_KEY_PROFILES = frozenset({
+    ("deepseek", "cline-pass/deepseek-v4.1-flash"),
+    ("deepseek", "deepseek-flash"),
+    ("aizz", "gpt-5.6-luna"),
+    ("antigravity", "gemini-3.8-flash-high"),
+})
 PRIVATE_CONTINUATION_REPLY = "我在听呢。你继续说，或者聊聊今天发生的事？"
 PRIVATE_TOPIC_PIVOT_REPLY = "这个先放一放吧。换个轻松点的，你今天过得怎么样？"
 PRIVATE_ERROR_REPLY = "刚才有点走神了。你再说一遍，我会认真听。"
@@ -124,7 +133,7 @@ def _context_compaction_due(
     above_minimum = int(round_count) > CONTEXT_MIN_ROUNDS
     return (
         int(round_count) > CONTEXT_MAX_ROUNDS
-        or (above_minimum and int(prompt_tokens) >= 12_000)
+        or (above_minimum and int(prompt_tokens) >= 10_000)
         or (
             above_minimum
             and cache_status == "unsupported"
@@ -416,6 +425,7 @@ class TangtangConfig:
     proactive_cooldown_seconds_by_group: dict[int, int]
     proactive_message_interval: int
     proactive_message_interval_by_group: dict[int, int]
+    provider: str
     api_url: str
     api_key: str
     api_style: str
@@ -460,6 +470,7 @@ class TangtangConfig:
     cache_snapshot_chars: int = 6_000
     cache_recent_rounds: int = 8
     cache_canary_group_ids: frozenset[int] = frozenset()
+    ssl_verify: bool = True
 
     @classmethod
     def disabled(cls, reason: str = "TANGTANG_ENABLED=false") -> "TangtangConfig":
@@ -470,7 +481,7 @@ class TangtangConfig:
             group_ids=frozenset(),
             group_order=(),
             group_context_messages=GROUP_CONTEXT_MESSAGES,
-            ignore_probability=0.05,
+            ignore_probability=0.0,
             call_ignore_probability_by_group={},
             required_call_reply_group_ids=frozenset(),
             soft_blacklist_ignore_probability=0.0,
@@ -482,6 +493,7 @@ class TangtangConfig:
             proactive_cooldown_seconds_by_group={},
             proactive_message_interval=30,
             proactive_message_interval_by_group={},
+            provider="custom",
             api_url="",
             api_key="",
             api_style="responses",
@@ -533,13 +545,14 @@ class TangtangConfig:
         group_context_messages = _int(
             values, "TANGTANG_GROUP_CONTEXT_MESSAGES", GROUP_CONTEXT_MESSAGES, 1, 100
         )
-        ignore_probability = _float(values, "TANGTANG_IGNORE_PROBABILITY", 0.05, 0.0, 1.0)
+        ignore_probability = _float(values, "TANGTANG_IGNORE_PROBABILITY", 0.0, 0.0, 1.0)
         soft_blacklist_ignore_probability = _float(
             values, "TANGTANG_SOFT_BLACKLIST_IGNORE_PROBABILITY", 0.0, 0.0, 1.0
         )
         c_probability = _float(values, "TANGTANG_C_PROBABILITY", 0.40, 0.0, 1.0)
         proactive_enabled = _bool(values, "TANGTANG_PROACTIVE_ENABLED", False)
         humanize_enabled = _bool(values, "TANGTANG_HUMANIZE_ENABLED", True)
+        ssl_verify = _bool(values, "TANGTANG_SSL_VERIFY", True)
         def group_values(name: str, default: object, parser) -> dict[int, object]:
             if not group_order:
                 return {}
@@ -723,6 +736,7 @@ class TangtangConfig:
                 proactive_cooldown_seconds_by_group=proactive_cooldown_seconds_by_group,
                 proactive_message_interval=proactive_message_interval,
                 proactive_message_interval_by_group=proactive_message_interval_by_group,
+                provider=_raw(values, "TANGTANG_PROVIDER", "custom").lower(),
                 api_url="",
                 api_key="",
                 api_style="responses",
@@ -750,6 +764,7 @@ class TangtangConfig:
                 cache_snapshot_chars=cache_snapshot_chars,
                 cache_recent_rounds=cache_recent_rounds,
                 cache_canary_group_ids=cache_canary_group_ids,
+                ssl_verify=ssl_verify,
             )
         if not group_ids:
             raise ValueError("TANGTANG_GROUP_IDS is required when TANGTANG_ENABLED=true")
@@ -794,6 +809,7 @@ class TangtangConfig:
             proactive_cooldown_seconds_by_group=proactive_cooldown_seconds_by_group,
             proactive_message_interval=proactive_message_interval,
             proactive_message_interval_by_group=proactive_message_interval_by_group,
+            provider=_raw(values, "TANGTANG_PROVIDER", "custom").lower(),
             api_url=api_url,
             api_key=api_key,
             api_style=api_style,
@@ -822,6 +838,7 @@ class TangtangConfig:
             cache_snapshot_chars=cache_snapshot_chars,
             cache_recent_rounds=cache_recent_rounds,
             cache_canary_group_ids=cache_canary_group_ids,
+            ssl_verify=ssl_verify,
         )
 
     def proactive_values_for(self, group_id: int) -> tuple[float, int, int]:
@@ -1064,6 +1081,9 @@ class AgentResult:
 
 
 class TangtangProvider:
+    def __init__(self, circuit_breaker: TangtangCircuitBreaker | None = None) -> None:
+        self.circuit_breaker = circuit_breaker or TangtangCircuitBreaker()
+
     @staticmethod
     def endpoint(config: TangtangConfig) -> str:
         url = config.api_url.rstrip("/")
@@ -1076,6 +1096,7 @@ class TangtangProvider:
         persona: str,
         prompt: str,
         images: tuple[VisionImage, ...] = (),
+        max_retries: int = 0,
     ) -> tuple[str, dict[str, Any]]:
         headers = {
             "Authorization": f"Bearer {config.api_key}",
@@ -1088,12 +1109,45 @@ class TangtangProvider:
             payload = self._chat_payload(config, persona, prompt, images=images)
         enforce_vision_limits(payload)
         started = time.monotonic()
-        async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
-            response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        retry_delays = (1.0, 2.0)
+        last_exception: Exception | None = None
+        data: dict[str, Any] = {}
+
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                delay = retry_delays[min(attempt - 1, len(retry_delays) - 1)]
+                logger.warning(
+                    f"Tangtang model request retry {attempt}/{max_retries} "
+                    f"after {type(last_exception).__name__}: {last_exception}; waiting {delay}s"
+                )
+                await asyncio.sleep(delay)
+            try:
+                async with httpx.AsyncClient(timeout=config.timeout_seconds, verify=config.ssl_verify) as client:
+                    response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    if hasattr(self, "circuit_breaker"):
+                        self.circuit_breaker.record_success()
+                    break
+            except (httpx.HTTPStatusError, httpx.TransportError, TimeoutError) as exc:
+                last_exception = exc
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in {429, 500, 502, 503, 504}:
+                    raise
+                if attempt >= max_retries:
+                    if hasattr(self, "circuit_breaker"):
+                        self.circuit_breaker.record_failure(exc)
+                    raise
+        else:
+            if last_exception:
+                if hasattr(self, "circuit_breaker"):
+                    self.circuit_breaker.record_failure(last_exception)
+                raise last_exception
+
         text = self._extract_text(data)[: config.max_response_chars].strip()
-        usage = self._extract_usage(data)
+        usage = self._extract_usage(
+            data,
+            cache_zero_on_omission=self._verified_zero_on_cache_omission(config),
+        )
         usage["latency_ms"] = round((time.monotonic() - started) * 1000)
         return text, usage
 
@@ -1124,17 +1178,81 @@ class TangtangProvider:
             )
         enforce_vision_limits(payload)
         started = time.monotonic()
-        async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
-            response = await provider_post(client, self.endpoint(config), headers=headers, json=payload)
-            if response.status_code >= 400 and tools and self._unsupported_tools_error(response):
+        cache_affinity_fallback = False
+        effective_payload = payload
+
+        max_retries = 2
+        retry_delays = (1.0, 2.0)
+        last_exception: Exception | None = None
+        data: dict[str, Any] = {}
+
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                delay = retry_delays[min(attempt - 1, len(retry_delays) - 1)]
                 logger.warning(
-                    "Tangtang API rejected tool parameters; falling back to plain generation"
+                    f"Tangtang model request retry {attempt}/{max_retries} "
+                    f"after {type(last_exception).__name__}: {last_exception}; waiting {delay}s"
                 )
-                # Preserve all retained multimodal turns on the compatibility retry.
-                retry_payload = {key: value for key, value in payload.items() if key != "tools"}
-                response = await provider_post(client, self.endpoint(config), headers=headers, json=retry_payload)
-            response.raise_for_status()
-            data = response.json()
+                await asyncio.sleep(delay)
+            try:
+                async with httpx.AsyncClient(timeout=config.timeout_seconds, verify=config.ssl_verify) as client:
+                    response = await provider_post(
+                        client, self.endpoint(config), headers=headers, json=effective_payload
+                    )
+                    if (
+                        response.status_code >= 400
+                        and "prompt_cache_key" in effective_payload
+                        and self._unsupported_cache_key_error(response)
+                    ):
+                        logger.warning(
+                            "Tangtang API rejected prompt_cache_key; retrying without cache affinity"
+                        )
+                        cache_affinity_fallback = True
+                        effective_payload = dict(effective_payload)
+                        effective_payload.pop("prompt_cache_key", None)
+                        response = await provider_post(
+                            client, self.endpoint(config), headers=headers, json=effective_payload
+                        )
+                    if response.status_code >= 400 and tools and self._unsupported_tools_error(response):
+                        logger.warning(
+                            "Tangtang API rejected tool parameters; falling back to plain generation"
+                        )
+                        # Preserve all retained multimodal turns on the compatibility retry.
+                        retry_payload = {
+                            key: value for key, value in effective_payload.items() if key != "tools"
+                        }
+                        response = await provider_post(client, self.endpoint(config), headers=headers, json=retry_payload)
+                        effective_payload = retry_payload
+                        if (
+                            response.status_code >= 400
+                            and "prompt_cache_key" in effective_payload
+                            and self._unsupported_cache_key_error(response)
+                        ):
+                            cache_affinity_fallback = True
+                            effective_payload = dict(effective_payload)
+                            effective_payload.pop("prompt_cache_key", None)
+                            response = await provider_post(
+                                client, self.endpoint(config), headers=headers, json=effective_payload
+                            )
+                    response.raise_for_status()
+                    data = response.json()
+                    if hasattr(self, "circuit_breaker"):
+                        self.circuit_breaker.record_success()
+                    break
+            except (httpx.HTTPStatusError, httpx.TransportError, TimeoutError) as exc:
+                last_exception = exc
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code not in {429, 500, 502, 503, 504}:
+                    raise
+                if attempt >= max_retries:
+                    if hasattr(self, "circuit_breaker"):
+                        self.circuit_breaker.record_failure(exc)
+                    raise
+        else:
+            if last_exception:
+                if hasattr(self, "circuit_breaker"):
+                    self.circuit_breaker.record_failure(last_exception)
+                raise last_exception
+
         # JSON control fields, including memory proposals, are not visible
         # reply characters. Bound the envelope separately; the parser applies
         # max_response_chars to the actual messages.
@@ -1142,8 +1260,10 @@ class TangtangProvider:
         tool_calls = self._extract_tool_calls(data)
         usage = self._extract_usage(
             data,
-            cache_zero_on_omission=bool(envelope and envelope.cache_affinity_key),
+            cache_zero_on_omission=self._verified_zero_on_cache_omission(config),
         )
+        usage["cache_affinity_key_sent"] = "prompt_cache_key" in effective_payload
+        usage["cache_affinity_fallback"] = cache_affinity_fallback
         usage["latency_ms"] = round((time.monotonic() - started) * 1000)
         return AgentResult(text=text, tool_calls=tool_calls, usage=usage)
 
@@ -1244,7 +1364,10 @@ class TangtangProvider:
         # Preserve wire order so the stable tool schema precedes the append-only
         # conversation. Some compatible gateways key caches from serialized order.
         payload: dict[str, Any] = {"model": config.model}
-        if envelope.cache_affinity_key:
+        if (
+            envelope.cache_affinity_key
+            and TangtangProvider._supports_prompt_cache_key(config)
+        ):
             payload["prompt_cache_key"] = envelope.cache_affinity_key
         if tools:
             payload["tools"] = list(tools)
@@ -1372,7 +1495,10 @@ class TangtangProvider:
         flush_calls()
         # Keep tools ahead of the changing message tail for prefix-cache reuse.
         payload: dict[str, Any] = {"model": config.model}
-        if envelope.cache_affinity_key:
+        if (
+            envelope.cache_affinity_key
+            and TangtangProvider._supports_prompt_cache_key(config)
+        ):
             payload["prompt_cache_key"] = envelope.cache_affinity_key
         if tools:
             payload["tools"] = [
@@ -1471,14 +1597,50 @@ class TangtangProvider:
         return response.status_code in {400, 404, 422} and "tool" in body
 
     @staticmethod
+    def _unsupported_cache_key_error(response: httpx.Response) -> bool:
+        try:
+            body = (response.text or "").lower()
+        except Exception:
+            body = ""
+        return (
+            response.status_code in {400, 404, 422}
+            and "prompt_cache_key" in body
+            and any(term in body for term in ("unsupported", "unknown", "unrecognized", "extra"))
+        )
+
+    @staticmethod
+    def _supports_prompt_cache_key(config: TangtangConfig) -> bool:
+        return (config.provider.casefold(), config.model.casefold()) in PROMPT_CACHE_KEY_PROFILES
+
+    @staticmethod
+    def _verified_zero_on_cache_omission(config: TangtangConfig) -> bool:
+        """Return whether an omitted cache field is a confirmed miss.
+
+        Antigravity's proxy omits cache fields on more than one response path:
+        a missing field therefore cannot distinguish a miss from unavailable
+        telemetry. Keep the production default unsupported until the proxy
+        returns an explicit cache status or miss field.
+        """
+        return False
+
+    @staticmethod
     def _extract_usage(
         data: Any, *, cache_zero_on_omission: bool = False
     ) -> dict[str, Any]:
         if not isinstance(data, dict):
             return {}
-        usage = data.get("usage") or data.get("usage_metadata") or data.get("usageMetadata")
-        if not isinstance(usage, dict):
+        usage_sources = [
+            value for value in (
+                data.get("usage"),
+                data.get("usage_metadata"),
+                data.get("usageMetadata"),
+            ) if isinstance(value, dict)
+        ]
+        if not usage_sources:
             return {}
+        usage: dict[str, Any] = {}
+        for source in usage_sources:
+            usage.update(source)
 
         def integer(*values: Any) -> int:
             for value in values:
@@ -1492,10 +1654,12 @@ class TangtangProvider:
         result: dict[str, Any] = {}
         result["prompt_tokens"] = integer(
             usage.get("prompt_tokens"), usage.get("input_tokens"),
+            usage.get("inputTokens"), usage.get("promptTokens"),
             usage.get("promptTokenCount"),
         )
         result["completion_tokens"] = integer(
             usage.get("completion_tokens"), usage.get("output_tokens"),
+            usage.get("outputTokens"), usage.get("completionTokens"),
             usage.get("candidatesTokenCount"),
         )
         details = usage.get("output_tokens_details") or usage.get("completion_tokens_details")
@@ -1511,24 +1675,56 @@ class TangtangProvider:
         if not result["total_tokens"]:
             result["total_tokens"] = result["prompt_tokens"] + result["completion_tokens"]
 
-        input_details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details")
-        if not isinstance(input_details, dict):
-            input_details = {}
+        input_details = next((
+            value for value in (
+                usage.get("input_tokens_details"),
+                usage.get("prompt_tokens_details"),
+                usage.get("inputTokensDetails"),
+                usage.get("promptTokensDetails"),
+            ) if isinstance(value, dict)
+        ), {})
+        metadata_details = next((
+            value for source in usage_sources[1:]
+            for value in (
+                source.get("input_tokens_details"),
+                source.get("prompt_tokens_details"),
+                source.get("inputTokensDetails"),
+                source.get("promptTokensDetails"),
+            ) if isinstance(value, dict)
+        ), {})
         cache_values = (
             input_details.get("cached_tokens"),
+            input_details.get("cachedTokens"),
+            metadata_details.get("cached_tokens"),
+            metadata_details.get("cachedTokens"),
             usage.get("cached_tokens"),
+            usage.get("cachedTokens"),
+            usage.get("cache_read_tokens"),
             usage.get("cache_read_input_tokens"),
+            usage.get("cacheReadTokens"),
+            usage.get("cacheReadInputTokens"),
             usage.get("prompt_cache_hit_tokens"),
+            usage.get("promptCacheHitTokens"),
             usage.get("cachedContentTokenCount"),
+            usage.get("cached_content_token_count"),
         )
         write_values = (
             usage.get("cache_creation_input_tokens"),
             usage.get("cache_write_input_tokens"),
+            usage.get("cache_write_tokens"),
+            usage.get("cacheCreationInputTokens"),
+            usage.get("cacheWriteInputTokens"),
+            usage.get("cacheWriteTokens"),
             usage.get("prompt_cache_write_tokens"),
+            usage.get("promptCacheWriteTokens"),
         )
         miss_values = (
             usage.get("cache_miss_input_tokens"),
+            usage.get("cache_miss_tokens"),
+            usage.get("cacheMissInputTokens"),
+            usage.get("cacheMissTokens"),
             usage.get("prompt_cache_miss_tokens"),
+            usage.get("promptCacheMissTokens"),
         )
         explicit_cache_usage = any(
             value is not None for value in (*cache_values, *write_values, *miss_values)
@@ -2180,6 +2376,11 @@ class TangtangService:
                 "context_epoch": int(tokens.get("context_epoch") or 0),
                 "cache_cohort_hash": str(tokens.get("cache_cohort_hash") or ""),
                 "cache_affinity_mode": str(tokens.get("cache_affinity_mode") or "off"),
+                "cache_affinity_transport": str(
+                    tokens.get("cache_affinity_transport") or "off"
+                ),
+                "cache_affinity_key_sent": bool(tokens.get("cache_affinity_key_sent")),
+                "cache_affinity_fallback": bool(tokens.get("cache_affinity_fallback")),
                 "detail": detail,
                 "request_trace": (
                     hashlib.sha256(context.request_id.encode("utf-8")).hexdigest()[:16]
@@ -2215,11 +2416,6 @@ class TangtangService:
             )
         except Exception as exc:
             logger.warning("Tangtang feature history record failed: {}", exc)
-
-    def _local_skill_contract(self, event) -> str:
-        if self.feature_runner is None or self.feature_catalog is None:
-            return ""
-        return skill_prompt(self.feature_catalog(event))
 
     def _quoted_input(self, event: Any, at_labels: Mapping[str, str] | None = None) -> str:
         reply = getattr(event, "reply", None)
@@ -3321,25 +3517,101 @@ class TangtangService:
                     "active" if cache_cohort_enabled else
                     "shadow" if cohort_shadow else "off"
                 ),
+                "cache_affinity_transport": (
+                    "prompt_cache_key"
+                    if cache_cohort_enabled
+                    and TangtangProvider._supports_prompt_cache_key(config)
+                    else "stable_prefix"
+                    if cache_cohort_enabled
+                    else "shadow"
+                    if cohort_shadow
+                    else "off"
+                ),
                 **(candidate_budget_state if cohort_shadow else budget_state),
             }
             self._write_usage(config, group_id, user_id, "model_started", mode=mode, tokens=telemetry)
+            effective_config = config
+            if hasattr(self.provider, "circuit_breaker") and self.provider.circuit_breaker.state == CircuitState.OPEN:
+                try:
+                    catalog = self.model_profile_catalog()
+                    fallback_profile = self.provider.circuit_breaker.resolve_fallback_profile(catalog)
+                    if fallback_profile is not None:
+                        logger.warning(
+                            f"Tangtang primary circuit is OPEN; routing to fallback profile {fallback_profile.name} ({fallback_profile.model})"
+                        )
+                        effective_config = replace(
+                            config,
+                            provider=fallback_profile.provider,
+                            api_url=fallback_profile.api_url,
+                            api_key=fallback_profile.api_key,
+                            api_style=fallback_profile.api_style,
+                            model=fallback_profile.model,
+                            reasoning_effort=fallback_profile.reasoning_effort,
+                        )
+                except Exception as exc:
+                    logger.warning(f"Failed to resolve fallback model profile: {exc}")
+
             history: list[dict[str, Any]] = []
-            if media_resolution.images:
-                result = await self.provider.generate_agent(
-                    config,
-                    persona,
-                    provider_prompt,
-                    provider_tools,
-                    tuple(history),
-                    media_resolution.images,
-                    request_envelope,
-                )
-            else:
-                result = await self.provider.generate_agent(
-                    config, persona, provider_prompt, provider_tools,
-                    tuple(history), (), request_envelope
-                )
+            try:
+                if media_resolution.images:
+                    result = await self.provider.generate_agent(
+                        effective_config,
+                        persona,
+                        provider_prompt,
+                        provider_tools,
+                        tuple(history),
+                        media_resolution.images,
+                        request_envelope,
+                    )
+                else:
+                    result = await self.provider.generate_agent(
+                        effective_config, persona, provider_prompt, provider_tools,
+                        tuple(history), (), request_envelope
+                    )
+            except Exception as exc:
+                if (
+                    effective_config is config
+                    and hasattr(self.provider, "circuit_breaker")
+                    and self.provider.circuit_breaker.state == CircuitState.OPEN
+                ):
+                    try:
+                        catalog = self.model_profile_catalog()
+                        fallback_profile = self.provider.circuit_breaker.resolve_fallback_profile(catalog)
+                        if fallback_profile is not None:
+                            logger.warning(
+                                f"Tangtang primary tripped circuit to OPEN; escaping to fallback {fallback_profile.name} ({fallback_profile.model})"
+                            )
+                            fallback_config = replace(
+                                config,
+                                provider=fallback_profile.provider,
+                                api_url=fallback_profile.api_url,
+                                api_key=fallback_profile.api_key,
+                                api_style=fallback_profile.api_style,
+                                model=fallback_profile.model,
+                                reasoning_effort=fallback_profile.reasoning_effort,
+                            )
+                            if media_resolution.images:
+                                result = await self.provider.generate_agent(
+                                    fallback_config,
+                                    persona,
+                                    provider_prompt,
+                                    provider_tools,
+                                    tuple(history),
+                                    media_resolution.images,
+                                    request_envelope,
+                                )
+                            else:
+                                result = await self.provider.generate_agent(
+                                    fallback_config, persona, provider_prompt, provider_tools,
+                                    tuple(history), (), request_envelope
+                                )
+                            effective_config = fallback_config
+                        else:
+                            raise
+                    except Exception:
+                        raise exc
+                else:
+                    raise
             usage = dict(result.usage)
             if result.tool_calls:
                 # The model cannot invoke local functionality from natural
@@ -3558,52 +3830,7 @@ class TangtangService:
             self._write_usage(
                 config, group_id, user_id, "error", mode=mode, tokens={}, detail=type(exc).__name__
             )
-            if private and self._turn_current():
-                if not self._pending_context_items.get():
-                    self._pending_context_items.set((
-                        {
-                            "type": "message",
-                            "role": "user",
-                            "content": persisted_user_content,
-                        },
-                    ))
-                self._write_usage(
-                    config,
-                    group_id,
-                    user_id,
-                    "forced_reply",
-                    mode=mode,
-                    tokens={},
-                    detail=f"model_error:{type(exc).__name__}",
-                )
-                try:
-                    await self._send_and_record(
-                        bot,
-                        event,
-                        config,
-                        PRIVATE_ERROR_REPLY,
-                        reply_kind="canned",
-                        mode="local",
-                        tokens={},
-                        call_text=call_text,
-                        reply_plan=ReplyPlan(
-                            True,
-                            (PRIVATE_ERROR_REPLY,),
-                            voice="text",
-                            structured=True,
-                        ),
-                        voice_candidate=False,
-                    )
-                except Exception as fallback_exc:
-                    logger.warning(
-                        "Tangtang private fallback failed: {}",
-                        type(fallback_exc).__name__,
-                    )
-                    self._audit_pending_context(
-                        event, reason=type(fallback_exc).__name__
-                    )
-            else:
-                self._audit_pending_context(event, reason=type(exc).__name__)
+            self._audit_pending_context(event, reason=type(exc).__name__)
         finally:
             self._in_flight.discard(scope_id)
 
@@ -3769,6 +3996,14 @@ class TangtangService:
             for key in ("cached_tokens", "cache_read_tokens", "cache_write_tokens", "cache_miss_tokens"):
                 merged.pop(key, None)
             merged.pop("cache_zero_inferred", None)
+        merged["cache_affinity_key_sent"] = bool(
+            accumulated.get("cache_affinity_key_sent")
+            or current.get("cache_affinity_key_sent")
+        )
+        merged["cache_affinity_fallback"] = bool(
+            accumulated.get("cache_affinity_fallback")
+            or current.get("cache_affinity_fallback")
+        )
         return merged
 
     def _context_request_id(self, event: Any) -> str:
@@ -3950,16 +4185,6 @@ class TangtangService:
                 now=self._now(),
             )
             logger.warning("Agent context compaction failed: {}", type(exc).__name__)
-
-    async def _run_skill_call(self, bot, event, config, plan, *, call_text, mode, usage):
-        if self.feature_runner is None or not self._turn_current():
-            return
-        await self.feature_runner(bot, event, config, plan.skill_calls,
-            text=call_text or event.get_plaintext(), opening="\n".join(plan.messages),
-            usage=usage, source="model_feature_call", current=self._turn_current)
-        self._write_usage(config, context_group_id(event), int(event.user_id),
-            "feature", mode=mode, tokens=usage,
-            detail="model_feature_call:" + ",".join(call.action for call in plan.skill_calls))
 
     async def _send_and_record(
         self,
@@ -4258,3 +4483,4 @@ class TangtangService:
         if value is None and isinstance(nested, dict):
             value = nested.get("message_id")
         return str(value or "")
+

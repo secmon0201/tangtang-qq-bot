@@ -3,7 +3,7 @@ import json
 import pytest
 
 from tangtang_harness.message_text import VOICE_MARKER, message_text, normalize_voice
-from tangtang_harness.onebot import Message, MessageSegment
+from tangtang_harness.onebot import Message, MessageSegment, parse_event
 from tangtang_harness.types import InboundEvent
 
 
@@ -54,6 +54,34 @@ def test_normalization_preserves_images_and_unrelated_text():
     assert cleaned["image"] == image and cleaned["ordinary"] == ordinary
     assert AUDIO not in json.dumps(cleaned)
     assert message_text("[record]") == VOICE_MARKER
+
+
+def test_onebot_event_text_keeps_mentioned_member_and_uses_display_name_when_available():
+    event = parse_event({
+        "message_type": "group", "group_id": 102, "user_id": 101,
+        "self_id": 103, "message_id": 1,
+        "message": [
+            {"type": "text", "data": {"text": "锐评一下"}},
+            {"type": "at", "data": {"qq": "104", "text": "何时是归年"}},
+            {"type": "text", "data": {"text": "是谁呢"}},
+        ],
+    })
+    assert event.text == "锐评一下@何时是归年是谁呢"
+    assert message_text(event.segments) == "锐评一下@何时是归年是谁呢"
+    unnamed = ({"type": "at", "data": {"qq": "104"}},)
+    assert message_text(unnamed, {"104": "群名片"}) == "@群名片"
+
+
+def test_onebot_event_text_keeps_mention_id_when_no_display_name_is_available():
+    event = parse_event({
+        "message_type": "group", "group_id": 102, "user_id": 101,
+        "self_id": 103, "message_id": 2,
+        "message": [
+            {"type": "text", "data": {"text": "锐评一下"}},
+            {"type": "at", "data": {"qq": "104"}},
+        ],
+    })
+    assert event.text == "锐评一下@104"
 
 
 def test_existing_image_data_avoids_voice_text_parsing(monkeypatch):

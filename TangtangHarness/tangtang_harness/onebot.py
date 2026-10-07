@@ -197,9 +197,7 @@ def parse_event(packet):
     segments = packet.get("message") or []
     if isinstance(segments, str):
         segments = [{"type": "text", "data": {"text": segments}}]
-    text = "".join(message_text(s) if s.get("type") in {"record", "audio", "voice"}
-                   else str(s.get("data", {}).get("text", ""))
-                   for s in segments if s.get("type") in {"text", "record", "audio", "voice"})
+    text = message_text(segments)
     return InboundEvent(
         event_id=str(packet.get("message_id") or packet.get("id") or uuid.uuid4().hex),
         self_id=int(packet.get("self_id", 0)), user_id=int(packet.get("user_id", 0)),

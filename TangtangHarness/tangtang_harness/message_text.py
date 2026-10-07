@@ -4,7 +4,7 @@ from __future__ import annotations
 import ast
 import json
 import re
-from typing import Any
+from typing import Any, Mapping
 
 
 VOICE_MARKER = "[语音]"
@@ -84,16 +84,17 @@ def _voice_text(value: str) -> str:
     return _VOICE_LABEL.sub(VOICE_MARKER, _CQ_VOICE.sub(VOICE_MARKER, value))
 
 
-def message_text(value: Any) -> str:
+def message_text(value: Any, mention_names: Mapping[str, str] | None = None) -> str:
     """Render messages for context/display; audio is always a fixed marker."""
+    mention_names = mention_names or {}
     if isinstance(value, str):
         if value.lstrip().startswith(("[", "{", "(", "MessageSegment(")):
             parsed = _serialized_voice(value, voice_only=False)
             if parsed is not None:
-                return message_text(parsed)
+                return message_text(parsed, mention_names)
         return _voice_text(value)
     if isinstance(value, (list, tuple)):
-        return "".join(message_text(item) for item in value)
+        return "".join(message_text(item, mention_names) for item in value)
     kind = _segment_type(value)
     data = _segment_data(value)
     if kind in VOICE_TYPES:
@@ -103,14 +104,16 @@ def message_text(value: Any) -> str:
     if kind == "reply":
         return ""
     if kind == "at":
-        return "@" + str(data.get("qq", ""))
+        qq = str(data.get("qq", ""))
+        name = str(data.get("text", "") or mention_names.get(qq, "")).lstrip("@").strip()
+        return "@" + (name or qq)
     if kind == "node":
-        return message_text(data.get("content", ""))
+        return message_text(data.get("content", ""), mention_names)
     if kind:
         return {"image": "[图片]", "face": "[表情]", "video": "[视频]", "file": "[文件]"}.get(kind, f"[{kind}]")
     if isinstance(value, dict):
         if "segments" in value or "message" in value:
-            return message_text(value.get("segments", value.get("message")))
+            return message_text(value.get("segments", value.get("message")), mention_names)
         return _voice_text(str(value.get("text", "")))
     return str(value) if value is not None else ""
 

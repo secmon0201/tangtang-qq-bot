@@ -57,7 +57,16 @@ def _reply_protocol(text: str) -> tuple[str, dict[str, Any] | None]:
             prefix = prefix[:fence.start()].strip()
         elif suffix:
             continue
-        if prefix in (''.join(messages).strip(), '\n'.join(messages).strip()):
+        marked_prefix = re.sub(r'^\[接话\]\s*', '', prefix)
+        if marked_prefix.startswith('[消息]'):
+            marked_messages = tuple(
+                part.strip() for part in re.split(r'(?:^|\n)\[消息\]', marked_prefix)
+                if part.strip()
+            )
+        else:
+            marked_messages = ()
+        if (prefix in (''.join(messages).strip(), '\n'.join(messages).strip())
+                or marked_messages == tuple(message.strip() for message in messages)):
             return raw, value
     return raw, None
 

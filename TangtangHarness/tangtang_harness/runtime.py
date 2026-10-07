@@ -194,6 +194,17 @@ class Runtime:
             self.publish("platform", {"event": packet.get("meta_event_type") or packet.get("notice_type", "event")})
             return
         event = parse_event(packet)
+        if event.group_id is not None:
+            mention_names = {
+                str(segment.get("data", {}).get("qq", "")): self.tools.db.group_member_name(
+                    event.group_id, int(segment["data"]["qq"])
+                )
+                for segment in event.segments
+                if segment.get("type") == "at"
+                and str(segment.get("data", {}).get("qq", "")).isdigit()
+            }
+            if any(mention_names.values()):
+                event = replace(event, text=message_text(event.segments, mention_names))
         if not self.store.append_event(event):
             return {"status": "duplicate"}
         # A group-decrease notice archives the group.  Retained/stale packets

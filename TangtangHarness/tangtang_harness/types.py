@@ -74,8 +74,7 @@ class InboundEvent:
     def from_onebot(cls, value: dict[str, Any]) -> InboundEvent:
         message = value.get("message", ())
         segments = tuple(message) if isinstance(message, list) else ()
-        text = "".join(str(item.get("data", {}).get("text", ""))
-                       for item in segments if item.get("type") == "text")
+        text = message_text(segments)
         if isinstance(message, str):
             text = message_text(message)
         return cls(event_id=str(value.get("message_id", "")),

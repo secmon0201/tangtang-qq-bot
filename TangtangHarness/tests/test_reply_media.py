@@ -1,7 +1,7 @@
 import json
 from dataclasses import replace
 
-from tangtang_harness.chat import reply_metadata
+from tangtang_harness.chat import parse_reply, reply_metadata
 from tangtang_harness.context import fixed_prefix, build_context
 from tangtang_harness.reply_media import ExpressionSelector, expression_candidates, voice_decision
 from tangtang_harness.store import Store
@@ -72,6 +72,19 @@ def test_reply_metadata_keeps_expression_alternatives_and_voice_fallback():
                             '"expression_candidates":["smile","laugh"]}')
     assert parsed['voice'] == 'accept' and parsed['text_fallback'] == ['你好']
     assert parsed['expression_candidates'] == ['smile', 'laugh']
+
+
+def test_marked_prose_followed_by_matching_reply_json_keeps_json_as_metadata():
+    prose = "锐评：你很擅长只丢两个字，让我现场猜题。"
+    raw = (
+        f"[接话]\n[消息]{prose}\n"
+        + json.dumps({
+            "decision": "reply", "messages": [prose], "voice": "auto",
+            "speech_text": prose, "text_fallback": [prose],
+        }, ensure_ascii=False)
+    )
+    assert parse_reply(raw) == [prose]
+    assert reply_metadata(raw)["speech_text"] == prose
 
 
 def test_explicit_voice_uses_full_spoken_text_and_supports_legacy_accept():
